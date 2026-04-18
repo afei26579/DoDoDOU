@@ -1,0 +1,11 @@
+node_modules
+/dist
+.DS_Store
+.env
+.env.*
+*.log
+
+.cursor
+/perler-beads
+
+./图片上传转图纸核心算法说明.md
