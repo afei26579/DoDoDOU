@@ -128,6 +128,11 @@ p { margin: 0; }
   100% { transform: translateX(-50%); }
 }
 
+@keyframes workshop-fade-in {
+  from { opacity: 0; transform: scale(0.992); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 .section-block { display: grid; gap: 14px; }
 .section-heading-row { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
 .section-heading-row h2, .section-heading-row h3 { margin: 0; line-height: 1.2; font-family: var(--font-title); }
@@ -174,6 +179,10 @@ p { margin: 0; }
 }
 .workshop-canvas__camera-icon { font-size: 32px; line-height: 1; }
 .workshop-canvas__label { position: absolute; bottom: 78px; left: 50%; transform: translateX(-50%); font-size: 18px; font-weight: 800; color: #1f1f1f; }
+.workshop-canvas__loading { display: grid; place-items: center; min-height: 360px; color: var(--accent-strong); font-weight: 800; }
+.workshop-canvas__switcher { position: absolute; inset: 0; }
+.workshop-canvas__panel { position: absolute; inset: 0; }
+.workshop-canvas__panel--fade-in { animation: workshop-fade-in 220ms ease-out; }
 .workshop-canvas__viewport { position: absolute; inset: 0; overflow: hidden; touch-action: none; background: #faf7f1; border-radius: 0; }
 .workshop-canvas__image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; transform-origin: center; border-radius: 0; background: #1f1f1f; }
 .workshop-canvas__pattern { position: absolute; inset: 0; display: grid; grid-template-rows: 1fr auto; background: #fff; }

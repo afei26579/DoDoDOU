@@ -1,5 +1,5 @@
-import { useMemo, useRef } from 'react';
-import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useMemo } from 'react';
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { navItems, type NavItemId } from './navigation';
 import { BottomNav } from './components/BottomNav';
 import { CollectionPage } from '../pages/collection/CollectionPage';
@@ -8,13 +8,12 @@ import { DiscoveryPage } from '../pages/discovery/DiscoveryPage';
 import { DownloadSettingsModal } from '../pages/workshop/DownloadSettingsModal';
 import { FocusModePage } from '../pages/workshop/FocusModePage';
 import { WorkshopEditorPage } from '../pages/workshop/WorkshopEditorPage';
-import { WorkshopPage } from '../pages/workshop/WorkshopPage';
 import { WorkshopPreviewPage } from '../pages/workshop/WorkshopPreviewPage';
 import { WorkshopSettingsPage } from '../pages/workshop/WorkshopSettingsPage';
+import { WorkshopHomePage } from '../pages/workshop/WorkshopHomePage';
+import { WorkshopShell } from '../pages/workshop/WorkshopShell';
 import { defaultCropTransform, defaultWorkshopConfig } from '../features/workshop/model/defaults';
 import { saveWorkshopProject } from '../features/workshop/model/projectStore';
-import { useWorkshopFlow } from '../features/workshop/model/useWorkshopFlow';
-import { generatePatternFromImage } from '../lib/pattern/generator';
 
 const routeToTab: Partial<Record<string, NavItemId>> = {
   '/': 'discovery',
@@ -41,101 +40,6 @@ function createProjectId() {
   return String(Date.now());
 }
 
-function WorkshopRoute({ mode }: { mode: 'create' | 'result' }) {
-  const { projectId } = useParams();
-  const navigate = useNavigate();
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const { state, actions, isHydrating } = useWorkshopFlow(projectId ?? null);
-
-  const handleGeneratePattern = async () => {
-    if (!state.uploadedImage || !projectId) return;
-
-    actions.setGenerating(true);
-    try {
-      const result = await generatePatternFromImage({
-        imageUrl: state.uploadedImage.dataUrl,
-        config: state.config,
-      });
-      actions.setPatternResult(result);
-      await saveWorkshopProject(projectId, {
-        uploadedImage: state.uploadedImage,
-        cropTransform: state.cropTransform,
-        config: state.config,
-        patternResult: result,
-        viewMode: 'pattern',
-      });
-      navigate(`/workshop/result/${projectId}`);
-    } finally {
-      actions.setGenerating(false);
-    }
-  };
-
-  const handleUploadSelected = async (file: File) => {
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result ?? ''));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-
-    const nextProjectId = projectId ?? createProjectId();
-    await saveWorkshopProject(nextProjectId, {
-      uploadedImage: {
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        dataUrl,
-      },
-      cropTransform: defaultCropTransform,
-      config: defaultWorkshopConfig,
-      patternResult: null,
-      viewMode: 'image',
-    });
-
-    navigate(`/workshop/create/${nextProjectId}`);
-  };
-
-  return (
-    <>
-      <input
-        ref={fileInputRef}
-        hidden
-        type="file"
-        accept="image/*"
-        onChange={async (event) => {
-          const file = event.target.files?.[0];
-          event.target.value = '';
-          if (!file) return;
-          await handleUploadSelected(file);
-        }}
-      />
-      {isHydrating ? (
-        <main className="workshop-page">
-          <section className="workshop-canvas card-surface" aria-label="加载中">
-            <div className="workshop-canvas__frame" style={{ display: 'grid', placeItems: 'center', minHeight: 360 }}>
-              <div className="workshop-panel__hint">正在恢复项目数据...</div>
-            </div>
-          </section>
-        </main>
-      ) : (
-        <WorkshopPage
-          flowState={state}
-          projectId={projectId ?? null}
-          mode={mode}
-          onConfigChange={actions.setConfig}
-          onCropTransformChange={actions.setCropTransform}
-          onGeneratePattern={handleGeneratePattern}
-          onSwitchViewMode={actions.setViewMode}
-          onBackToOriginal={() => navigate(`/workshop/create/${projectId ?? createProjectId()}`)}
-          onRegenerate={handleGeneratePattern}
-          onRemoveBackground={() => {}}
-          onUploadImage={() => fileInputRef.current?.click()}
-        />
-      )}
-    </>
-  );
-}
-
 export function App() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -145,26 +49,15 @@ export function App() {
   const showDownloadSettings = location.pathname === '/workshop/download-settings';
   const showBottomNav = !hiddenBottomNavPaths.has(location.pathname);
 
-  const createProjectAndNavigate = (uploadedImage: {
-    name: string;
-    type: string;
-    size: number;
-    dataUrl: string;
-  }) => {
+  const handleUploadToWorkshop = async (image: { name: string; type: string; size: number; dataUrl: string }) => {
     const projectId = createProjectId();
-
-    try {
-      saveWorkshopProject(projectId, {
-        uploadedImage,
-        cropTransform: defaultCropTransform,
-        config: defaultWorkshopConfig,
-        patternResult: null,
-        viewMode: 'image',
-      });
-    } catch (error) {
-      console.warn('project storage write failed, fallback to session state', error);
-    }
-
+    await saveWorkshopProject(projectId, {
+      uploadedImage: image,
+      cropTransform: defaultCropTransform,
+      config: defaultWorkshopConfig,
+      patternResult: null,
+      viewMode: 'image',
+    });
     navigate(`/workshop/create/${projectId}`);
   };
 
@@ -176,19 +69,37 @@ export function App() {
             path="/"
             element={
               <DiscoveryPage
-                onUploadImage={(image) => createProjectAndNavigate(image)}
+                onUploadImage={handleUploadToWorkshop}
                 onOpenWorkshop={() => navigate('/workshop')}
               />
             }
           />
           <Route path="/crop" element={<CropPage onNext={() => navigate('/workshop/settings')} />} />
-          <Route path="/workshop" element={<WorkshopRoute mode="create" />} />
-          <Route path="/workshop/create/:projectId" element={<WorkshopRoute mode="create" />} />
-          <Route path="/workshop/result/:projectId" element={<WorkshopRoute mode="result" />} />
           <Route
-            path="/workshop/settings"
-            element={<WorkshopSettingsPage onGeneratePreview={() => navigate('/workshop/preview')} />}
+            path="/workshop"
+            element={
+              <WorkshopHomePage
+                flowState={{
+                  uploadedImage: null,
+                  cropTransform: { scale: 1, x: 0, y: 0 },
+                  config: { canvasSize: 100, brand: 'MARD', style: '动漫', colorMergeThreshold: 30 },
+                  patternResult: null,
+                  viewMode: 'image',
+                  isGenerating: false,
+                }}
+                projectId={null}
+                isHydrating={false}
+                onUploadImage={() => navigate('/workshop')}
+                onConfigChange={() => {}}
+                onCropTransformChange={() => {}}
+                onGeneratePattern={() => {}}
+                onSwitchViewMode={() => {}}
+              />
+            }
           />
+          <Route path="/workshop/create/:projectId" element={<WorkshopShell mode="create" />} />
+          <Route path="/workshop/result/:projectId" element={<WorkshopShell mode="result" />} />
+          <Route path="/workshop/settings" element={<WorkshopSettingsPage onGeneratePreview={() => navigate('/workshop/preview')} />} />
           <Route
             path="/workshop/preview"
             element={
