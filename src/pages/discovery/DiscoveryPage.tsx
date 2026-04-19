@@ -58,7 +58,6 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop }: DiscoveryPagePr
       size: file.size,
       dataUrl,
     });
-    onOpenWorkshop();
   };
 
   useEffect(() => {

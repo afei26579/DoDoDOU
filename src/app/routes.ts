@@ -8,6 +8,7 @@ export type AppRoute =
   | 'download-settings'
   | 'workshop'
   | 'workshop-create'
+  | 'workshop-result'
   | 'collection';
 
 export const routePathMap: Record<AppRoute, string> = {
@@ -20,5 +21,6 @@ export const routePathMap: Record<AppRoute, string> = {
   'download-settings': '/workshop/download-settings',
   workshop: '/workshop',
   'workshop-create': '/workshop/create/xxxxx',
+  'workshop-result': '/workshop/create/xxxxx/result',
   collection: '/collection',
 };
