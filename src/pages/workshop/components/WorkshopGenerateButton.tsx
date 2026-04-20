@@ -4,10 +4,10 @@ type WorkshopGenerateButtonProps = {
   disabled: boolean;
   onClick: () => void;
   onViewPattern?: () => void;
-  onOpenDownloadSettings?: () => void;
   onRemoveBackground?: () => void;
   onOpenEditor?: () => void;
   onRegenerate?: () => void;
+  onOpenDownloadSettings?: () => void;
 };
 
 export function WorkshopGenerateButton({

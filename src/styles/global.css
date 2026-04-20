@@ -637,33 +637,41 @@ p { margin: 0; }
 .preview-action { border: 1px solid #ebe6de; border-radius: 18px; padding: 14px 10px; background: #fff; color: rgba(93,83,74,0.72); }
 .preview-action.is-active { background: rgba(216,180,226,0.12); border-color: rgba(197,147,212,0.22); color: var(--accent-strong); }
 
-.download-modal__backdrop { position: fixed; inset: 0; background: rgba(67, 57, 52, 0.28); display: flex; align-items: flex-end; justify-content: center; padding: 16px 12px 12px; z-index: 20; }
-.download-modal { width: min(420px, 100%); border-radius: 26px 26px 22px 22px; background: #fffaf4; box-shadow: 0 -16px 40px rgba(93,83,74,0.18); padding: 14px 16px 20px; display: grid; gap: 12px; animation: sheet-rise 180ms ease-out; }
-.download-modal__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.download-modal__eyebrow { margin: 0 0 4px; font-size: 12px; color: var(--accent-strong); font-weight: 700; letter-spacing: 0.04em; }
-.download-modal__header h2 { margin: 0; font-size: 18px; font-family: var(--font-title); }
-.download-modal__close { border: 0; width: 30px; height: 30px; border-radius: 999px; background: rgba(216,180,226,0.18); font-size: 26px; line-height: 1; color: #8f8378; }
-.download-modal__handle { width: 78px; height: 5px; border-radius: 999px; background: rgba(93,83,74,0.18); margin: 0 auto 2px; }
-.download-modal__body { display: grid; gap: 14px; max-height: min(66vh, 620px); overflow: auto; padding-right: 2px; }
-.download-modal__body::-webkit-scrollbar { width: 8px; }
-.download-modal__body::-webkit-scrollbar-thumb { background: rgba(93,83,74,0.16); border-radius: 999px; }
-.download-modal__field-group { display: grid; gap: 8px; }
-.download-modal__field-group > span { font-size: 14px; color: var(--ink); }
-.download-modal__field-group--compact { gap: 10px; }
-.download-modal__input { width: 100%; border: 1px solid #ebe1d6; background: #fff; border-radius: 12px; padding: 12px 14px; font-size: 14px; color: var(--ink); outline: none; }
+.download-modal__backdrop { position: fixed; inset: 0; background: rgba(93, 83, 74, 0.26); display: grid; align-items: end; z-index: 30; }
+.download-modal { width: 100%; max-width: 390px; margin: 0 auto; border-radius: 28px 28px 0 0; padding: 12px 14px 16px; box-shadow: 0 -12px 30px rgba(93,83,74,0.14); background: linear-gradient(180deg, #fffdfb 0%, #faf4ee 100%); animation: workshop-fade-in 220ms ease-out; }
+.download-modal__handle { width: 42px; height: 4px; border-radius: 999px; background: rgba(93,83,74,0.14); margin: 4px auto 12px; }
+.download-modal__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.download-modal__header h3 { margin: 0; font-size: 22px; font-family: var(--font-title); }
+.download-modal__header p { margin-top: 4px; font-size: 12px; color: rgba(93,83,74,0.62); font-family: var(--font-title); }
+.download-modal__close { width: 32px; height: 32px; border: 0; border-radius: 999px; background: rgba(93,83,74,0.08); color: var(--ink); font-size: 20px; line-height: 1; }
+.download-modal__body { display: grid; gap: 10px; max-height: 68vh; overflow: auto; padding-right: 2px; }
+.download-modal__form-row { display: grid; gap: 10px; }
+.download-modal__form-row--two { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.download-modal__field { display: grid; gap: 8px; }
+.download-modal__field > span { font-size: 13px; color: rgba(93,83,74,0.62); font-family: var(--font-title); }
+.download-modal__card { padding: 14px 14px 12px; border-radius: 22px; background: #fff; border: 1px solid rgba(93,83,74,0.06); box-shadow: 0 8px 18px rgba(93,83,74,0.04); display: grid; gap: 10px; }
+.download-modal__card--stacked { gap: 12px; }
+.download-modal__card--list { gap: 0; padding: 6px 0; overflow: hidden; }
+.download-modal__input { width: 100%; border: 1px solid #ebe6de; background: #fff; border-radius: 18px; padding: 12px 14px; font-size: 14px; color: var(--ink); outline: none; box-shadow: 0 1px 0 rgba(255,255,255,0.75) inset; }
 .download-modal__input::placeholder { color: rgba(93,83,74,0.38); }
-.download-modal__setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--ink); }
-.download-switch { width: 42px; height: 24px; border-radius: 999px; background: #e7e1d7; position: relative; flex: none; box-shadow: inset 0 0 0 1px rgba(93,83,74,0.04); }
-.download-switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.16); transition: transform 160ms ease; }
-.download-switch.is-on { background: #e07a57; }
-.download-switch.is-on::after { transform: translateX(18px); }
-.download-modal__slider-row { display: flex; align-items: center; gap: 10px; }
-.download-modal__range { flex: 1; accent-color: #d6a38a; }
-.download-modal__slider-row strong { width: 22px; text-align: right; font-size: 14px; }
-.download-modal__swatch-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.download-modal__swatch { width: 28px; height: 28px; border-radius: 999px; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(93,83,74,0.18); padding: 0; }
-.download-modal__swatch.is-active { box-shadow: 0 0 0 2px #f48b6a, 0 0 0 1px rgba(93,83,74,0.18); }
-.download-modal__toggle-list { display: grid; gap: 12px; }
+.download-modal__setting-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; color: var(--ink); min-height: 24px; font-family: var(--font-title); }
+.download-modal__setting-row--list { padding: 10px 14px; }
+.download-modal__setting-row--slider { padding-bottom: 2px; }
+.download-modal__setting-row--tight { padding-bottom: 0; }
+.download-modal__setting-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.download-modal__setting-title strong { font-size: 14px; font-family: var(--font-title); }
+.download-modal__setting-icon { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; background: rgba(216,180,226,0.16); color: #c593d4; font-size: 12px; flex: none; }
+.download-modal__value-chip { min-width: 28px; height: 22px; padding: 0 8px; border-radius: 999px; background: #f1eadf; display: grid; place-items: center; color: rgba(93,83,74,0.72); font-size: 12px; font-weight: 700; font-family: var(--font-title); }
+.download-switch { width: 42px; height: 24px; border: 0; border-radius: 999px; background: #e7e1d7; position: relative; flex: none; box-shadow: inset 0 0 0 1px rgba(93,83,74,0.04); outline: none; padding: 0; }
+.download-switch::after { content: ''; position: absolute; top: 50%; left: 3px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.16); transform: translateY(-50%); transition: transform 160ms ease, background-color 160ms ease; }
+.download-switch.is-on { background: #d8b4e2; }
+.download-switch.is-on::after { transform: translate(18px, -50%); }
+.download-modal__range { width: 100%; accent-color: #d8b4e2; }
+.download-modal__color-row { display: flex; gap: 12px; flex-wrap: wrap; padding-top: 2px; }
+.download-modal__color { width: 28px; height: 28px; border-radius: 999px; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(93,83,74,0.18); padding: 0; }
+.download-modal__color.is-active { box-shadow: 0 0 0 2px #d8b4e2, 0 0 0 1px rgba(93,83,74,0.18); }
+.download-modal__divider { height: 1px; background: rgba(93,83,74,0.08); margin: 0; }
+.download-modal__action { width: 100%; margin-top: 14px; border: 0; border-radius: 18px; min-height: 52px; background: linear-gradient(180deg, #dfc0ea 0%, #d8b4e2 100%); color: #fff; font-family: var(--font-title); font-size: 18px; font-weight: 800; letter-spacing: 0.02em; box-shadow: 0 10px 20px rgba(216,180,226,0.32); }
 @keyframes sheet-rise { from { transform: translateY(18px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
 .collection-page { position: relative; display: grid; gap: 14px; padding-bottom: 80px; }

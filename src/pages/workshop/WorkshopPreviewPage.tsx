@@ -1,5 +1,7 @@
+import { DownloadSettingsModal } from './DownloadSettingsModal';
+import { useState } from 'react';
+
 type WorkshopPreviewPageProps = {
-  onOpenDownloadSettings: () => void;
   onOpenEditor: () => void;
   onOpenFocusMode: () => void;
 };
@@ -23,10 +25,12 @@ const actions: PreviewAction[] = [
   { title: '立即拼豆', active: false, action: 'focus' },
 ];
 
-export function WorkshopPreviewPage({ onOpenDownloadSettings, onOpenEditor, onOpenFocusMode }: WorkshopPreviewPageProps) {
+export function WorkshopPreviewPage({ onOpenEditor, onOpenFocusMode }: WorkshopPreviewPageProps) {
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+
   const handleActionClick = (action?: PreviewAction['action']) => {
     if (action === 'download') {
-      onOpenDownloadSettings();
+      setIsDownloadModalOpen(true);
       return;
     }
 
@@ -41,49 +45,53 @@ export function WorkshopPreviewPage({ onOpenDownloadSettings, onOpenEditor, onOp
   };
 
   return (
-    <main className="workshop-preview-page">
-      <section className="workshop-preview-hero card-surface" aria-label="图纸预览">
-        <div className="workshop-preview-hero__image" aria-hidden="true">
-          <div className="workshop-preview-hero__grid" />
-          <div className="workshop-preview-hero__art">
-            <span />
-            <span />
-            <span />
+    <>
+      <main className="workshop-preview-page">
+        <section className="workshop-preview-hero card-surface" aria-label="图纸预览">
+          <div className="workshop-preview-hero__image" aria-hidden="true">
+            <div className="workshop-preview-hero__grid" />
+            <div className="workshop-preview-hero__art">
+              <span />
+              <span />
+              <span />
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="workshop-preview-panel card-surface" aria-label="预览信息">
-        <div className="section-heading-row">
-          <div>
-            <p className="eyebrow">工坊</p>
-            <h2>图纸预览</h2>
+        <section className="workshop-preview-panel card-surface" aria-label="预览信息">
+          <div className="section-heading-row">
+            <div>
+              <p className="eyebrow">工坊</p>
+              <h2>图纸预览</h2>
+            </div>
+            <span className="workshop-preview-panel__hint">参数设置已完成</span>
           </div>
-          <span className="workshop-preview-panel__hint">参数设置已完成</span>
-        </div>
 
-        <div className="workshop-preview-stats">
-          {previewStats.map((stat) => (
-            <article key={stat.label} className="workshop-preview-stat">
-              <span>{stat.label}</span>
-              <strong>{stat.value}</strong>
-            </article>
-          ))}
-        </div>
+          <div className="workshop-preview-stats">
+            {previewStats.map((stat) => (
+              <article key={stat.label} className="workshop-preview-stat">
+                <span>{stat.label}</span>
+                <strong>{stat.value}</strong>
+              </article>
+            ))}
+          </div>
 
-        <div className="workshop-preview-actions">
-          {actions.map((actionItem) => (
-            <button
-              key={actionItem.title}
-              type="button"
-              className={`preview-action ${actionItem.active ? 'is-active' : ''}`}
-              onClick={() => handleActionClick(actionItem.action)}
-            >
-              {actionItem.title}
-            </button>
-          ))}
-        </div>
-      </section>
-    </main>
+          <div className="workshop-preview-actions">
+            {actions.map((actionItem) => (
+              <button
+                key={actionItem.title}
+                type="button"
+                className={`preview-action ${actionItem.active ? 'is-active' : ''}`}
+                onClick={() => handleActionClick(actionItem.action)}
+              >
+                {actionItem.title}
+              </button>
+            ))}
+          </div>
+        </section>
+      </main>
+
+      <DownloadSettingsModal open={isDownloadModalOpen} onClose={() => setIsDownloadModalOpen(false)} />
+    </>
   );
 }

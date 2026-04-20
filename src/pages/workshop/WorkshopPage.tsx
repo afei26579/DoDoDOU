@@ -9,6 +9,7 @@ import { WorkshopPreviewArea } from './components/WorkshopPreviewArea';
 import { WorkshopResultStats } from './components/WorkshopResultStats';
 import { WorkshopResultStatsSheet } from './components/WorkshopResultStatsSheet';
 import { WorkshopToolbar } from './components/WorkshopToolbar';
+import { DownloadSettingsModal } from './DownloadSettingsModal';
 
 type WorkshopPageProps = {
   flowState: WorkshopFlowState;
@@ -24,7 +25,7 @@ type WorkshopPageProps = {
   onUploadImage: () => void;
   isHydrating: boolean;
   onViewPattern: () => void;
-  onOpenDownloadSettings: () => void;
+  onOpenDownloadSettings?: () => void;
   isHome: boolean;
 };
 
@@ -47,6 +48,7 @@ export function WorkshopPage({
 }: WorkshopPageProps) {
   const [activeTag, setActiveTag] = useState<ParameterTagId>('size');
   const [isStatsSheetOpen, setIsStatsSheetOpen] = useState(false);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const { uploadedImage, cropTransform, config, patternResult, isGenerating } = flowState;
 
   const tagLabel = useMemo(() => {
@@ -105,6 +107,7 @@ export function WorkshopPage({
               onViewPattern={onViewPattern}
               onOpenEditor={() => onSwitchViewMode('image')}
               onRegenerate={onGeneratePattern}
+              onOpenDownloadSettings={() => setIsDownloadModalOpen(true)}
             />
           </>
         ) : (
@@ -128,6 +131,8 @@ export function WorkshopPage({
       {mode === 'result' && patternResult && isStatsSheetOpen ? (
         <WorkshopResultStatsSheet patternResult={patternResult} onClose={() => setIsStatsSheetOpen(false)} />
       ) : null}
+
+      <DownloadSettingsModal open={isDownloadModalOpen} onClose={() => setIsDownloadModalOpen(false)} />
     </main>
   );
 }

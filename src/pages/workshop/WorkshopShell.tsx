@@ -1,11 +1,10 @@
-import { useState, useRef } from 'react';
+import { useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { defaultCropTransform, defaultWorkshopConfig } from '../../features/workshop/model/defaults';
 import { saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
 import { generatePatternFromImage } from '../../lib/pattern/generator';
 import { removePatternBackground } from '../../lib/pattern/remove-background';
-import { DownloadSettingsModal } from './DownloadSettingsModal';
 import { WorkshopPage } from './WorkshopPage';
 
 type WorkshopShellProps = {
@@ -20,7 +19,6 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [isDownloadSettingsOpen, setIsDownloadSettingsOpen] = useState(false);
   const { state, actions, isHydrating } = useWorkshopFlow(projectId ?? null);
 
   const persistCurrentProject = async (nextPatternResult = state.patternResult) => {
@@ -126,10 +124,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
             console.debug('[workshop] file input click finished', { activeElement: document.activeElement?.tagName });
           }, 0);
         }}
-        onViewPattern={() => setIsDownloadSettingsOpen(true)}
-        onOpenDownloadSettings={() => setIsDownloadSettingsOpen(true)}
+        onViewPattern={() => navigate(`/workshop/result/${projectId ?? createProjectId()}`)}
       />
-      {isDownloadSettingsOpen ? <DownloadSettingsModal onClose={() => setIsDownloadSettingsOpen(false)} /> : null}
     </>
   );
 }

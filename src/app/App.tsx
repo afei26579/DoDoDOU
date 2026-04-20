@@ -5,7 +5,6 @@ import { BottomNav } from './components/BottomNav';
 import { CollectionPage } from '../pages/collection/CollectionPage';
 import { CropPage } from '../pages/crop/CropPage';
 import { DiscoveryPage } from '../pages/discovery/DiscoveryPage';
-import { DownloadSettingsModal } from '../pages/workshop/DownloadSettingsModal';
 import { FocusModePage } from '../pages/workshop/FocusModePage';
 import { WorkshopEditorPage } from '../pages/workshop/WorkshopEditorPage';
 import { WorkshopPreviewPage } from '../pages/workshop/WorkshopPreviewPage';
@@ -24,7 +23,6 @@ const routeToTab: Partial<Record<string, NavItemId>> = {
   '/workshop/preview': 'workshop',
   '/workshop/editor': 'workshop',
   '/workshop/focus': 'workshop',
-  '/workshop/download-settings': 'workshop',
   '/collection': 'collection',
 };
 
@@ -103,7 +101,6 @@ export function App() {
             path="/workshop/preview"
             element={
               <WorkshopPreviewPage
-                onOpenDownloadSettings={() => navigate('/workshop/download-settings')}
                 onOpenEditor={() => navigate('/workshop/editor')}
                 onOpenFocusMode={() => navigate('/workshop/focus')}
               />
