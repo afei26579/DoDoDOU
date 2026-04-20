@@ -46,7 +46,6 @@ export function App() {
 
   const normalizedPath = useMemo(() => normalizePath(location.pathname), [location.pathname]);
   const activeTab: NavItemId = routeToTab[normalizedPath] ?? 'discovery';
-  const showDownloadSettings = location.pathname === '/workshop/download-settings';
   const showBottomNav = !hiddenBottomNavPaths.has(location.pathname);
 
   const handleUploadToWorkshop = async (image: { name: string; type: string; size: number; dataUrl: string }) => {
@@ -110,16 +109,7 @@ export function App() {
               />
             }
           />
-          <Route
-            path="/workshop/download-settings"
-            element={
-              <WorkshopPreviewPage
-                onOpenDownloadSettings={() => navigate('/workshop/download-settings')}
-                onOpenEditor={() => navigate('/workshop/editor')}
-                onOpenFocusMode={() => navigate('/workshop/focus')}
-              />
-            }
-          />
+
           <Route path="/workshop/editor" element={<WorkshopEditorPage />} />
           <Route path="/workshop/focus" element={<FocusModePage />} />
           <Route path="/collection" element={<CollectionPage />} />
@@ -130,7 +120,6 @@ export function App() {
       {showBottomNav ? (
         <BottomNav items={navItems} activeTab={activeTab} onChange={(tab) => navigate(tab === 'discovery' ? '/' : `/${tab}`)} />
       ) : null}
-      {showDownloadSettings ? <DownloadSettingsModal onClose={() => navigate('/workshop/preview')} /> : null}
     </div>
   );
 }

@@ -20,7 +20,7 @@ export const routePathMap: Record<AppRoute, string> = {
   'focus-mode': '/workshop/focus',
   'download-settings': '/workshop/download-settings',
   workshop: '/workshop',
-  'workshop-create': '/workshop/create/xxxxx',
-  'workshop-result': '/workshop/create/xxxxx/result',
+  'workshop-create': '/workshop/create/:projectId',
+  'workshop-result': '/workshop/result/:projectId',
   collection: '/collection',
 };

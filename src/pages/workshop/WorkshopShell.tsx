@@ -1,9 +1,11 @@
-import { useRef } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { defaultCropTransform, defaultWorkshopConfig } from '../../features/workshop/model/defaults';
 import { saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
 import { generatePatternFromImage } from '../../lib/pattern/generator';
+import { removePatternBackground } from '../../lib/pattern/remove-background';
+import { DownloadSettingsModal } from './DownloadSettingsModal';
 import { WorkshopPage } from './WorkshopPage';
 
 type WorkshopShellProps = {
@@ -18,7 +20,19 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isDownloadSettingsOpen, setIsDownloadSettingsOpen] = useState(false);
   const { state, actions, isHydrating } = useWorkshopFlow(projectId ?? null);
+
+  const persistCurrentProject = async (nextPatternResult = state.patternResult) => {
+    if (!projectId) return;
+    await saveWorkshopProject(projectId, {
+      uploadedImage: state.uploadedImage,
+      cropTransform: state.cropTransform,
+      config: state.config,
+      patternResult: nextPatternResult,
+      viewMode: nextPatternResult ? 'pattern' : state.viewMode,
+    });
+  };
 
   const handleGeneratePattern = async () => {
     if (!state.uploadedImage || !projectId) return;
@@ -41,6 +55,16 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     } finally {
       actions.setGenerating(false);
     }
+  };
+
+  const handleRemoveBackground = async () => {
+    if (!state.patternResult) return;
+
+    const result = removePatternBackground(state.patternResult);
+    if (!result) return;
+
+    actions.setPatternResult(result.newPatternResult);
+    await persistCurrentProject(result.newPatternResult);
   };
 
   const handleUploadSelected = async (file: File) => {
@@ -94,10 +118,18 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         onSwitchViewMode={actions.setViewMode}
         onBackToOriginal={() => navigate(`/workshop/create/${projectId ?? createProjectId()}`)}
         onRegenerate={handleGeneratePattern}
-        onRemoveBackground={() => {}}
-        onUploadImage={() => fileInputRef.current?.click()}
-        onViewPattern={() => navigate(`/workshop/result/${projectId ?? createProjectId()}`)}
+        onRemoveBackground={handleRemoveBackground}
+        onUploadImage={() => {
+          console.debug('[workshop] file input click requested', { projectId, hasInput: Boolean(fileInputRef.current) });
+          fileInputRef.current?.click();
+          window.setTimeout(() => {
+            console.debug('[workshop] file input click finished', { activeElement: document.activeElement?.tagName });
+          }, 0);
+        }}
+        onViewPattern={() => setIsDownloadSettingsOpen(true)}
+        onOpenDownloadSettings={() => setIsDownloadSettingsOpen(true)}
       />
+      {isDownloadSettingsOpen ? <DownloadSettingsModal onClose={() => setIsDownloadSettingsOpen(false)} /> : null}
     </>
   );
 }

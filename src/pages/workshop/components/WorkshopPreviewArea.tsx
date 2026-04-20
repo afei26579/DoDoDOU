@@ -97,7 +97,7 @@ export function WorkshopPreviewArea({
 }: WorkshopPreviewAreaProps) {
   return (
     <section className="workshop-canvas card-surface" aria-label="画布预览">
-      <div className="workshop-canvas__frame" aria-hidden="true">
+      <div className="workshop-canvas__frame">
         {isHydrating ? (
           <WorkshopLoadingState />
         ) : uploadedImage ? (
@@ -115,16 +115,19 @@ export function WorkshopPreviewArea({
             )}
           </div>
         ) : isHome ? (
-          <>
-            <button className="workshop-canvas__camera" type="button" aria-label="上传图片" onClick={(event) => { event.stopPropagation(); onUploadImage(); }}>
-              <span className="workshop-canvas__camera-icon" aria-hidden="true">📷</span>
-            </button>
-            <div className="workshop-canvas__label">唤醒灵感</div>
-            <div className="workshop-canvas__actions" aria-label="快捷操作">
-              <button className="workshop-canvas__action" type="button" aria-label="AI 灵感"><span aria-hidden="true">✦</span></button>
-              <button className="workshop-canvas__action" type="button" aria-label="创建新画布"><span aria-hidden="true">◫</span></button>
-            </div>
-          </>
+          <button className="workshop-canvas__camera workshop-canvas__camera--cta" type="button" aria-label="上传图片" onClick={(event) => { event.stopPropagation(); onUploadImage(); }}>
+            <span className="workshop-canvas__camera-glow" aria-hidden="true" />
+            <span className="workshop-canvas__camera-orb workshop-canvas__camera-orb--left" aria-hidden="true" />
+            <span className="workshop-canvas__camera-orb workshop-canvas__camera-orb--right" aria-hidden="true" />
+            <span className="workshop-canvas__camera-icon workshop-canvas__camera-icon--handdrawn" aria-hidden="true">
+              <span className="workshop-canvas__camera-lens" />
+              <span className="workshop-canvas__camera-flash" />
+            </span>
+            <span className="workshop-canvas__camera-copy">
+              <span className="workshop-canvas__camera-copy-title">唤醒灵感</span>
+              <span className="workshop-canvas__camera-copy-subtitle">点击上传图片，开始你的手作之旅</span>
+            </span>
+          </button>
         ) : (
           <WorkshopEmptyState onUploadImage={onUploadImage} />
         )}

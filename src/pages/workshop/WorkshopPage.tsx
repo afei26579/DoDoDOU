@@ -24,6 +24,7 @@ type WorkshopPageProps = {
   onUploadImage: () => void;
   isHydrating: boolean;
   onViewPattern: () => void;
+  onOpenDownloadSettings: () => void;
   isHome: boolean;
 };
 
@@ -41,6 +42,7 @@ export function WorkshopPage({
   onUploadImage,
   isHydrating,
   onViewPattern,
+  onOpenDownloadSettings,
   isHome,
 }: WorkshopPageProps) {
   const [activeTag, setActiveTag] = useState<ParameterTagId>('size');

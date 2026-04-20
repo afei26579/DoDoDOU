@@ -2,76 +2,88 @@ type DownloadSettingsModalProps = {
   onClose: () => void;
 };
 
-const gridLineOptions = ['关闭', '细线', '中线', '粗线'] as const;
-const gridSpacingOptions = ['每 2 格', '每 4 格', '每 8 格'] as const;
+const gridLineColors = ['#6a6665', '#ff3b2f', '#1d2cff', '#178f17', '#8a0f8e', '#f6a400'];
+
+function Toggle({ checked }: { checked: boolean }) {
+  return <span className={`download-switch ${checked ? 'is-on' : ''}`} aria-hidden="true" />;
+}
+
+function Field({ placeholder }: { placeholder: string }) {
+  return <input className="download-modal__input" type="text" placeholder={placeholder} />;
+}
 
 export function DownloadSettingsModal({ onClose }: DownloadSettingsModalProps) {
   return (
     <div className="download-modal__backdrop" role="presentation" onClick={onClose}>
-      <section className="download-modal" role="dialog" aria-modal="true" aria-label="下载设置弹窗" onClick={(event) => event.stopPropagation()}>
+      <section className="download-modal" role="dialog" aria-modal="true" aria-label="下载图纸设置" onClick={(event) => event.stopPropagation()}>
         <header className="download-modal__header">
           <div>
-            <p className="eyebrow">下载设置</p>
-            <h2>导出图纸</h2>
+            <p className="download-modal__eyebrow">下载图纸</p>
+            <h2>下载设置</h2>
           </div>
           <button className="download-modal__close" type="button" aria-label="关闭弹窗" onClick={onClose}>
             ×
           </button>
         </header>
 
+        <div className="download-modal__handle" aria-hidden="true" />
+
         <div className="download-modal__body">
-          <div className="download-modal__group">
-            <strong>作者署名</strong>
-            <div className="download-modal__field">温馨手工坊</div>
+          <label className="download-modal__field-group">
+            <span>作者署名</span>
+            <Field placeholder="@你的社交账号（留空则不显示）" />
+          </label>
+
+          <label className="download-modal__field-group">
+            <span>画廊分享码</span>
+            <Field placeholder="发布到画廊后获得的分享码（留空则不显示）" />
+          </label>
+
+          <div className="download-modal__setting-row">
+            <span>显示网格线</span>
+            <Toggle checked />
           </div>
 
-          <div className="download-modal__group">
-            <strong>分享码</strong>
-            <div className="download-modal__field">COZY-2026</div>
-          </div>
+          <label className="download-modal__field-group download-modal__field-group--compact">
+            <span>网格线间隔（每 N 格画一条线）</span>
+            <div className="download-modal__slider-row">
+              <input className="download-modal__range" type="range" min="2" max="20" defaultValue="10" />
+              <strong>10</strong>
+            </div>
+          </label>
 
-          <div className="download-modal__group">
-            <strong>网格线</strong>
-            <div className="choice-row">
-              {gridLineOptions.map((item, index) => (
-                <button key={item} className={`choice-pill ${index === 1 ? 'is-active' : ''}`} type="button">
-                  {item}
-                </button>
+          <div className="download-modal__field-group">
+            <span>网格线颜色</span>
+            <div className="download-modal__swatch-row" aria-label="网格线颜色选择">
+              {gridLineColors.map((color, index) => (
+                <button key={color} type="button" className={`download-modal__swatch ${index === 0 ? 'is-active' : ''}`} style={{ background: color }} aria-label={`选择颜色 ${color}`} />
               ))}
             </div>
           </div>
 
-          <div className="download-modal__group">
-            <strong>网格间隔</strong>
-            <div className="choice-row">
-              {gridSpacingOptions.map((item, index) => (
-                <button key={item} className={`choice-pill ${index === 1 ? 'is-active' : ''}`} type="button">
-                  {item}
-                </button>
-              ))}
+          <div className="download-modal__toggle-list">
+            <div className="download-modal__setting-row">
+              <span>显示坐标数字</span>
+              <Toggle checked />
             </div>
-          </div>
-
-          <div className="download-modal__group download-modal__group--row">
-            <strong>网格颜色</strong>
-            <div className="download-modal__swatches" aria-hidden="true">
-              <span />
-              <span />
-              <span />
+            <div className="download-modal__setting-row">
+              <span>隐藏格内色号</span>
+              <Toggle checked={false} />
             </div>
-          </div>
-
-          <div className="download-modal__checks">
-            <label><input type="checkbox" defaultChecked /> 色号统计</label>
-            <label><input type="checkbox" defaultChecked /> 水印添加</label>
-            <label><input type="checkbox" /> 坐标数字</label>
+            <div className="download-modal__setting-row">
+              <span>包含色号统计</span>
+              <Toggle checked />
+            </div>
+            <div className="download-modal__setting-row">
+              <span>水平镜像</span>
+              <Toggle checked={false} />
+            </div>
+            <div className="download-modal__setting-row">
+              <span>添加水印</span>
+              <Toggle checked={false} />
+            </div>
           </div>
         </div>
-
-        <footer className="download-modal__footer">
-          <button type="button" className="download-modal__ghost" onClick={onClose}>取消</button>
-          <button type="button" className="download-modal__primary">确认下载</button>
-        </footer>
       </section>
     </div>
   );

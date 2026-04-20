@@ -6,7 +6,7 @@ node_modules
 *.log
 
 .cursor
-/perler-beads
+/example_project
 
 
 
