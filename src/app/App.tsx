@@ -103,6 +103,8 @@ export function App() {
               <WorkshopPreviewPage
                 onOpenEditor={() => navigate('/workshop/editor')}
                 onOpenFocusMode={() => navigate('/workshop/focus')}
+                brand="MARD"
+                patternResult={null}
               />
             }
           />

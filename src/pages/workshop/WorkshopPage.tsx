@@ -132,7 +132,12 @@ export function WorkshopPage({
         <WorkshopResultStatsSheet patternResult={patternResult} onClose={() => setIsStatsSheetOpen(false)} />
       ) : null}
 
-      <DownloadSettingsModal open={isDownloadModalOpen} onClose={() => setIsDownloadModalOpen(false)} />
+      <DownloadSettingsModal
+        open={isDownloadModalOpen}
+        onClose={() => setIsDownloadModalOpen(false)}
+        brand={config.brand}
+        patternResult={patternResult}
+      />
     </main>
   );
 }

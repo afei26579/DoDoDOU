@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react';
+import type { ColorSystem, PatternResult } from '../../features/workshop/model/types';
+import { downloadPatternImage } from '../../lib/pattern/download';
 
 type DownloadSettingsModalProps = {
   open: boolean;
   onClose: () => void;
+  brand: ColorSystem;
+  patternResult: PatternResult | null;
 };
 
 const colorOptions = [
@@ -14,7 +18,7 @@ const colorOptions = [
   { label: '黄色', value: '#FDBA28' },
 ] as const;
 
-export function DownloadSettingsModal({ open, onClose }: DownloadSettingsModalProps) {
+export function DownloadSettingsModal({ open, onClose, brand, patternResult }: DownloadSettingsModalProps) {
   const [authorName, setAuthorName] = useState('');
   const [showGrid, setShowGrid] = useState(true);
   const [gridGap, setGridGap] = useState(10);
@@ -22,6 +26,7 @@ export function DownloadSettingsModal({ open, onClose }: DownloadSettingsModalPr
   const [showSymbol, setShowSymbol] = useState(true);
   const [showSymbolStats, setShowSymbolStats] = useState(true);
   const [addWatermark, setAddWatermark] = useState(true);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -33,6 +38,27 @@ export function DownloadSettingsModal({ open, onClose }: DownloadSettingsModalPr
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [open, onClose]);
+
+  const handleDownload = async () => {
+    if (!patternResult || isDownloading) return;
+    setIsDownloading(true);
+    try {
+      await downloadPatternImage({
+        authorName,
+        showGrid,
+        gridGap,
+        gridColor,
+        showSymbol,
+        showSymbolStats,
+        addWatermark,
+        brand,
+        patternResult,
+      });
+      onClose();
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   if (!open) return null;
 
@@ -71,14 +97,14 @@ export function DownloadSettingsModal({ open, onClose }: DownloadSettingsModalPr
             <div className="download-modal__setting-row">
               <div className="download-modal__setting-title">
                 <span className="download-modal__setting-icon">▦</span>
-                <strong>显示网格线</strong>
+                <strong>显示网格分割线</strong>
               </div>
               <button
                 type="button"
                 className={`download-switch ${showGrid ? 'is-on' : ''}`}
                 role="switch"
                 aria-checked={showGrid}
-                aria-label="显示网格线"
+                aria-label="显示网格分割线"
                 onClick={() => setShowGrid((current) => !current)}
               />
             </div>
@@ -88,7 +114,7 @@ export function DownloadSettingsModal({ open, onClose }: DownloadSettingsModalPr
             <div className="download-modal__setting-row download-modal__setting-row--slider">
               <div className="download-modal__setting-title">
                 <span className="download-modal__setting-icon">▥</span>
-                <strong>网格间隔</strong>
+                <strong>分割线间隔</strong>
               </div>
               <span className="download-modal__value-chip">{gridGap}</span>
             </div>
@@ -108,7 +134,7 @@ export function DownloadSettingsModal({ open, onClose }: DownloadSettingsModalPr
             <div className="download-modal__setting-row download-modal__setting-row--tight">
               <div className="download-modal__setting-title">
                 <span className="download-modal__setting-icon">◔</span>
-                <strong>颜色</strong>
+                <strong>分割线颜色</strong>
               </div>
             </div>
 
@@ -166,8 +192,8 @@ export function DownloadSettingsModal({ open, onClose }: DownloadSettingsModalPr
           </section>
         </div>
 
-        <button type="button" className="download-modal__action" onClick={onClose}>
-          下载图纸
+        <button type="button" className="download-modal__action" onClick={handleDownload} disabled={!patternResult || isDownloading}>
+          {isDownloading ? '生成中...' : '下载图纸'}
         </button>
       </section>
     </div>

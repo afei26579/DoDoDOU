@@ -1,9 +1,12 @@
-import { DownloadSettingsModal } from './DownloadSettingsModal';
 import { useState } from 'react';
+import { DownloadSettingsModal } from './DownloadSettingsModal';
+import type { PatternResult } from '../../features/workshop/model/types';
 
 type WorkshopPreviewPageProps = {
   onOpenEditor: () => void;
   onOpenFocusMode: () => void;
+  brand: 'MARD' | 'COCO' | '漫漫' | '盼盼' | '咪小窝';
+  patternResult: PatternResult | null;
 };
 
 type PreviewAction = {
@@ -25,7 +28,7 @@ const actions: PreviewAction[] = [
   { title: '立即拼豆', active: false, action: 'focus' },
 ];
 
-export function WorkshopPreviewPage({ onOpenEditor, onOpenFocusMode }: WorkshopPreviewPageProps) {
+export function WorkshopPreviewPage({ onOpenEditor, onOpenFocusMode, brand, patternResult }: WorkshopPreviewPageProps) {
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
 
   const handleActionClick = (action?: PreviewAction['action']) => {
@@ -91,7 +94,12 @@ export function WorkshopPreviewPage({ onOpenEditor, onOpenFocusMode }: WorkshopP
         </section>
       </main>
 
-      <DownloadSettingsModal open={isDownloadModalOpen} onClose={() => setIsDownloadModalOpen(false)} />
+      <DownloadSettingsModal
+        open={isDownloadModalOpen}
+        onClose={() => setIsDownloadModalOpen(false)}
+        brand={brand}
+        patternResult={patternResult}
+      />
     </>
   );
 }
