@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { drawPatternPreview } from '../../../lib/pattern/preview';
-import type { CropTransform, PatternResult, UploadedImage } from '../../../features/workshop/model/types';
+import type { CropTransform, PatternCell, PatternResult, UploadedImage } from '../../../features/workshop/model/types';
 
 type WorkshopPreviewAreaProps = {
   mode: 'create' | 'result';
@@ -58,8 +58,21 @@ function WorkshopImageView({
   );
 }
 
+function getCanvasCellFromPoint(canvas: HTMLCanvasElement, pattern: PatternResult, clientX: number, clientY: number) {
+  const rect = canvas.getBoundingClientRect();
+  const x = ((clientX - rect.left) / rect.width) * pattern.width;
+  const y = ((clientY - rect.top) / rect.height) * pattern.height;
+  const cellX = Math.floor(x);
+  const cellY = Math.floor(y);
+  if (cellX < 0 || cellY < 0 || cellX >= pattern.width || cellY >= pattern.height) return null;
+  return pattern.cells.find((cell) => cell.x === cellX && cell.y === cellY) ?? null;
+}
+
 function WorkshopPatternView({ patternResult }: { patternResult: PatternResult }) {
   const patternCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [activeCell, setActiveCell] = useState<PatternCell | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number; placeBelow: boolean } | null>(null);
+  const [isTooltipPinned, setIsTooltipPinned] = useState(false);
 
   useEffect(() => {
     if (!patternResult || !patternCanvasRef.current) return;
@@ -69,10 +82,71 @@ function WorkshopPatternView({ patternResult }: { patternResult: PatternResult }
     drawPatternPreview({ canvas, pattern: patternResult });
   }, [patternResult]);
 
+  const tooltipText = useMemo(() => {
+    if (!activeCell) return '';
+    return activeCell.vendorCode;
+  }, [activeCell]);
+
+  const updateTooltipFromEvent = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!patternCanvasRef.current) return;
+    const canvas = patternCanvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const cell = getCanvasCellFromPoint(canvas, patternResult, event.clientX, event.clientY);
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    setActiveCell(cell);
+    setTooltipPosition({
+      x,
+      y,
+      placeBelow: y < 50,
+    });
+  };
+
+  const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    updateTooltipFromEvent(event);
+  };
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    updateTooltipFromEvent(event);
+    setIsTooltipPinned(event.pointerType !== 'mouse');
+  };
+
+  const handlePointerLeave = () => {
+    if (!isTooltipPinned) {
+      setActiveCell(null);
+      setTooltipPosition(null);
+    }
+  };
+
+  const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (event.pointerType === 'mouse') return;
+    setIsTooltipPinned(false);
+  };
+
   return (
     <div className="workshop-canvas__panel workshop-canvas__panel--fade-in">
       <div className="workshop-canvas__pattern">
-        <canvas ref={patternCanvasRef} className="workshop-canvas__pattern-canvas" />
+        <canvas
+          ref={patternCanvasRef}
+          className="workshop-canvas__pattern-canvas"
+          onPointerMove={handlePointerMove}
+          onPointerDown={handlePointerDown}
+          onPointerLeave={handlePointerLeave}
+          onPointerUp={handlePointerUp}
+        />
+        {activeCell && tooltipPosition ? (
+          <div
+            className={`workshop-canvas__pattern-tooltip ${isTooltipPinned ? 'is-pinned' : ''} ${tooltipPosition.placeBelow ? 'is-below' : ''}`}
+            style={{ left: tooltipPosition.x, top: tooltipPosition.y }}
+          >
+            <span
+              className="workshop-canvas__pattern-tooltip-swatch"
+              aria-hidden="true"
+              style={{ backgroundColor: activeCell.hex }}
+            />
+            <strong>{tooltipText}</strong>
+          </div>
+        ) : null}
         <div className="workshop-canvas__pattern-meta">
           <span>{patternResult.width} × {patternResult.height}</span>
           <span>{patternResult.stats.colorCount} 色</span>
