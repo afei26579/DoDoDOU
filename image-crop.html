@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Canvas 图片裁剪示例</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0f11;
+    --surface: #1a1a1f;
+    --surface2: #242429;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #f0eff4;
+    --text2: #8b8a96;
+    --accent: #7c6af7;
+    --accent2: #a594ff;
+    --crop-border: #ffffff;
+    --radius: 12px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Pro Display', 'PingFang SC', 'Helvetica Neue', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+    gap: 1.5rem;
+  }
+
+  h1 {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--text2);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    width: 100%;
+    max-width: 900px;
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text2);
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Stage ── */
+  .stage-wrap {
+    position: relative;
+    background: #111;
+    border-radius: 8px;
+    overflow: hidden;
+    aspect-ratio: 1;
+    cursor: grab;
+    user-select: none;
+  }
+  .stage-wrap:active { cursor: grabbing; }
+
+  #sourceImg {
+    position: absolute;
+    transform-origin: center center;
+    pointer-events: none;
+    /* initial center */
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) translate(0px, 0px) scale(1);
+    max-width: none;
+    display: none;
+  }
+
+  /* crop frame overlay */
+  .crop-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .crop-overlay svg {
+    width: 100%; height: 100%;
+  }
+
+  /* ── Upload placeholder ── */
+  .upload-placeholder {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    cursor: pointer;
+  }
+  .upload-placeholder input { display: none; }
+  .upload-icon {
+    width: 40px; height: 40px;
+    border: 1.5px solid var(--border2);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .upload-placeholder p { font-size: 13px; color: var(--text2); }
+  .upload-placeholder span { font-size: 11px; color: rgba(255,255,255,0.2); }
+
+  /* ── Controls ── */
+  .control-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .control-row label {
+    font-size: 12px;
+    color: var(--text2);
+    min-width: 36px;
+  }
+  input[type=range] {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 3px;
+    background: var(--surface2);
+    border-radius: 2px;
+    outline: none;
+    border: 1px solid var(--border);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: var(--accent2);
+    cursor: pointer;
+  }
+  .val-badge {
+    font-size: 11px;
+    font-family: 'SF Mono', monospace;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 7px;
+    min-width: 44px;
+    text-align: center;
+    color: var(--text2);
+  }
+
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  button {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    border-radius: 8px;
+    cursor: pointer;
+    border: 1px solid var(--border2);
+    background: var(--surface2);
+    color: var(--text);
+    transition: background 0.15s, border-color 0.15s;
+    letter-spacing: 0.02em;
+  }
+  button:hover { background: #2e2e36; border-color: rgba(255,255,255,0.2); }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  button.primary:hover { background: var(--accent2); border-color: var(--accent2); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  /* ── Result ── */
+  .result-canvas-wrap {
+    background: repeating-conic-gradient(#1e1e24 0% 25%, #151519 0% 50%) 0 0 / 16px 16px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 160px;
+    overflow: hidden;
+    position: relative;
+  }
+  #resultCanvas {
+    max-width: 100%;
+    max-height: 280px;
+    display: none;
+    border-radius: 4px;
+  }
+  .result-empty {
+    font-size: 12px;
+    color: rgba(255,255,255,0.18);
+  }
+
+  /* ── Code block ── */
+  .code-wrap {
+    background: #0d0d10;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+  pre {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11.5px;
+    line-height: 1.75;
+    color: #c9c8d4;
+    white-space: pre;
+  }
+  .kw  { color: #bd87f5; }
+  .fn  { color: #7ec8e3; }
+  .cm  { color: #555566; }
+  .str { color: #88cc88; }
+  .num { color: #f0a06a; }
+
+  /* debug canvas (hidden, for development) */
+  #debugCanvas { display: none; }
+
+  @media (max-width: 640px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Canvas 图片裁剪</h1>
+
+<div class="layout">
+
+  <!-- LEFT: editor -->
+  <div class="panel">
+    <div class="panel-title">编辑区</div>
+
+    <div class="stage-wrap" id="stage">
+      <img id="sourceImg" alt="">
+
+      <!-- crop frame drawn via SVG overlay -->
+      <div class="crop-overlay">
+        <svg id="cropSvg" viewBox="0 0 300 300" preserveAspectRatio="none"></svg>
+      </div>
+
+      <!-- upload UI -->
+      <label class="upload-placeholder" id="uploadLabel">
+        <input type="file" id="fileInput" accept="image/*">
+        <div class="upload-icon">＋</div>
+        <p>点击上传图片</p>
+        <span>PNG / JPG / WEBP</span>
+      </label>
+    </div>
+
+    <div class="control-row">
+      <label>缩放</label>
+      <input type="range" id="scaleRange" min="20" max="300" value="100" step="1">
+      <span class="val-badge" id="scaleVal">100%</span>
+    </div>
+
+    <div class="control-row">
+      <label>旋转</label>
+      <input type="range" id="rotateRange" min="-180" max="180" value="0" step="1">
+      <span class="val-badge" id="rotateVal">0°</span>
+    </div>
+
+    <div class="btn-row">
+      <button id="resetBtn" disabled>重置</button>
+      <button id="cropBtn" class="primary" disabled>确认裁剪</button>
+    </div>
+  </div>
+
+  <!-- RIGHT: result + code -->
+  <div class="panel">
+    <div class="panel-title">裁剪结果</div>
+    <div class="result-canvas-wrap">
+      <canvas id="resultCanvas"></canvas>
+      <span class="result-empty" id="resultEmpty">裁剪后的图片将显示在这里</span>
+    </div>
+    <div class="btn-row">
+      <button id="downloadBtn" disabled>下载图片</button>
+    </div>
+
+    <div class="panel-title" style="margin-top:0.5rem">核心函数</div>
+    <div class="code-wrap">
+<pre><span class="cm">/**
+ * cropImage — 把图片按 transform 画到 canvas 再截取
+ * @param {HTMLImageElement} img
+ * @param {Object} t  — { x, y, scale, rotate }
+ * @param {Object} frame — { w, h }  裁剪框尺寸(px, 视口坐标)
+ * @returns {HTMLCanvasElement}
+ */</span>
+<span class="kw">function</span> <span class="fn">cropImage</span>(img, t, frame) {
+  <span class="kw">const</span> dpr = window.devicePixelRatio || <span class="num">1</span>;
+
+  <span class="cm">// 1. 创建输出 canvas，尺寸 = 裁剪框，考虑 DPR</span>
+  <span class="kw">const</span> canvas = document.<span class="fn">createElement</span>(<span class="str">'canvas'</span>);
+  canvas.width  = frame.w * dpr;
+  canvas.height = frame.h * dpr;
+
+  <span class="kw">const</span> ctx = canvas.<span class="fn">getContext</span>(<span class="str">'2d'</span>);
+  ctx.<span class="fn">scale</span>(dpr, dpr);
+
+  <span class="cm">// 2. 移动原点到裁剪框中心（画布中心）</span>
+  ctx.<span class="fn">translate</span>(frame.w / <span class="num">2</span>, frame.h / <span class="num">2</span>);
+
+  <span class="cm">// 3. 施加旋转</span>
+  ctx.<span class="fn">rotate</span>((t.rotate * Math.PI) / <span class="num">180</span>);
+
+  <span class="cm">// 4. 施加缩放</span>
+  ctx.<span class="fn">scale</span>(t.scale, t.scale);
+
+  <span class="cm">// 5. 把图片画进来，原点对齐图片中心
+  //    t.x / t.y 是图片中心相对裁剪框中心的偏移</span>
+  ctx.<span class="fn">drawImage</span>(
+    img,
+    t.x / t.scale - img.naturalWidth  / <span class="num">2</span>,
+    t.y / t.scale - img.naturalHeight / <span class="num">2</span>
+  );
+
+  <span class="cm">// 6. 清理（可选，帮助 GC）</span>
+  <span class="cm">// canvas.width = 0; canvas.height = 0;</span>
+
+  <span class="kw">return</span> canvas;
+}</pre>
+    </div>
+  </div>
+</div>
+
+<!-- hidden temp canvas for cropping -->
+<canvas id="debugCanvas"></canvas>
+
+<script>
+  const stage       = document.getElementById('stage');
+  const sourceImg   = document.getElementById('sourceImg');
+  const fileInput   = document.getElementById('fileInput');
+  const uploadLabel = document.getElementById('uploadLabel');
+  const cropSvg     = document.getElementById('cropSvg');
+  const scaleRange  = document.getElementById('scaleRange');
+  const scaleVal    = document.getElementById('scaleVal');
+  const rotateRange = document.getElementById('rotateRange');
+  const rotateVal   = document.getElementById('rotateVal');
+  const resetBtn    = document.getElementById('resetBtn');
+  const cropBtn     = document.getElementById('cropBtn');
+  const resultCanvas = document.getElementById('resultCanvas');
+  const resultEmpty  = document.getElementById('resultEmpty');
+  const downloadBtn  = document.getElementById('downloadBtn');
+
+  // ── transform state (视口坐标，相对舞台中心) ──
+  const t = { x: 0, y: 0, scale: 1, rotate: 0 };
+
+  // ── 裁剪框尺寸 (px, CSS坐标) ──
+  const FRAME_SIZE = 180;
+
+  // ── 绘制裁剪框 SVG ──
+  function drawCropFrame() {
+    const w = stage.offsetWidth || 300;
+    const h = stage.offsetHeight || 300;
+    cropSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+
+    const fx = (w - FRAME_SIZE) / 2;
+    const fy = (h - FRAME_SIZE) / 2;
+    const fw = FRAME_SIZE;
+    const fh = FRAME_SIZE;
+
+    const third_x = fw / 3;
+    const third_y = fh / 3;
+
+    cropSvg.innerHTML = `
+      <!-- dim mask -->
+      <path fill="rgba(0,0,0,0.52)" fill-rule="evenodd"
+        d="M0 0 H${w} V${h} H0 Z
+           M${fx} ${fy} H${fx+fw} V${fy+fh} H${fx} Z"/>
+      <!-- frame border -->
+      <rect x="${fx}" y="${fy}" width="${fw}" height="${fh}"
+        fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5"/>
+      <!-- rule-of-thirds -->
+      <line x1="${fx+third_x}" y1="${fy}" x2="${fx+third_x}" y2="${fy+fh}"
+        stroke="rgba(255,255,255,0.25)" stroke-width="0.75"/>
+      <line x1="${fx+third_x*2}" y1="${fy}" x2="${fx+third_x*2}" y2="${fy+fh}"
+        stroke="rgba(255,255,255,0.25)" stroke-width="0.75"/>
+      <line x1="${fx}" y1="${fy+third_y}" x2="${fx+fw}" y2="${fy+third_y}"
+        stroke="rgba(255,255,255,0.25)" stroke-width="0.75"/>
+      <line x1="${fx}" y1="${fy+third_y*2}" x2="${fx+fw}" y2="${fy+third_y*2}"
+        stroke="rgba(255,255,255,0.25)" stroke-width="0.75"/>
+      <!-- corners -->
+      <path d="M${fx} ${fy+12} V${fy} H${fx+12}" fill="none" stroke="white" stroke-width="2.5"/>
+      <path d="M${fx+fw-12} ${fy} H${fx+fw} V${fy+12}" fill="none" stroke="white" stroke-width="2.5"/>
+      <path d="M${fx} ${fy+fh-12} V${fy+fh} H${fx+12}" fill="none" stroke="white" stroke-width="2.5"/>
+      <path d="M${fx+fw-12} ${fy+fh} H${fx+fw} V${fy+fh-12}" fill="none" stroke="white" stroke-width="2.5"/>
+    `;
+  }
+
+  // ── 把 transform 应用到 img CSS ──
+  function applyTransform() {
+    // 图片 position: absolute, top/left 50% → 默认中心在舞台中心
+    // 再叠加用户的 translate
+    sourceImg.style.transform =
+      `translate(-50%, -50%) translate(${t.x}px, ${t.y}px) rotate(${t.rotate}deg) scale(${t.scale})`;
+  }
+
+  // ── 文件上传 ──
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    sourceImg.onload = () => {
+      // reset transform
+      t.x = 0; t.y = 0; t.scale = 1; t.rotate = 0;
+      scaleRange.value = 100; scaleVal.textContent = '100%';
+      rotateRange.value = 0; rotateVal.textContent = '0°';
+      applyTransform();
+      sourceImg.style.display = 'block';
+      uploadLabel.style.display = 'none';
+      resetBtn.disabled = false;
+      cropBtn.disabled = false;
+      drawCropFrame();
+    };
+    sourceImg.src = url;
+  });
+
+  // ── 缩放 ──
+  scaleRange.addEventListener('input', () => {
+    t.scale = parseInt(scaleRange.value) / 100;
+    scaleVal.textContent = scaleRange.value + '%';
+    applyTransform();
+  });
+
+  // ── 旋转 ──
+  rotateRange.addEventListener('input', () => {
+    t.rotate = parseInt(rotateRange.value);
+    rotateVal.textContent = rotateRange.value + '°';
+    applyTransform();
+  });
+
+  // ── 鼠标拖拽 ──
+  let dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  stage.addEventListener('mousedown', e => {
+    if (!sourceImg.src) return;
+    dragging = true;
+    sx = e.clientX; sy = e.clientY;
+    ox = t.x; oy = t.y;
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    t.x = ox + (e.clientX - sx);
+    t.y = oy + (e.clientY - sy);
+    applyTransform();
+  });
+  window.addEventListener('mouseup', () => { dragging = false; });
+
+  // 触摸
+  stage.addEventListener('touchstart', e => {
+    if (!sourceImg.src || e.touches.length !== 1) return;
+    dragging = true;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+    ox = t.x; oy = t.y;
+  }, { passive: true });
+  window.addEventListener('touchmove', e => {
+    if (!dragging || e.touches.length !== 1) return;
+    t.x = ox + (e.touches[0].clientX - sx);
+    t.y = oy + (e.touches[0].clientY - sy);
+    applyTransform();
+  }, { passive: true });
+  window.addEventListener('touchend', () => { dragging = false; });
+
+  // 滚轮缩放
+  stage.addEventListener('wheel', e => {
+    e.preventDefault();
+    let v = Math.round(t.scale * 100) - Math.sign(e.deltaY) * 5;
+    v = Math.max(20, Math.min(300, v));
+    t.scale = v / 100;
+    scaleRange.value = v;
+    scaleVal.textContent = v + '%';
+    applyTransform();
+  }, { passive: false });
+
+  // ── 重置 ──
+  resetBtn.addEventListener('click', () => {
+    t.x = 0; t.y = 0; t.scale = 1; t.rotate = 0;
+    scaleRange.value = 100; scaleVal.textContent = '100%';
+    rotateRange.value = 0; rotateVal.textContent = '0°';
+    applyTransform();
+  });
+
+  // ──────────────────────────────────────────
+  //  核心裁剪函数
+  // ──────────────────────────────────────────
+  function cropImage(img, transform, frameSize) {
+    const dpr = window.devicePixelRatio || 1;
+
+    // 1. 创建输出 canvas，尺寸 = 裁剪框，乘以 DPR 保证清晰度
+    const canvas = document.createElement('canvas');
+    canvas.width  = frameSize * dpr;
+    canvas.height = frameSize * dpr;
+
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    // 2. 移动原点到 canvas 中心（= 裁剪框中心）
+    ctx.translate(frameSize / 2, frameSize / 2);
+
+    // 3. 旋转
+    ctx.rotate((transform.rotate * Math.PI) / 180);
+
+    // 4. 缩放
+    ctx.scale(transform.scale, transform.scale);
+
+    // 5. 绘制图片
+    //    图片中心在舞台中心偏移 (t.x, t.y) 处
+    //    换算到当前坐标系（已经 scale 过）：除以 scale
+    //    再减去图片自身宽高的一半，让图片中心对齐原点
+    const imgOffsetX = transform.x / transform.scale - img.naturalWidth  / 2;
+    const imgOffsetY = transform.y / transform.scale - img.naturalHeight / 2;
+    ctx.drawImage(img, imgOffsetX, imgOffsetY);
+
+    return canvas;
+  }
+
+  // ── 确认裁剪 ──
+  cropBtn.addEventListener('click', () => {
+    const stageW = stage.offsetWidth;
+    const stageH = stage.offsetHeight;
+
+    // 把 t.x/t.y (相对舞台左上) 转成相对舞台中心
+    // 注意：applyTransform 里图片已经 translate(-50%,-50%) 即默认居中
+    // 所以 t.x/t.y 已经是相对中心的偏移，直接用即可
+    const out = cropImage(sourceImg, t, FRAME_SIZE);
+
+    // 显示到结果区
+    resultCanvas.width  = out.width;
+    resultCanvas.height = out.height;
+    resultCanvas.style.width  = FRAME_SIZE + 'px';
+    resultCanvas.style.height = FRAME_SIZE + 'px';
+    const rctx = resultCanvas.getContext('2d');
+    rctx.drawImage(out, 0, 0);
+    resultCanvas.style.display = 'block';
+    resultEmpty.style.display  = 'none';
+    downloadBtn.disabled = false;
+
+    // 释放临时 canvas
+    out.width = 0; out.height = 0;
+  });
+
+  // ── 下载 ──
+  downloadBtn.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'cropped.png';
+    link.href = resultCanvas.toDataURL('image/png');
+    link.click();
+  });
+
+  // ── 初始化 SVG 帧（页面加载时） ──
+  window.addEventListener('resize', drawCropFrame);
+  drawCropFrame();
+</script>
+</body>
+</html>

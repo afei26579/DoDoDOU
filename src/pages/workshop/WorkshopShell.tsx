@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { defaultCropTransform, defaultWorkshopConfig } from '../../features/workshop/model/defaults';
 import { saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
+import { cropImageToDataUrl } from '../../lib/pattern/crop';
 import { generatePatternFromImage } from '../../lib/pattern/generator';
 import { removePatternBackground } from '../../lib/pattern/remove-background';
 import { WorkshopPage } from './WorkshopPage';
@@ -37,8 +38,12 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
 
     actions.setGenerating(true);
     try {
-      const result = await generatePatternFromImage({
+      const croppedImageUrl = await cropImageToDataUrl({
         imageUrl: state.uploadedImage.dataUrl,
+        cropTransform: state.cropTransform,
+      });
+      const result = await generatePatternFromImage({
+        imageUrl: croppedImageUrl,
         config: state.config,
       });
       actions.setPatternResult(result);

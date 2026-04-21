@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { CropTransform, WorkshopFlowState } from '../../features/workshop/model/types';
 import { WorkshopGenerateButton } from './components/WorkshopGenerateButton';
 import { WorkshopHero } from './components/WorkshopHero';
@@ -49,6 +49,15 @@ export function WorkshopPage({
   isHome,
 }: WorkshopPageProps) {
   const [activeTag, setActiveTag] = useState<ParameterTagId>('size');
+  const dragStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    maxOffsetX: number;
+    maxOffsetY: number;
+  } | null>(null);
   const [isStatsSheetOpen, setIsStatsSheetOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const { uploadedImage, cropTransform, config, patternResult, isGenerating } = flowState;
@@ -60,6 +69,60 @@ export function WorkshopPage({
     return `${config.colorMergeThreshold}`;
   }, [activeTag, config.brand, config.canvasSize, config.colorMergeThreshold, config.style]);
 
+  const handlePreviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!uploadedImage || mode !== 'create') return;
+    const target = event.target as HTMLElement;
+    if (target.closest('button')) return;
+
+    const viewport = event.currentTarget;
+    const frame = viewport.querySelector('.workshop-canvas__crop-frame') as HTMLElement | null;
+    const image = viewport.querySelector('.workshop-canvas__image') as HTMLImageElement | null;
+
+    if (!frame || !image) return;
+
+    const frameRect = frame.getBoundingClientRect();
+    const imageRect = image.getBoundingClientRect();
+    const currentScale = cropTransform.scale || 1;
+    const scaledWidth = imageRect.width;
+    const scaledHeight = imageRect.height;
+    const maxOffsetX = Math.max(0, (scaledWidth - frameRect.width) / 2);
+    const maxOffsetY = Math.max(0, (scaledHeight - frameRect.height) / 2);
+
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: cropTransform.x,
+      originY: cropTransform.y,
+      maxOffsetX: maxOffsetX / currentScale,
+      maxOffsetY: maxOffsetY / currentScale,
+    };
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handlePreviewPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - dragState.startX;
+    const deltaY = event.clientY - dragState.startY;
+    const nextX = Math.max(-dragState.maxOffsetX, Math.min(dragState.maxOffsetX, dragState.originX + deltaX));
+    const nextY = Math.max(-dragState.maxOffsetY, Math.min(dragState.maxOffsetY, dragState.originY + deltaY));
+
+    onCropTransformChange({
+      ...cropTransform,
+      x: nextX,
+      y: nextY,
+    });
+  };
+
+  const handlePreviewPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStateRef.current?.pointerId === event.pointerId) {
+      dragStateRef.current = null;
+    }
+  };
+
   return (
     <main className="workshop-page">
       <WorkshopHero projectId={projectId} />
@@ -70,9 +133,9 @@ export function WorkshopPage({
         cropTransform={cropTransform}
         isHydrating={isHydrating}
         isHome={isHome}
-        onPointerDown={() => {}}
-        onPointerMove={() => {}}
-        onPointerUp={() => {}}
+        onPointerDown={handlePreviewPointerDown}
+        onPointerMove={handlePreviewPointerMove}
+        onPointerUp={handlePreviewPointerUp}
         onUploadImage={onUploadImage}
       />
 
