@@ -1,5 +1,6 @@
 import { buildPalette, getVendorCode, type PatternPaletteColor, type PatternRgb } from './color-system';
-import type { PatternCell, PatternResult, WorkshopConfig, WorkshopStyle } from '../../features/workshop/model/types';
+import { createCropCanvas, loadImage } from './crop';
+import type { CropTransform, PatternCell, PatternResult, WorkshopConfig, WorkshopStyle } from '../../features/workshop/model/types';
 
 function colorDistance(a: PatternRgb, b: PatternRgb) {
   const dr = a.r - b.r;
@@ -136,19 +137,30 @@ function toMergeThreshold(input: number, style: WorkshopStyle) {
 export async function generatePatternFromImage(params: {
   imageUrl: string;
   config: WorkshopConfig;
+  cropTransform?: CropTransform;
+  cropFrameSize?: number;
 }): Promise<PatternResult> {
-  const { imageUrl, config } = params;
+  const { imageUrl, config, cropTransform, cropFrameSize = 1200 } = params;
   const image = await loadImage(imageUrl);
-  const canvas = document.createElement('canvas');
-  canvas.width = image.naturalWidth || image.width;
-  canvas.height = image.naturalHeight || image.height;
+  const canvas = cropTransform
+    ? createCropCanvas({ image, cropTransform, frameSize: cropFrameSize, outputSize: cropFrameSize })
+    : (() => {
+        const fallbackCanvas = document.createElement('canvas');
+        fallbackCanvas.width = image.naturalWidth || image.width;
+        fallbackCanvas.height = image.naturalHeight || image.height;
+        const fallbackCtx = fallbackCanvas.getContext('2d');
+        if (!fallbackCtx) {
+          throw new Error('无法创建图像处理上下文');
+        }
+        fallbackCtx.drawImage(image, 0, 0, fallbackCanvas.width, fallbackCanvas.height);
+        return fallbackCanvas;
+      })();
   const ctx = canvas.getContext('2d');
 
   if (!ctx) {
     throw new Error('无法创建图像处理上下文');
   }
 
-  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
   const width = config.canvasSize;

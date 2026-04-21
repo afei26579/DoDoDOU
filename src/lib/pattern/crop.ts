@@ -1,6 +1,6 @@
 import type { CropTransform } from '../../features/workshop/model/types';
 
-async function loadImage(src: string) {
+export function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
@@ -26,26 +26,21 @@ export function createCropCanvas(params: {
     throw new Error('无法创建裁剪画布');
   }
 
-  const scale = cropTransform.scale || 1;
-  const rotate = cropTransform.rotate ?? 0;
   const imageWidth = image.naturalWidth || image.width;
   const imageHeight = image.naturalHeight || image.height;
-  const baseScale = Math.min(outputSize / imageWidth, outputSize / imageHeight);
-  const displayWidth = imageWidth * baseScale * scale;
-  const displayHeight = imageHeight * baseScale * scale;
-  const offsetX = (outputSize - displayWidth) / 2 + cropTransform.x;
-  const offsetY = (outputSize - displayHeight) / 2 + cropTransform.y;
+  const scale = cropTransform.scale || 1;
+  const rotate = cropTransform.rotate ?? 0;
+  const renderScale = outputSize / frameSize;
+  const baseScale = Math.min(frameSize / imageWidth, frameSize / imageHeight);
+  const drawWidth = imageWidth * baseScale * renderScale;
+  const drawHeight = imageHeight * baseScale * renderScale;
 
   ctx.scale(dpr, dpr);
   ctx.translate(outputSize / 2, outputSize / 2);
   ctx.rotate((rotate * Math.PI) / 180);
-  ctx.translate(cropTransform.x, cropTransform.y);
+  ctx.translate(cropTransform.x * renderScale, cropTransform.y * renderScale);
   ctx.scale(scale, scale);
-  ctx.drawImage(image, -imageWidth * baseScale / 2, -imageHeight * baseScale / 2, imageWidth * baseScale, imageHeight * baseScale);
-
-  // Keep explicit bounds in case future callers use the canvas as a visual preview.
-  void offsetX;
-  void offsetY;
+  ctx.drawImage(image, -drawWidth / (2 * scale), -drawHeight / (2 * scale), drawWidth / scale, drawHeight / scale);
 
   return canvas;
 }

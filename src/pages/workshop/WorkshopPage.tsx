@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CropTransform, WorkshopFlowState } from '../../features/workshop/model/types';
-import { createCropCanvas } from '../../lib/pattern/crop';
+import { createCropCanvas, loadImage } from '../../lib/pattern/crop';
 import { WorkshopGenerateButton } from './components/WorkshopGenerateButton';
 import { WorkshopHero } from './components/WorkshopHero';
 import { WorkshopHomeToolbar } from './components/WorkshopHomeToolbar';
@@ -75,29 +75,36 @@ export function WorkshopPage({
 
   useEffect(() => {
     if (!uploadedImage?.dataUrl) return;
-    const image = new Image();
-    image.onload = () => {
-      cropPreviewImageRef.current = image;
+    let alive = true;
+    loadImage(uploadedImage.dataUrl)
+      .then((image) => {
+        if (!alive) return;
+        cropPreviewImageRef.current = image;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      alive = false;
     };
-    image.src = uploadedImage.dataUrl;
   }, [uploadedImage?.dataUrl]);
 
   useEffect(() => {
     if (!isCropPreviewOpen || !uploadedImage) return;
 
     let alive = true;
-    const image = new Image();
-    image.onload = () => {
+    const ensureImage = cropPreviewImageRef.current ? Promise.resolve(cropPreviewImageRef.current) : loadImage(uploadedImage.dataUrl);
+
+    ensureImage.then((image) => {
       if (!alive) return;
+      cropPreviewImageRef.current = image;
       const previewCanvas = createCropCanvas({
         image,
         cropTransform,
         frameSize: 360,
-        outputSize: 960,
+        outputSize: 360,
       });
       setCropPreviewDataUrl(previewCanvas.toDataURL('image/png'));
-    };
-    image.src = uploadedImage.dataUrl;
+    });
 
     return () => {
       alive = false;
@@ -160,22 +167,15 @@ export function WorkshopPage({
   const handleOpenCropPreview = async () => {
     if (!uploadedImage?.dataUrl) return;
     if (!cropPreviewImageRef.current) {
-      const image = new Image();
-      await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
-        image.onerror = () => reject(new Error('图片加载失败'));
-        image.src = uploadedImage.dataUrl;
-      });
-      cropPreviewImageRef.current = image;
+      cropPreviewImageRef.current = await loadImage(uploadedImage.dataUrl);
     }
-
-    const canvas = createCropCanvas({
+    const previewCanvas = createCropCanvas({
       image: cropPreviewImageRef.current,
       cropTransform,
       frameSize: 1200,
       outputSize: 1200,
     });
-    setCropPreviewDataUrl(canvas.toDataURL('image/png'));
+    setCropPreviewDataUrl(previewCanvas.toDataURL('image/png'));
     setIsCropPreviewOpen(true);
   };
 
@@ -207,7 +207,7 @@ export function WorkshopPage({
             onCropZoomIn={() => onCropTransformChange((current) => ({ ...current, scale: Math.min(3, +(current.scale + 0.1).toFixed(2)) }))}
             onCropZoomOut={() => onCropTransformChange((current) => ({ ...current, scale: Math.max(0.5, +(current.scale - 0.1).toFixed(2)) }))}
             onCropReset={() => onCropTransformChange({ scale: 1, x: 0, y: 0, rotate: 0 })}
-            onViewCropPreview={() => setIsCropPreviewOpen(true)}
+            onViewCropPreview={handleOpenCropPreview}
             onViewPattern={onViewPattern}
             onBackToOriginal={onBackToOriginal}
             onRegenerate={onRegenerate}
@@ -269,7 +269,11 @@ export function WorkshopPage({
             </header>
 
             <div className="crop-preview-modal__body">
-              {cropPreviewDataUrl ? <img className="crop-preview-modal__image" src={cropPreviewDataUrl} alt="裁剪后的图片预览" /> : <div className="crop-preview-modal__loading">正在生成预览...</div>}
+              {cropPreviewDataUrl ? (
+                <img className="crop-preview-modal__image" src={cropPreviewDataUrl} alt="裁剪后的图片预览" />
+              ) : (
+                <div className="crop-preview-modal__loading">正在生成预览...</div>
+              )}
             </div>
           </section>
         </div>
