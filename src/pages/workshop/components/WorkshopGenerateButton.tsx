@@ -8,6 +8,8 @@ type WorkshopGenerateButtonProps = {
   onOpenEditor?: () => void;
   onRegenerate?: () => void;
   onOpenDownloadSettings?: () => void;
+  onManualEditNavigate?: () => void;
+  onOpenFocusMode?: () => void;
 };
 
 export function WorkshopGenerateButton({
@@ -20,6 +22,8 @@ export function WorkshopGenerateButton({
   onOpenEditor,
   onRegenerate,
   onOpenDownloadSettings,
+  onManualEditNavigate,
+  onOpenFocusMode,
 }: WorkshopGenerateButtonProps) {
   if (mode === 'result') {
     return (
@@ -33,12 +37,12 @@ export function WorkshopGenerateButton({
             <span className="workshop-result-actions__icon workshop-result-actions__icon--lavender">↓</span>
             <span className="workshop-result-actions__label">下载图纸</span>
           </button>
-          <button type="button" className="workshop-result-actions__tile workshop-result-actions__tile--amber" onClick={onOpenEditor} disabled={isGenerating}>
+          <button type="button" className="workshop-result-actions__tile workshop-result-actions__tile--amber" onClick={onManualEditNavigate ?? onOpenEditor} disabled={isGenerating}>
             <span className="workshop-result-actions__icon workshop-result-actions__icon--amber">✎</span>
             <span className="workshop-result-actions__label">手动编辑</span>
           </button>
         </div>
-        <button type="button" className="workshop-generate-button workshop-generate-button--result" onClick={onRegenerate ?? onClick} disabled={disabled}>
+        <button type="button" className="workshop-generate-button workshop-generate-button--result" onClick={onOpenFocusMode ?? onRegenerate ?? onClick} disabled={disabled}>
           {isGenerating ? '拼豆准备中...' : '立即拼豆'}
         </button>
       </div>

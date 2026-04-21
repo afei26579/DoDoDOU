@@ -140,6 +140,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
           fileInputRef.current?.click();
         }}
         onViewPattern={() => navigate(`/workshop/result/${projectId ?? createProjectId()}`)}
+        onOpenEditor={() => navigate(`/workshop/editor/${projectId ?? createProjectId()}`)}
+        onOpenFocusMode={() => navigate(`/workshop/focus/${projectId ?? createProjectId()}`)}
       />
     </>
   );

@@ -28,6 +28,8 @@ type WorkshopPageProps = {
   isHydrating: boolean;
   onViewPattern: () => void;
   onOpenDownloadSettings?: () => void;
+  onOpenEditor?: () => void;
+  onOpenFocusMode?: () => void;
   isHome: boolean;
 };
 
@@ -47,6 +49,8 @@ export function WorkshopPage({
   isHydrating,
   onViewPattern,
   onOpenDownloadSettings,
+  onOpenEditor,
+  onOpenFocusMode,
   isHome,
 }: WorkshopPageProps) {
   const [activeTag, setActiveTag] = useState<ParameterTagId>('size');
@@ -228,9 +232,11 @@ export function WorkshopPage({
               onClick={onGeneratePattern}
               onRemoveBackground={onRemoveBackground}
               onViewPattern={onViewPattern}
-              onOpenEditor={() => onSwitchViewMode('image')}
+              onOpenEditor={onOpenEditor}
               onRegenerate={onGeneratePattern}
               onOpenDownloadSettings={() => setIsDownloadModalOpen(true)}
+              onManualEditNavigate={onOpenEditor}
+              onOpenFocusMode={onOpenFocusMode}
             />
           </>
         ) : (
@@ -246,7 +252,14 @@ export function WorkshopPage({
               <WorkshopParameterPanel activeTag={activeTag} config={config} onConfigChange={onConfigChange} />
             </div>
 
-            <WorkshopGenerateButton mode={mode} isGenerating={isGenerating} disabled={!uploadedImage || isGenerating} onClick={onGeneratePattern} />
+            <WorkshopGenerateButton
+              mode={mode}
+              isGenerating={isGenerating}
+              disabled={!uploadedImage || isGenerating}
+              onClick={onGeneratePattern}
+              onOpenEditor={onOpenEditor}
+              onManualEditNavigate={onOpenEditor}
+            />
           </>
         )}
       </section>

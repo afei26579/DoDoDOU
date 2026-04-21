@@ -167,13 +167,13 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult }: D
             </div>
             <div className="download-modal__divider" />
             <div className="download-modal__setting-row download-modal__setting-row--list">
-              <strong>色号统计</strong>
+              <strong>用料清单</strong>
               <button
                 type="button"
                 className={`download-switch ${showSymbolStats ? 'is-on' : ''}`}
                 role="switch"
                 aria-checked={showSymbolStats}
-                aria-label="色号统计"
+                aria-label="用料清单"
                 onClick={() => setShowSymbolStats((current) => !current)}
               />
             </div>

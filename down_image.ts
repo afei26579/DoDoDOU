@@ -21,8 +21,8 @@ export async function downloadImage({
       return;
     }
     if (!colorCounts) {
-      console.error("下载失败: 色号统计数据无效。");
-      alert("无法下载图纸，色号统计数据未生成或无效。");
+      console.error("下载失败: 用料清单数据无效。");
+      alert("无法下载图纸，用料清单数据未生成或无效。");
       return;
     }
     

@@ -3,12 +3,9 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-
 import { navItems, type NavItemId } from './navigation';
 import { BottomNav } from './components/BottomNav';
 import { CollectionPage } from '../pages/collection/CollectionPage';
-import { CropPage } from '../pages/crop/CropPage';
 import { DiscoveryPage } from '../pages/discovery/DiscoveryPage';
 import { FocusModePage } from '../pages/workshop/FocusModePage';
 import { WorkshopEditorPage } from '../pages/workshop/WorkshopEditorPage';
-import { WorkshopPreviewPage } from '../pages/workshop/WorkshopPreviewPage';
-import { WorkshopSettingsPage } from '../pages/workshop/WorkshopSettingsPage';
 import { WorkshopHomePage } from '../pages/workshop/WorkshopHomePage';
 import { WorkshopShell } from '../pages/workshop/WorkshopShell';
 import { defaultCropTransform, defaultWorkshopConfig } from '../features/workshop/model/defaults';
@@ -22,15 +19,19 @@ const routeToTab: Partial<Record<string, NavItemId>> = {
   '/workshop/settings': 'workshop',
   '/workshop/preview': 'workshop',
   '/workshop/editor': 'workshop',
+  '/workshop/editor/:projectId': 'workshop',
   '/workshop/focus': 'workshop',
+  '/workshop/focus/:projectId': 'workshop',
   '/collection': 'collection',
 };
 
-const hiddenBottomNavPaths = new Set(['/crop', '/workshop/settings', '/workshop/editor', '/workshop/focus']);
+const hiddenBottomNavPaths = new Set(['/crop', '/workshop/settings', '/workshop/editor', '/workshop/editor/:projectId', '/workshop/focus', '/workshop/focus/:projectId']);
 
 function normalizePath(pathname: string) {
   if (pathname.startsWith('/workshop/create/')) return '/workshop/create';
   if (pathname.startsWith('/workshop/result/')) return '/workshop/result';
+  if (pathname.startsWith('/workshop/editor/')) return '/workshop/editor';
+  if (pathname.startsWith('/workshop/focus/')) return '/workshop/focus';
   return pathname;
 }
 
@@ -44,7 +45,10 @@ export function App() {
 
   const normalizedPath = useMemo(() => normalizePath(location.pathname), [location.pathname]);
   const activeTab: NavItemId = routeToTab[normalizedPath] ?? 'discovery';
-  const showBottomNav = !hiddenBottomNavPaths.has(location.pathname);
+  const shouldHideBottomNav =
+    hiddenBottomNavPaths.has(location.pathname) ||
+    location.pathname.startsWith('/workshop/editor/');
+  const showBottomNav = !shouldHideBottomNav;
 
   const handleUploadToWorkshop = async (image: { name: string; type: string; size: number; dataUrl: string }) => {
     const dimensions = await new Promise<{ width: number; height: number }>((resolve, reject) => {
@@ -81,7 +85,7 @@ export function App() {
               />
             }
           />
-          <Route path="/crop" element={<CropPage onNext={() => navigate('/workshop/settings')} />} />
+          {/* <Route path="/crop" element={<CropPage onNext={() => navigate('/workshop/settings')} />} /> */}
           <Route
             path="/workshop"
             element={
@@ -106,8 +110,8 @@ export function App() {
           />
           <Route path="/workshop/create/:projectId" element={<WorkshopShell mode="create" />} />
           <Route path="/workshop/result/:projectId" element={<WorkshopShell mode="result" />} />
-          <Route path="/workshop/settings" element={<WorkshopSettingsPage onGeneratePreview={() => navigate('/workshop/preview')} />} />
-          <Route
+          {/* <Route path="/workshop/settings" element={<WorkshopSettingsPage onGeneratePreview={() => navigate('/workshop/preview')} />} /> */}
+          {/* <Route
             path="/workshop/preview"
             element={
               <WorkshopPreviewPage
@@ -117,10 +121,10 @@ export function App() {
                 patternResult={null}
               />
             }
-          />
+          /> */}
 
-          <Route path="/workshop/editor" element={<WorkshopEditorPage />} />
-          <Route path="/workshop/focus" element={<FocusModePage />} />
+          <Route path="/workshop/editor/:projectId" element={<WorkshopEditorPage />} />
+          <Route path="/workshop/focus/:projectId" element={<FocusModePage />} />
           <Route path="/collection" element={<CollectionPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

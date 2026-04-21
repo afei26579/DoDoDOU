@@ -1,3 +1,6 @@
+import { useNavigate, useParams } from 'react-router-dom';
+import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
+
 const focusLayers = [
   { name: '当前层', count: '324', active: true },
   { name: '上一层', count: '280', active: false },
@@ -14,6 +17,10 @@ const beadList = [
 const strategies = ['边缘优先', '大块优先', '距离优先'] as const;
 
 export function FocusModePage() {
+  const navigate = useNavigate();
+  const { projectId } = useParams();
+  const { state, isHydrating } = useWorkshopFlow(projectId ?? null);
+
   return (
     <main className="focus-mode-page" aria-label="拼豆模式页面">
       <section className="focus-mode-stage card-surface">
@@ -31,9 +38,9 @@ export function FocusModePage() {
         <div className="section-heading-row">
           <div>
             <p className="eyebrow">沉浸拼豆</p>
-            <h2>当前层高亮</h2>
+            <h2>{isHydrating ? '加载中...' : '当前层高亮'}</h2>
           </div>
-          <span className="focus-mode-summary__hint">深色背景专注模式</span>
+          <span className="focus-mode-summary__hint">{projectId ? `项目 ${projectId}` : '深色背景专注模式'}</span>
         </div>
 
         <div className="focus-mode-layers">
@@ -75,7 +82,7 @@ export function FocusModePage() {
       </section>
 
       <div className="focus-mode-actions">
-        <button className="focus-mode-actions__secondary" type="button">
+        <button className="focus-mode-actions__secondary" type="button" onClick={() => navigate(`/workshop/result/${projectId ?? ''}`)}>
           返回预览
         </button>
         <button className="focus-mode-actions__primary" type="button">

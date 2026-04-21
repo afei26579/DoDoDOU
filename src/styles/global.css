@@ -155,7 +155,7 @@ p { margin: 0; }
 .workshop-canvas__frame {
   aspect-ratio: 1 / 1;
   border-radius: 0;
-  background-color: #fff;
+  background-color: #F3F1EC;
   background-image:
     radial-gradient(circle at 1px 1px, rgba(93,83,74,0.1) 1px, transparent 0);
   background-size: 18px 18px;
@@ -290,12 +290,12 @@ p { margin: 0; }
   overflow: hidden;
   touch-action: none;
   border-radius: 0;
-  background-color: #f7f5ef;
+  background-color: #F3F1EC;
   background-image:
-    linear-gradient(45deg, #e7e2d9 25%, transparent 25%),
-    linear-gradient(-45deg, #e7e2d9 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #e7e2d9 75%),
-    linear-gradient(-45deg, transparent 75%, #e7e2d9 75%);
+    linear-gradient(45deg, #E4DFD6 25%, transparent 25%),
+    linear-gradient(-45deg, #E4DFD6 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #E4DFD6 75%),
+    linear-gradient(-45deg, transparent 75%, #E4DFD6 75%);
   background-size: 18px 18px;
   background-position: 0 0, 0 9px, 9px -9px, -9px 0px;
 }
