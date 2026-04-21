@@ -78,6 +78,13 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       reader.readAsDataURL(file);
     });
 
+    const imageSize = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve({ width: image.naturalWidth || image.width, height: image.naturalHeight || image.height });
+      image.onerror = () => reject(new Error('图片加载失败'));
+      image.src = dataUrl;
+    });
+
     const nextProjectId = createProjectId();
     await saveWorkshopProject(nextProjectId, {
       uploadedImage: {
@@ -85,6 +92,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         type: file.type,
         size: file.size,
         dataUrl,
+        width: imageSize.width,
+        height: imageSize.height,
       },
       cropTransform: defaultCropTransform,
       config: defaultWorkshopConfig,

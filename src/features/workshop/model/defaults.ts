@@ -4,6 +4,7 @@ export const defaultCropTransform: CropTransform = {
   scale: 1,
   x: 0,
   y: 0,
+  rotate: 0,
 };
 
 export const defaultWorkshopConfig: WorkshopConfig = {

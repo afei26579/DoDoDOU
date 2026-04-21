@@ -85,9 +85,7 @@
     position: absolute;
     transform-origin: center center;
     pointer-events: none;
-    /* initial center */
     top: 50%; left: 50%;
-    transform: translate(-50%, -50%) translate(0px, 0px) scale(1);
     max-width: none;
     display: none;
   }
@@ -199,8 +197,10 @@
     position: relative;
   }
   #resultCanvas {
-    max-width: 100%;
-    max-height: 280px;
+    /* 正方形显示，撑满容器宽度，高度自动跟随 */
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1 / 1;
     display: none;
     border-radius: 4px;
   }
@@ -280,6 +280,7 @@
     </div>
 
     <div class="btn-row">
+      <button id="reuploadBtn" disabled>重新上传</button>
       <button id="resetBtn" disabled>重置</button>
       <button id="cropBtn" class="primary" disabled>确认裁剪</button>
     </div>
@@ -346,102 +347,117 @@
 <canvas id="debugCanvas"></canvas>
 
 <script>
-  const stage       = document.getElementById('stage');
-  const sourceImg   = document.getElementById('sourceImg');
-  const fileInput   = document.getElementById('fileInput');
-  const uploadLabel = document.getElementById('uploadLabel');
-  const cropSvg     = document.getElementById('cropSvg');
-  const scaleRange  = document.getElementById('scaleRange');
-  const scaleVal    = document.getElementById('scaleVal');
-  const rotateRange = document.getElementById('rotateRange');
-  const rotateVal   = document.getElementById('rotateVal');
-  const resetBtn    = document.getElementById('resetBtn');
-  const cropBtn     = document.getElementById('cropBtn');
+  const stage        = document.getElementById('stage');
+  const sourceImg    = document.getElementById('sourceImg');
+  const fileInput    = document.getElementById('fileInput');
+  const uploadLabel  = document.getElementById('uploadLabel');
+  const cropSvg      = document.getElementById('cropSvg');
+  const scaleRange   = document.getElementById('scaleRange');
+  const scaleVal     = document.getElementById('scaleVal');
+  const rotateRange  = document.getElementById('rotateRange');
+  const rotateVal    = document.getElementById('rotateVal');
+  const resetBtn     = document.getElementById('resetBtn');
+  const reuploadBtn  = document.getElementById('reuploadBtn');
+  const cropBtn      = document.getElementById('cropBtn');
   const resultCanvas = document.getElementById('resultCanvas');
   const resultEmpty  = document.getElementById('resultEmpty');
   const downloadBtn  = document.getElementById('downloadBtn');
 
-  // ── transform state (视口坐标，相对舞台中心) ──
+  // ── transform state（视口坐标，相对舞台中心）──
+  // baseScale: 图片 contain 适配后的初始缩放比，作为 scale=1 的基准
   const t = { x: 0, y: 0, scale: 1, rotate: 0 };
+  let baseScale = 1; // contain fit 计算出的初始比例
 
-  // ── 裁剪框尺寸 (px, CSS坐标) ──
-  const FRAME_SIZE = 180;
+  // ──────────────────────────────────────────
+  //  计算 contain 适配的初始缩放比
+  //  让图片完整显示在正方形编辑区内，居中，留空
+  // ──────────────────────────────────────────
+  function calcContainScale(imgW, imgH, stageSize) {
+    // contain: 取宽高中较大的缩放比（更小的那个），确保图片完整显示
+    const scaleByW = stageSize / imgW;
+    const scaleByH = stageSize / imgH;
+    return Math.min(scaleByW, scaleByH);
+  }
 
-  // ── 绘制裁剪框 SVG ──
+  // ── 绘制裁剪框 SVG（裁剪框 = 编辑区全尺寸，仅绘制三分线和四角）──
   function drawCropFrame() {
-    const w = stage.offsetWidth || 300;
+    const w = stage.offsetWidth  || 300;
     const h = stage.offsetHeight || 300;
     cropSvg.setAttribute('viewBox', `0 0 ${w} ${h}`);
 
-    const fx = (w - FRAME_SIZE) / 2;
-    const fy = (h - FRAME_SIZE) / 2;
-    const fw = FRAME_SIZE;
-    const fh = FRAME_SIZE;
-
-    const third_x = fw / 3;
-    const third_y = fh / 3;
+    // 裁剪框占满整个编辑区
+    const fx = 0, fy = 0, fw = w, fh = h;
+    const tx = fw / 3, ty = fh / 3;
+    const cs = 16; // 角标长度
 
     cropSvg.innerHTML = `
-      <!-- dim mask -->
-      <path fill="rgba(0,0,0,0.52)" fill-rule="evenodd"
-        d="M0 0 H${w} V${h} H0 Z
-           M${fx} ${fy} H${fx+fw} V${fy+fh} H${fx} Z"/>
-      <!-- frame border -->
       <rect x="${fx}" y="${fy}" width="${fw}" height="${fh}"
-        fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="1.5"/>
-      <!-- rule-of-thirds -->
-      <line x1="${fx+third_x}" y1="${fy}" x2="${fx+third_x}" y2="${fy+fh}"
-        stroke="rgba(255,255,255,0.25)" stroke-width="0.75"/>
-      <line x1="${fx+third_x*2}" y1="${fy}" x2="${fx+third_x*2}" y2="${fy+fh}"
-        stroke="rgba(255,255,255,0.25)" stroke-width="0.75"/>
-      <line x1="${fx}" y1="${fy+third_y}" x2="${fx+fw}" y2="${fy+third_y}"
-        stroke="rgba(255,255,255,0.25)" stroke-width="0.75"/>
-      <line x1="${fx}" y1="${fy+third_y*2}" x2="${fx+fw}" y2="${fy+third_y*2}"
-        stroke="rgba(255,255,255,0.25)" stroke-width="0.75"/>
-      <!-- corners -->
-      <path d="M${fx} ${fy+12} V${fy} H${fx+12}" fill="none" stroke="white" stroke-width="2.5"/>
-      <path d="M${fx+fw-12} ${fy} H${fx+fw} V${fy+12}" fill="none" stroke="white" stroke-width="2.5"/>
-      <path d="M${fx} ${fy+fh-12} V${fy+fh} H${fx+12}" fill="none" stroke="white" stroke-width="2.5"/>
-      <path d="M${fx+fw-12} ${fy+fh} H${fx+fw} V${fy+fh-12}" fill="none" stroke="white" stroke-width="2.5"/>
+        fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+      <line x1="${fx+tx}"   y1="${fy}" x2="${fx+tx}"   y2="${fy+fh}" stroke="rgba(255,255,255,0.18)" stroke-width="0.75"/>
+      <line x1="${fx+tx*2}" y1="${fy}" x2="${fx+tx*2}" y2="${fy+fh}" stroke="rgba(255,255,255,0.18)" stroke-width="0.75"/>
+      <line x1="${fx}" y1="${fy+ty}"   x2="${fx+fw}" y2="${fy+ty}"   stroke="rgba(255,255,255,0.18)" stroke-width="0.75"/>
+      <line x1="${fx}" y1="${fy+ty*2}" x2="${fx+fw}" y2="${fy+ty*2}" stroke="rgba(255,255,255,0.18)" stroke-width="0.75"/>
+      <path d="M${fx} ${fy+cs} V${fy} H${fx+cs}"           fill="none" stroke="white" stroke-width="2.5"/>
+      <path d="M${fx+fw-cs} ${fy} H${fx+fw} V${fy+cs}"     fill="none" stroke="white" stroke-width="2.5"/>
+      <path d="M${fx} ${fy+fh-cs} V${fy+fh} H${fx+cs}"     fill="none" stroke="white" stroke-width="2.5"/>
+      <path d="M${fx+fw-cs} ${fy+fh} H${fx+fw} V${fy+fh-cs}" fill="none" stroke="white" stroke-width="2.5"/>
     `;
   }
 
-  // ── 把 transform 应用到 img CSS ──
+  // ── 应用 transform 到 img CSS ──
   function applyTransform() {
-    // 图片 position: absolute, top/left 50% → 默认中心在舞台中心
-    // 再叠加用户的 translate
+    // baseScale * t.scale 是最终渲染缩放
+    // t.x / t.y 是用户拖拽产生的额外偏移（CSS px）
+    const finalScale = baseScale * t.scale;
     sourceImg.style.transform =
-      `translate(-50%, -50%) translate(${t.x}px, ${t.y}px) rotate(${t.rotate}deg) scale(${t.scale})`;
+      `translate(-50%, -50%) translate(${t.x}px, ${t.y}px) rotate(${t.rotate}deg) scale(${finalScale})`;
+  }
+
+  // ── 重置到初始 contain 状态 ──
+  function resetTransform() {
+    t.x = 0; t.y = 0; t.scale = 1; t.rotate = 0;
+    scaleRange.value = 100; scaleVal.textContent = '100%';
+    rotateRange.value = 0;  rotateVal.textContent = '0°';
+    applyTransform();
+  }
+
+  // ── 加载图片：计算 contain baseScale，初始化状态 ──
+  function loadImage(file) {
+    const url = URL.createObjectURL(file);
+    sourceImg.onload = () => {
+      const stageSize = stage.offsetWidth; // 正方形，宽 = 高
+      baseScale = calcContainScale(sourceImg.naturalWidth, sourceImg.naturalHeight, stageSize);
+      resetTransform();
+      sourceImg.style.display = 'block';
+      uploadLabel.style.display = 'none';
+      resetBtn.disabled    = false;
+      reuploadBtn.disabled = false;
+      cropBtn.disabled     = false;
+      drawCropFrame();
+    };
+    sourceImg.src = url;
   }
 
   // ── 文件上传 ──
   fileInput.addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    sourceImg.onload = () => {
-      // reset transform
-      t.x = 0; t.y = 0; t.scale = 1; t.rotate = 0;
-      scaleRange.value = 100; scaleVal.textContent = '100%';
-      rotateRange.value = 0; rotateVal.textContent = '0°';
-      applyTransform();
-      sourceImg.style.display = 'block';
-      uploadLabel.style.display = 'none';
-      resetBtn.disabled = false;
-      cropBtn.disabled = false;
-      drawCropFrame();
-    };
-    sourceImg.src = url;
+    loadImage(file);
+    // 清空 input，允许重复选同一文件
+    fileInput.value = '';
   });
 
-  // ── 缩放 ──
+  // ── 重新上传（触发同一个 input）──
+  reuploadBtn.addEventListener('click', () => { fileInput.click(); });
+
+  // ── 缩放滑块（在 baseScale 基础上叠加用户缩放）──
   scaleRange.addEventListener('input', () => {
     t.scale = parseInt(scaleRange.value) / 100;
     scaleVal.textContent = scaleRange.value + '%';
     applyTransform();
   });
 
-  // ── 旋转 ──
+  // ── 旋转滑块 ──
   rotateRange.addEventListener('input', () => {
     t.rotate = parseInt(rotateRange.value);
     rotateVal.textContent = rotateRange.value + '°';
@@ -451,7 +467,7 @@
   // ── 鼠标拖拽 ──
   let dragging = false, sx = 0, sy = 0, ox = 0, oy = 0;
   stage.addEventListener('mousedown', e => {
-    if (!sourceImg.src) return;
+    if (sourceImg.style.display === 'none') return;
     dragging = true;
     sx = e.clientX; sy = e.clientY;
     ox = t.x; oy = t.y;
@@ -465,9 +481,9 @@
   });
   window.addEventListener('mouseup', () => { dragging = false; });
 
-  // 触摸
+  // ── 触摸拖拽 ──
   stage.addEventListener('touchstart', e => {
-    if (!sourceImg.src || e.touches.length !== 1) return;
+    if (sourceImg.style.display === 'none' || e.touches.length !== 1) return;
     dragging = true;
     sx = e.touches[0].clientX; sy = e.touches[0].clientY;
     ox = t.x; oy = t.y;
@@ -480,7 +496,7 @@
   }, { passive: true });
   window.addEventListener('touchend', () => { dragging = false; });
 
-  // 滚轮缩放
+  // ── 滚轮缩放 ──
   stage.addEventListener('wheel', e => {
     e.preventDefault();
     let v = Math.round(t.scale * 100) - Math.sign(e.deltaY) * 5;
@@ -492,42 +508,36 @@
   }, { passive: false });
 
   // ── 重置 ──
-  resetBtn.addEventListener('click', () => {
-    t.x = 0; t.y = 0; t.scale = 1; t.rotate = 0;
-    scaleRange.value = 100; scaleVal.textContent = '100%';
-    rotateRange.value = 0; rotateVal.textContent = '0°';
-    applyTransform();
-  });
+  resetBtn.addEventListener('click', resetTransform);
 
   // ──────────────────────────────────────────
   //  核心裁剪函数
+  //  裁剪框 = 编辑区全尺寸，直接用 stageSize
   // ──────────────────────────────────────────
-  function cropImage(img, transform, frameSize) {
+  function cropImage(img, transform, baseScale, stageSize) {
     const dpr = window.devicePixelRatio || 1;
 
-    // 1. 创建输出 canvas，尺寸 = 裁剪框，乘以 DPR 保证清晰度
     const canvas = document.createElement('canvas');
-    canvas.width  = frameSize * dpr;
-    canvas.height = frameSize * dpr;
+    canvas.width  = stageSize * dpr;
+    canvas.height = stageSize * dpr;
 
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
 
-    // 2. 移动原点到 canvas 中心（= 裁剪框中心）
-    ctx.translate(frameSize / 2, frameSize / 2);
+    // 原点移到 canvas 中心（= 裁剪框中心 = 编辑区中心）
+    ctx.translate(stageSize / 2, stageSize / 2);
 
-    // 3. 旋转
+    // 施加旋转
     ctx.rotate((transform.rotate * Math.PI) / 180);
 
-    // 4. 缩放
-    ctx.scale(transform.scale, transform.scale);
+    // 施加总缩放（baseScale × 用户调节的 scale）
+    const finalScale = baseScale * transform.scale;
+    ctx.scale(finalScale, finalScale);
 
-    // 5. 绘制图片
-    //    图片中心在舞台中心偏移 (t.x, t.y) 处
-    //    换算到当前坐标系（已经 scale 过）：除以 scale
-    //    再减去图片自身宽高的一半，让图片中心对齐原点
-    const imgOffsetX = transform.x / transform.scale - img.naturalWidth  / 2;
-    const imgOffsetY = transform.y / transform.scale - img.naturalHeight / 2;
+    // 绘制图片：把用户拖拽偏移（CSS px）换算回当前坐标系（除以 finalScale）
+    // 再让图片中心对齐原点
+    const imgOffsetX = transform.x / finalScale - img.naturalWidth  / 2;
+    const imgOffsetY = transform.y / finalScale - img.naturalHeight / 2;
     ctx.drawImage(img, imgOffsetX, imgOffsetY);
 
     return canvas;
@@ -535,26 +545,19 @@
 
   // ── 确认裁剪 ──
   cropBtn.addEventListener('click', () => {
-    const stageW = stage.offsetWidth;
-    const stageH = stage.offsetHeight;
+    const stageSize = stage.offsetWidth;
+    const out = cropImage(sourceImg, t, baseScale, stageSize);
 
-    // 把 t.x/t.y (相对舞台左上) 转成相对舞台中心
-    // 注意：applyTransform 里图片已经 translate(-50%,-50%) 即默认居中
-    // 所以 t.x/t.y 已经是相对中心的偏移，直接用即可
-    const out = cropImage(sourceImg, t, FRAME_SIZE);
-
-    // 显示到结果区
     resultCanvas.width  = out.width;
     resultCanvas.height = out.height;
-    resultCanvas.style.width  = FRAME_SIZE + 'px';
-    resultCanvas.style.height = FRAME_SIZE + 'px';
+    // CSS aspect-ratio: 1/1 + width: 100% 保证正方形显示，不需要手动设置 style
+
     const rctx = resultCanvas.getContext('2d');
     rctx.drawImage(out, 0, 0);
     resultCanvas.style.display = 'block';
     resultEmpty.style.display  = 'none';
     downloadBtn.disabled = false;
 
-    // 释放临时 canvas
     out.width = 0; out.height = 0;
   });
 
@@ -566,8 +569,16 @@
     link.click();
   });
 
-  // ── 初始化 SVG 帧（页面加载时） ──
-  window.addEventListener('resize', drawCropFrame);
+  // ── 初始化 ──
+  window.addEventListener('resize', () => {
+    drawCropFrame();
+    // 窗口 resize 时重新计算 baseScale
+    if (sourceImg.naturalWidth) {
+      const stageSize = stage.offsetWidth;
+      baseScale = calcContainScale(sourceImg.naturalWidth, sourceImg.naturalHeight, stageSize);
+      applyTransform();
+    }
+  });
   drawCropFrame();
 </script>
 </body>

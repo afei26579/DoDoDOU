@@ -6,6 +6,7 @@ type WorkshopToolbarProps = {
   onCropZoomIn: () => void;
   onCropZoomOut: () => void;
   onCropReset: () => void;
+  onViewCropPreview: () => void;
   onViewPattern: () => void;
   onBackToOriginal: () => void;
   onRegenerate: () => void;
@@ -21,6 +22,7 @@ export function WorkshopToolbar({
   onCropZoomIn,
   onCropZoomOut,
   onCropReset,
+  onViewCropPreview,
   onViewPattern,
   onBackToOriginal,
   onRegenerate,
@@ -36,6 +38,7 @@ export function WorkshopToolbar({
           <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="放大" onClick={onCropZoomIn} disabled={isGenerating}>＋</button>
           <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="缩小" onClick={onCropZoomOut} disabled={isGenerating}>－</button>
           <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="重置" onClick={onCropReset} disabled={isGenerating}>⟲</button>
+          <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="查看裁剪预览" onClick={onViewCropPreview} disabled={isGenerating}>◫</button>
           <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="重新上传" onClick={onReuploadImage} disabled={isGenerating}>↺</button>
           {patternResultExists ? <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="查看图纸" onClick={onViewPattern} disabled={isGenerating}>▣</button> : null}
         </>

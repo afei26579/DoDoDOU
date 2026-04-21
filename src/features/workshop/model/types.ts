@@ -15,6 +15,7 @@ export type CropTransform = {
   scale: number;
   x: number;
   y: number;
+  rotate?: number;
 };
 
 export type WorkshopConfig = {

@@ -9,14 +9,13 @@ async function loadImage(src: string) {
   });
 }
 
-export async function cropImageToDataUrl(params: {
-  imageUrl: string;
+export function createCropCanvas(params: {
+  image: HTMLImageElement;
   cropTransform: CropTransform;
+  frameSize: number;
   outputSize?: number;
-}): Promise<string> {
-  const { imageUrl, cropTransform, outputSize = 1200 } = params;
-  const image = await loadImage(imageUrl);
-
+}) {
+  const { image, cropTransform, frameSize, outputSize = frameSize } = params;
   const dpr = window.devicePixelRatio || 1;
   const canvas = document.createElement('canvas');
   canvas.width = outputSize * dpr;
@@ -27,27 +26,37 @@ export async function cropImageToDataUrl(params: {
     throw new Error('无法创建裁剪画布');
   }
 
-  ctx.scale(dpr, dpr);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, outputSize, outputSize);
-
+  const scale = cropTransform.scale || 1;
+  const rotate = cropTransform.rotate ?? 0;
   const imageWidth = image.naturalWidth || image.width;
   const imageHeight = image.naturalHeight || image.height;
-  const scale = cropTransform.scale || 1;
-
-  // 与预览区 object-fit: contain 保持一致，先把原图缩放到裁剪框内
   const baseScale = Math.min(outputSize / imageWidth, outputSize / imageHeight);
   const displayWidth = imageWidth * baseScale * scale;
   const displayHeight = imageHeight * baseScale * scale;
+  const offsetX = (outputSize - displayWidth) / 2 + cropTransform.x;
+  const offsetY = (outputSize - displayHeight) / 2 + cropTransform.y;
 
-  // cropTransform.x/y 对应的是预览中图片相对裁剪框中心的位移（CSS px）
-  ctx.drawImage(
-    image,
-    (outputSize - displayWidth) / 2 + cropTransform.x,
-    (outputSize - displayHeight) / 2 + cropTransform.y,
-    displayWidth,
-    displayHeight,
-  );
+  ctx.scale(dpr, dpr);
+  ctx.translate(outputSize / 2, outputSize / 2);
+  ctx.rotate((rotate * Math.PI) / 180);
+  ctx.translate(cropTransform.x, cropTransform.y);
+  ctx.scale(scale, scale);
+  ctx.drawImage(image, -imageWidth * baseScale / 2, -imageHeight * baseScale / 2, imageWidth * baseScale, imageHeight * baseScale);
 
+  // Keep explicit bounds in case future callers use the canvas as a visual preview.
+  void offsetX;
+  void offsetY;
+
+  return canvas;
+}
+
+export async function cropImageToDataUrl(params: {
+  imageUrl: string;
+  cropTransform: CropTransform;
+  outputSize?: number;
+}): Promise<string> {
+  const { imageUrl, cropTransform, outputSize = 1200 } = params;
+  const image = await loadImage(imageUrl);
+  const canvas = createCropCanvas({ image, cropTransform, frameSize: outputSize, outputSize });
   return canvas.toDataURL('image/png');
 }

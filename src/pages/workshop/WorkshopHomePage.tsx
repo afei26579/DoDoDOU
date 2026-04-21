@@ -59,12 +59,20 @@ export function WorkshopHomePage({
           });
 
           const nextProjectId = projectId ?? createProjectId();
+          const imageSize = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+            const previewImage = new Image();
+            previewImage.onload = () => resolve({ width: previewImage.naturalWidth || previewImage.width, height: previewImage.naturalHeight || previewImage.height });
+            previewImage.onerror = () => reject(new Error('图片加载失败'));
+            previewImage.src = dataUrl;
+          });
+
           await saveWorkshopProject(nextProjectId, {
             uploadedImage: {
               name: file.name,
               type: file.type,
               size: file.size,
               dataUrl,
+              ...imageSize,
             },
             cropTransform: defaultCropTransform,
             config: defaultWorkshopConfig,

@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CropTransform, WorkshopFlowState } from '../../features/workshop/model/types';
+import { createCropCanvas } from '../../lib/pattern/crop';
 import { WorkshopGenerateButton } from './components/WorkshopGenerateButton';
 import { WorkshopHero } from './components/WorkshopHero';
 import { WorkshopHomeToolbar } from './components/WorkshopHomeToolbar';
@@ -60,7 +61,10 @@ export function WorkshopPage({
   } | null>(null);
   const [isStatsSheetOpen, setIsStatsSheetOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [isCropPreviewOpen, setIsCropPreviewOpen] = useState(false);
+  const [cropPreviewDataUrl, setCropPreviewDataUrl] = useState<string | null>(null);
   const { uploadedImage, cropTransform, config, patternResult, isGenerating } = flowState;
+  const cropPreviewImageRef = useRef<HTMLImageElement | null>(null);
 
   const tagLabel = useMemo(() => {
     if (activeTag === 'size') return `${config.canvasSize} × ${config.canvasSize}`;
@@ -68,6 +72,37 @@ export function WorkshopPage({
     if (activeTag === 'style') return config.style;
     return `${config.colorMergeThreshold}`;
   }, [activeTag, config.brand, config.canvasSize, config.colorMergeThreshold, config.style]);
+
+  useEffect(() => {
+    if (!uploadedImage?.dataUrl) return;
+    const image = new Image();
+    image.onload = () => {
+      cropPreviewImageRef.current = image;
+    };
+    image.src = uploadedImage.dataUrl;
+  }, [uploadedImage?.dataUrl]);
+
+  useEffect(() => {
+    if (!isCropPreviewOpen || !uploadedImage) return;
+
+    let alive = true;
+    const image = new Image();
+    image.onload = () => {
+      if (!alive) return;
+      const previewCanvas = createCropCanvas({
+        image,
+        cropTransform,
+        frameSize: 360,
+        outputSize: 960,
+      });
+      setCropPreviewDataUrl(previewCanvas.toDataURL('image/png'));
+    };
+    image.src = uploadedImage.dataUrl;
+
+    return () => {
+      alive = false;
+    };
+  }, [cropTransform, isCropPreviewOpen, uploadedImage]);
 
   const handlePreviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!uploadedImage || mode !== 'create') return;
@@ -81,12 +116,11 @@ export function WorkshopPage({
     if (!frame || !image) return;
 
     const frameRect = frame.getBoundingClientRect();
-    const imageRect = image.getBoundingClientRect();
     const currentScale = cropTransform.scale || 1;
-    const scaledWidth = imageRect.width;
-    const scaledHeight = imageRect.height;
-    const maxOffsetX = Math.max(0, (scaledWidth - frameRect.width) / 2);
-    const maxOffsetY = Math.max(0, (scaledHeight - frameRect.height) / 2);
+    const displayWidth = image.getBoundingClientRect().width;
+    const displayHeight = image.getBoundingClientRect().height;
+    const maxOffsetX = Math.max(0, (displayWidth * currentScale - frameRect.width) / 2);
+    const maxOffsetY = Math.max(0, (displayHeight * currentScale - frameRect.height) / 2);
 
     dragStateRef.current = {
       pointerId: event.pointerId,
@@ -94,8 +128,8 @@ export function WorkshopPage({
       startY: event.clientY,
       originX: cropTransform.x,
       originY: cropTransform.y,
-      maxOffsetX: maxOffsetX / currentScale,
-      maxOffsetY: maxOffsetY / currentScale,
+      maxOffsetX,
+      maxOffsetY,
     };
 
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -110,17 +144,39 @@ export function WorkshopPage({
     const nextX = Math.max(-dragState.maxOffsetX, Math.min(dragState.maxOffsetX, dragState.originX + deltaX));
     const nextY = Math.max(-dragState.maxOffsetY, Math.min(dragState.maxOffsetY, dragState.originY + deltaY));
 
-    onCropTransformChange({
-      ...cropTransform,
+    onCropTransformChange((current) => ({
+      ...current,
       x: nextX,
       y: nextY,
-    });
+    }));
   };
 
   const handlePreviewPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     if (dragStateRef.current?.pointerId === event.pointerId) {
       dragStateRef.current = null;
     }
+  };
+
+  const handleOpenCropPreview = async () => {
+    if (!uploadedImage?.dataUrl) return;
+    if (!cropPreviewImageRef.current) {
+      const image = new Image();
+      await new Promise<void>((resolve, reject) => {
+        image.onload = () => resolve();
+        image.onerror = () => reject(new Error('图片加载失败'));
+        image.src = uploadedImage.dataUrl;
+      });
+      cropPreviewImageRef.current = image;
+    }
+
+    const canvas = createCropCanvas({
+      image: cropPreviewImageRef.current,
+      cropTransform,
+      frameSize: 1200,
+      outputSize: 1200,
+    });
+    setCropPreviewDataUrl(canvas.toDataURL('image/png'));
+    setIsCropPreviewOpen(true);
   };
 
   return (
@@ -150,7 +206,8 @@ export function WorkshopPage({
             isGenerating={isGenerating}
             onCropZoomIn={() => onCropTransformChange((current) => ({ ...current, scale: Math.min(3, +(current.scale + 0.1).toFixed(2)) }))}
             onCropZoomOut={() => onCropTransformChange((current) => ({ ...current, scale: Math.max(0.5, +(current.scale - 0.1).toFixed(2)) }))}
-            onCropReset={() => onCropTransformChange({ scale: 1, x: 0, y: 0 })}
+            onCropReset={() => onCropTransformChange({ scale: 1, x: 0, y: 0, rotate: 0 })}
+            onViewCropPreview={() => setIsCropPreviewOpen(true)}
             onViewPattern={onViewPattern}
             onBackToOriginal={onBackToOriginal}
             onRegenerate={onRegenerate}
@@ -196,6 +253,26 @@ export function WorkshopPage({
 
       {mode === 'result' && patternResult && isStatsSheetOpen ? (
         <WorkshopResultStatsSheet patternResult={patternResult} onClose={() => setIsStatsSheetOpen(false)} />
+      ) : null}
+
+      {isCropPreviewOpen ? (
+        <div className="crop-preview-modal__backdrop" role="presentation" onClick={() => setIsCropPreviewOpen(false)}>
+          <section className="crop-preview-modal" role="dialog" aria-modal="true" aria-label="裁剪后的图片预览" onClick={(event) => event.stopPropagation()}>
+            <header className="crop-preview-modal__header">
+              <div>
+                <p>裁剪预览</p>
+                <h3>查看当前裁剪后的图片</h3>
+              </div>
+              <button type="button" className="crop-preview-modal__close" aria-label="关闭预览" onClick={() => setIsCropPreviewOpen(false)}>
+                ×
+              </button>
+            </header>
+
+            <div className="crop-preview-modal__body">
+              {cropPreviewDataUrl ? <img className="crop-preview-modal__image" src={cropPreviewDataUrl} alt="裁剪后的图片预览" /> : <div className="crop-preview-modal__loading">正在生成预览...</div>}
+            </div>
+          </section>
+        </div>
       ) : null}
 
       <DownloadSettingsModal

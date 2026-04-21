@@ -47,9 +47,19 @@ export function App() {
   const showBottomNav = !hiddenBottomNavPaths.has(location.pathname);
 
   const handleUploadToWorkshop = async (image: { name: string; type: string; size: number; dataUrl: string }) => {
+    const dimensions = await new Promise<{ width: number; height: number }>((resolve, reject) => {
+      const previewImage = new Image();
+      previewImage.onload = () => resolve({ width: previewImage.naturalWidth || previewImage.width, height: previewImage.naturalHeight || previewImage.height });
+      previewImage.onerror = () => reject(new Error('图片加载失败'));
+      previewImage.src = image.dataUrl;
+    });
+
     const projectId = createProjectId();
     await saveWorkshopProject(projectId, {
-      uploadedImage: image,
+      uploadedImage: {
+        ...image,
+        ...dimensions,
+      },
       cropTransform: defaultCropTransform,
       config: defaultWorkshopConfig,
       patternResult: null,

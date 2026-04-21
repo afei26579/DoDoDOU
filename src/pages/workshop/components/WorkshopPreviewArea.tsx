@@ -41,14 +41,73 @@ function WorkshopImageView({
   onPointerMove,
   onPointerUp,
 }: Pick<WorkshopPreviewAreaProps, 'cropTransform' | 'uploadedImage' | 'onPointerDown' | 'onPointerMove' | 'onPointerUp'>) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [baseSize, setBaseSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+
+  useEffect(() => {
+    let alive = true;
+
+    const updateBaseSize = () => {
+      const viewport = viewportRef.current;
+      const imageWidth = uploadedImage?.width;
+      const imageHeight = uploadedImage?.height;
+      if (!viewport || !imageWidth || !imageHeight) return;
+      const frameRect = viewport.getBoundingClientRect();
+      if (!frameRect.width || !frameRect.height) return;
+      const fitScale = Math.min(frameRect.width / imageWidth, frameRect.height / imageHeight);
+      if (!alive) return;
+      setBaseSize({
+        width: imageWidth * fitScale,
+        height: imageHeight * fitScale,
+      });
+    };
+
+    if (uploadedImage?.width && uploadedImage?.height) {
+      updateBaseSize();
+    } else if (uploadedImage?.dataUrl) {
+      const image = new Image();
+      image.onload = () => {
+        if (!alive) return;
+        const previewImageWidth = image.naturalWidth || image.width;
+        const previewImageHeight = image.naturalHeight || image.height;
+        const viewport = viewportRef.current;
+        if (!viewport || !previewImageWidth || !previewImageHeight) return;
+        const frameRect = viewport.getBoundingClientRect();
+        if (!frameRect.width || !frameRect.height) return;
+        const fitScale = Math.min(frameRect.width / previewImageWidth, frameRect.height / previewImageHeight);
+        setBaseSize({
+          width: previewImageWidth * fitScale,
+          height: previewImageHeight * fitScale,
+        });
+      };
+      image.src = uploadedImage.dataUrl;
+    }
+
+    window.addEventListener('resize', updateBaseSize);
+    return () => {
+      alive = false;
+      window.removeEventListener('resize', updateBaseSize);
+    };
+  }, [uploadedImage]);
+
+  const imageStyle = baseSize.width && baseSize.height
+    ? {
+        width: `${baseSize.width}px`,
+        height: `${baseSize.height}px`,
+        transform: `translate(-50%, -50%) translate(${cropTransform.x}px, ${cropTransform.y}px) scale(${cropTransform.scale})`,
+      }
+    : {
+        transform: `translate(-50%, -50%) translate(${cropTransform.x}px, ${cropTransform.y}px) scale(${cropTransform.scale})`,
+      };
+
   return (
     <div className="workshop-canvas__panel workshop-canvas__panel--fade-in">
-      <div className="workshop-canvas__viewport" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}>
+      <div ref={viewportRef} className="workshop-canvas__viewport" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}>
         <img
           className="workshop-canvas__image"
           src={uploadedImage?.dataUrl}
           alt={uploadedImage?.name ?? ''}
-          style={{ transform: `translate(${cropTransform.x}px, ${cropTransform.y}px) scale(${cropTransform.scale})` }}
+          style={imageStyle}
         />
         <div className="workshop-canvas__crop-frame">
           <div className="workshop-canvas__crop-grid" />
