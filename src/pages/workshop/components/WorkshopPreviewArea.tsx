@@ -87,6 +87,8 @@ function WorkshopPatternView({ patternResult }: { patternResult: PatternResult }
     return activeCell.vendorCode;
   }, [activeCell]);
 
+  const shouldShowTooltip = Boolean(activeCell && activeCell.vendorCode.trim());
+
   const updateTooltipFromEvent = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!patternCanvasRef.current) return;
     const canvas = patternCanvasRef.current;
@@ -94,6 +96,12 @@ function WorkshopPatternView({ patternResult }: { patternResult: PatternResult }
     const cell = getCanvasCellFromPoint(canvas, patternResult, event.clientX, event.clientY);
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+    if (!cell || !cell.vendorCode.trim()) {
+      setActiveCell(null);
+      setTooltipPosition(null);
+      return;
+    }
+
     setActiveCell(cell);
     setTooltipPosition({
       x,
@@ -134,7 +142,7 @@ function WorkshopPatternView({ patternResult }: { patternResult: PatternResult }
           onPointerLeave={handlePointerLeave}
           onPointerUp={handlePointerUp}
         />
-        {activeCell && tooltipPosition ? (
+        {shouldShowTooltip && activeCell && tooltipPosition ? (
           <div
             className={`workshop-canvas__pattern-tooltip ${isTooltipPinned ? 'is-pinned' : ''} ${tooltipPosition.placeBelow ? 'is-below' : ''}`}
             style={{ left: tooltipPosition.x, top: tooltipPosition.y }}

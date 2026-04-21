@@ -36,7 +36,7 @@ function getRepresentativeColor(
   let totalR = 0;
   let totalG = 0;
   let totalB = 0;
-  let counted = 0;
+  let pixelCount = 0;
   const frequency = new Map<string, { count: number; rgb: PatternRgb }>();
 
   for (let y = startY; y < startY + height; y++) {
@@ -45,7 +45,7 @@ function getRepresentativeColor(
       if (data[index + 3] < 128) continue;
 
       const rgb = { r: data[index], g: data[index + 1], b: data[index + 2] };
-      counted += 1;
+      pixelCount += 1;
 
       if (mode === 'average') {
         totalR += rgb.r;
@@ -63,13 +63,13 @@ function getRepresentativeColor(
     }
   }
 
-  if (counted === 0) return null;
+  if (pixelCount === 0) return null;
 
   if (mode === 'average') {
     return {
-      r: Math.round(totalR / counted),
-      g: Math.round(totalG / counted),
-      b: Math.round(totalB / counted),
+      r: Math.round(totalR / pixelCount),
+      g: Math.round(totalG / pixelCount),
+      b: Math.round(totalB / pixelCount),
     };
   }
 
@@ -198,7 +198,7 @@ export async function generatePatternFromImage(params: {
 
   const mergedCells = mergeSimilarCells(rawCells, palette, toMergeThreshold(config.colorMergeThreshold, config.style)).map((cell) => ({
     ...cell,
-    vendorCode: getVendorCode(cell.hex, config.brand),
+    vendorCode: cell.isExternal ? '' : getVendorCode(cell.hex, config.brand),
   }));
 
   const paletteCounts = new Map<string, { hex: string; vendorCode: string; count: number }>();
