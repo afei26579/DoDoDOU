@@ -104,44 +104,6 @@ function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: n
   ctx.closePath();
 }
 
-function addPaperTexture(ctx: CanvasRenderingContext2D, width: number, height: number) {
-  const patternCanvas = document.createElement('canvas');
-  patternCanvas.width = 120;
-  patternCanvas.height = 120;
-  const patternCtx = patternCanvas.getContext('2d');
-  if (!patternCtx) return;
-
-  patternCtx.fillStyle = 'rgba(255,255,255,0.05)';
-  patternCtx.fillRect(0, 0, patternCanvas.width, patternCanvas.height);
-
-  for (let i = 0; i < 180; i++) {
-    const x = Math.random() * patternCanvas.width;
-    const y = Math.random() * patternCanvas.height;
-    const size = Math.random() * 1.2 + 0.3;
-    const alpha = Math.random() * 0.05 + 0.015;
-    patternCtx.fillStyle = `rgba(93,83,74,${alpha})`;
-    patternCtx.fillRect(x, y, size, size);
-  }
-
-  for (let i = 0; i < 18; i++) {
-    const x = Math.random() * patternCanvas.width;
-    const y = Math.random() * patternCanvas.height;
-    const w = Math.random() * 24 + 10;
-    const h = Math.random() * 1.2 + 0.5;
-    patternCtx.fillStyle = `rgba(255,255,255,${Math.random() * 0.035 + 0.012})`;
-    patternCtx.fillRect(x, y, w, h);
-  }
-
-  const texture = ctx.createPattern(patternCanvas, 'repeat');
-  if (!texture) return;
-
-  ctx.save();
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = texture;
-  ctx.fillRect(0, 0, width, height);
-  ctx.restore();
-}
-
 function normalizeCellSymbol(vendorCode: string, cellSize: number) {
   const normalized = vendorCode.trim();
   if (!normalized) return '';
@@ -211,7 +173,6 @@ export async function downloadPatternImage(options: DownloadPatternOptions) {
 
   ctx.fillStyle = '#FFFDFB';
   ctx.fillRect(0, 0, width, canvasHeight);
-  addPaperTexture(ctx, width, canvasHeight);
 
   const normalizedAuthorName = authorName.trim();
   if (normalizedAuthorName) {

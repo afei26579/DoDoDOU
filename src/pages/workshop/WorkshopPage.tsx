@@ -23,6 +23,7 @@ type WorkshopPageProps = {
   onRegenerate: () => void;
   onRemoveBackground: () => void;
   onUploadImage: () => void;
+  onReuploadImage: () => void;
   isHydrating: boolean;
   onViewPattern: () => void;
   onOpenDownloadSettings?: () => void;
@@ -41,6 +42,7 @@ export function WorkshopPage({
   onRegenerate,
   onRemoveBackground,
   onUploadImage,
+  onReuploadImage,
   isHydrating,
   onViewPattern,
   onOpenDownloadSettings,
@@ -90,6 +92,7 @@ export function WorkshopPage({
             onBackToOriginal={onBackToOriginal}
             onRegenerate={onRegenerate}
             onRemoveBackground={onRemoveBackground}
+            onReuploadImage={onReuploadImage}
           />
         )}
       </section>

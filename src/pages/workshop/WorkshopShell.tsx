@@ -73,7 +73,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       reader.readAsDataURL(file);
     });
 
-    const nextProjectId = projectId ?? createProjectId();
+    const nextProjectId = createProjectId();
     await saveWorkshopProject(nextProjectId, {
       uploadedImage: {
         name: file.name,
@@ -123,6 +123,10 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
           window.setTimeout(() => {
             console.debug('[workshop] file input click finished', { activeElement: document.activeElement?.tagName });
           }, 0);
+        }}
+        onReuploadImage={() => {
+          console.debug('[workshop] reupload requested', { projectId });
+          fileInputRef.current?.click();
         }}
         onViewPattern={() => navigate(`/workshop/result/${projectId ?? createProjectId()}`)}
       />

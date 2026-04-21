@@ -10,6 +10,7 @@ type WorkshopToolbarProps = {
   onBackToOriginal: () => void;
   onRegenerate: () => void;
   onRemoveBackground: () => void;
+  onReuploadImage: () => void;
 };
 
 export function WorkshopToolbar({
@@ -24,6 +25,7 @@ export function WorkshopToolbar({
   onBackToOriginal,
   onRegenerate,
   onRemoveBackground,
+  onReuploadImage,
 }: WorkshopToolbarProps) {
   if (!hasImage) return null;
 
@@ -34,6 +36,7 @@ export function WorkshopToolbar({
           <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="放大" onClick={onCropZoomIn} disabled={isGenerating}>＋</button>
           <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="缩小" onClick={onCropZoomOut} disabled={isGenerating}>－</button>
           <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="重置" onClick={onCropReset} disabled={isGenerating}>⟲</button>
+          <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="重新上传" onClick={onReuploadImage} disabled={isGenerating}>↺</button>
           {patternResultExists ? <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="查看图纸" onClick={onViewPattern} disabled={isGenerating}>▣</button> : null}
         </>
       ) : (
