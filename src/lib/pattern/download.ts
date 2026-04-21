@@ -213,10 +213,13 @@ export async function downloadPatternImage(options: DownloadPatternOptions) {
   ctx.fillRect(0, 0, width, canvasHeight);
   addPaperTexture(ctx, width, canvasHeight);
 
-  drawText(ctx, authorName.trim() || '@你的账号', paddingX, headerTop, {
-    font: '800 34px Nunito, sans-serif',
-    color: '#6A4E69',
-  });
+  const normalizedAuthorName = authorName.trim();
+  if (normalizedAuthorName) {
+    drawText(ctx, normalizedAuthorName, paddingX, headerTop, {
+      font: '800 34px Nunito, sans-serif',
+      color: '#6A4E69',
+    });
+  }
 
   const board = computeBoardMetrics(patternResult, width - paddingX * 2, boardTop);
   board.x += paddingX;
@@ -381,7 +384,7 @@ export async function downloadPatternImage(options: DownloadPatternOptions) {
   }
 
   if (addWatermark) {
-    const watermarkText = (authorName.trim() || '@你的账号').replace(/^@/, '@');
+    const watermarkText = normalizedAuthorName;
     ctx.save();
     ctx.globalAlpha = 0.11;
     ctx.fillStyle = '#C593D4';
@@ -390,9 +393,11 @@ export async function downloadPatternImage(options: DownloadPatternOptions) {
     ctx.textBaseline = 'middle';
     ctx.translate(width / 2, canvasHeight / 2);
     ctx.rotate(-Math.PI / 6);
-    for (let y = -canvasHeight; y < canvasHeight * 1.5; y += 96) {
-      for (let x = -width; x < width * 1.5; x += 220) {
-        ctx.fillText(watermarkText, x, y);
+    if (watermarkText) {
+      for (let y = -canvasHeight; y < canvasHeight * 1.5; y += 96) {
+        for (let x = -width; x < width * 1.5; x += 220) {
+          ctx.fillText(watermarkText, x, y);
+        }
       }
     }
     ctx.restore();
