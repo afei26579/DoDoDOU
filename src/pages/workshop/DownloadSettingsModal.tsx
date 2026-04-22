@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { ColorSystem, PatternResult } from '../../features/workshop/model/types';
-import { downloadPatternImage } from '../../lib/pattern/download';
+import { downloadPatternImage, type DownloadPatternOptions } from '../../lib/pattern/download';
 
 type DownloadSettingsModalProps = {
   open: boolean;
   onClose: () => void;
   brand: ColorSystem;
   patternResult: PatternResult | null;
+  defaultPatternName?: string;
 };
 
 const colorOptions = [
@@ -18,8 +19,9 @@ const colorOptions = [
   { label: '黄色', value: '#FDBA28' },
 ] as const;
 
-export function DownloadSettingsModal({ open, onClose, brand, patternResult }: DownloadSettingsModalProps) {
+export function DownloadSettingsModal({ open, onClose, brand, patternResult, defaultPatternName = '' }: DownloadSettingsModalProps) {
   const [authorName, setAuthorName] = useState('');
+  const [patternName, setPatternName] = useState(defaultPatternName);
   const [showGrid, setShowGrid] = useState(true);
   const [gridGap, setGridGap] = useState(10);
   const [gridColor, setGridColor] = useState<(typeof colorOptions)[number]['value']>(colorOptions[0].value);
@@ -31,20 +33,23 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult }: D
   useEffect(() => {
     if (!open) return;
 
+    setPatternName(defaultPatternName);
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  }, [defaultPatternName, open, onClose]);
 
   const handleDownload = async () => {
     if (!patternResult || isDownloading) return;
     setIsDownloading(true);
     try {
-      await downloadPatternImage({
+      const downloadOptions: DownloadPatternOptions = {
         authorName,
+        patternName,
         showGrid,
         gridGap,
         gridColor,
@@ -53,7 +58,8 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult }: D
         addWatermark,
         brand,
         patternResult,
-      });
+      };
+      await downloadPatternImage(downloadOptions);
       onClose();
     } finally {
       setIsDownloading(false);
@@ -81,7 +87,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult }: D
         </header>
 
         <div className="download-modal__body">
-          <div className="download-modal__form-row">
+          <div className="download-modal__form-row download-modal__form-row--inline">
             <label className="download-modal__field">
               <span>作者署名</span>
               <input
@@ -89,6 +95,15 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult }: D
                 value={authorName}
                 placeholder="@你的账号"
                 onChange={(event) => setAuthorName(event.target.value)}
+              />
+            </label>
+            <label className="download-modal__field">
+              <span>图纸名称</span>
+              <input
+                className="download-modal__input"
+                value={patternName}
+                placeholder="输入图纸名称"
+                onChange={(event) => setPatternName(event.target.value)}
               />
             </label>
           </div>

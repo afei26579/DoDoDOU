@@ -189,9 +189,9 @@ export async function generatePatternFromImage(params: {
         rawCells.push({
           x,
           y,
-          colorId: '#FFFFFF',
-          vendorCode: getVendorCode('#FFFFFF', config.brand),
-          hex: '#FFFFFF',
+          colorId: 'transparent',
+          vendorCode: '',
+          hex: 'transparent',
           isExternal: true,
         });
         continue;
@@ -215,7 +215,7 @@ export async function generatePatternFromImage(params: {
 
   const paletteCounts = new Map<string, { hex: string; vendorCode: string; count: number }>();
   for (const cell of mergedCells) {
-    if (cell.isExternal) continue;
+    if (cell.isExternal || cell.hex === 'transparent') continue;
     const current = paletteCounts.get(cell.colorId);
     if (current) {
       current.count += 1;
@@ -241,9 +241,9 @@ export async function generatePatternFromImage(params: {
       }))
       .sort((a, b) => b.count - a.count),
     stats: {
-      totalCells: mergedCells.filter((cell) => !cell.isExternal).length,
+      totalCells: mergedCells.filter((cell) => !cell.isExternal && cell.hex !== 'transparent').length,
       colorCount: paletteCounts.size,
-    },
+    }
   };
 }
 

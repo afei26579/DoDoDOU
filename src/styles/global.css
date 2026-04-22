@@ -686,7 +686,7 @@ p { margin: 0; }
 .download-modal__close { width: 32px; height: 32px; border: 0; border-radius: 999px; background: rgba(93,83,74,0.08); color: var(--ink); font-size: 20px; line-height: 1; }
 .download-modal__body { display: grid; gap: 10px; max-height: 68vh; overflow: auto; padding-right: 2px; }
 .download-modal__form-row { display: grid; gap: 10px; }
-.download-modal__form-row--two { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.download-modal__form-row--inline { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .download-modal__field { display: grid; gap: 8px; }
 .download-modal__field > span { font-size: 13px; color: rgba(93,83,74,0.62); font-family: var(--font-title); }
 .download-modal__card { padding: 14px 14px 12px; border-radius: 22px; background: #fff; border: 1px solid rgba(93,83,74,0.06); box-shadow: 0 8px 18px rgba(93,83,74,0.04); display: grid; gap: 10px; }

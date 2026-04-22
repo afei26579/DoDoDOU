@@ -1,8 +1,9 @@
 import type { ColorSystem, PatternResult } from '../../features/workshop/model/types';
 import { getVendorCode } from './color-system';
 
-type DownloadPatternOptions = {
+export type DownloadPatternOptions = {
   authorName: string;
+  patternName: string;
   showGrid: boolean;
   gridGap: number;
   gridColor: string;
@@ -15,45 +16,102 @@ type DownloadPatternOptions = {
 
 type CanvasLike = HTMLCanvasElement | OffscreenCanvas;
 
-type LayoutMetrics = {
-  gridSize: number;
-  rawLeftMargin: number;
-  rawRightMargin: number;
-  rawTopMargin: number;
-  rawGridBottomMargin: number;
-  rawBottomMargin: number;
-  leftMargin: number;
-  rightMargin: number;
-  topMargin: number;
-  gridBottomMargin: number;
-  bottomMargin: number;
-  rulerSize: number;
-  headerPaddingY: number;
-  authorFontSize: number;
-  titleFontSize: number;
-  subtitleFontSize: number;
-  cellSymbolFontSize: number;
-  rawPaletteCardWidth: number;
-  rawPaletteCardHeight: number;
-  paletteCardWidth: number;
-  paletteCardHeight: number;
-  paletteTextFontSize: number;
-  paletteCountFontSize: number;
-  paletteGap: number;
-  paletteRowGap: number;
-  paletteColumns: number;
-  statsTitleGap: number;
-  statsSummaryGap: number;
-  statsSectionGap: number;
-  statsTitleHeight: number;
-  statsSummaryHeight: number;
-  paletteBlockTopGap: number;
+type PaletteItem = {
+  id: string;
+  color: string;
+  name: string;
+  count: number;
 };
 
-type RulerSpec = {
-  topLabels: number[];
-  leftLabels: number[];
+type Layout = {
+  G: number;
+  cellSize: number;
+  divStep: number;
+  gridW: number;
+  gridH: number;
+  cols: number;
+  rows: number;
+  padTop: number;
+  padLR: number;
+  padBot: number;
+  rulerSz: number;
+  rulerFS: number;
+  titleFS: number;
+  subFS: number;
+  titleH: number;
+  cellLabelFS: number;
+  swW: number;
+  swH: number;
+  swGapX: number;
+  swGapY: number;
+  swBotPad: number;
+  SW_COLS: number;
+  swRows: number;
+  swIdFS: number;
+  swCntFS: number;
+  listTitleFS: number;
+  swAreaH: number;
+  listH: number;
+  canvasW: number;
+  canvasH: number;
+  xRulerL: number;
+  xGrid: number;
+  xRulerR: number;
+  yTitle: number;
+  yRulerTop: number;
+  yGrid: number;
+  yRulerBot: number;
+  yRulerL: number;
+  yList: number;
+  ySwatches: number;
 };
+
+function r(n: number) {
+  return Math.max(1, Math.round(n));
+}
+
+function line(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+
+function drawDash(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, color: string, lw: number) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+function rrect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, rd: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + rd, y);
+  ctx.lineTo(x + w - rd, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + rd);
+  ctx.lineTo(x + w, y + h - rd);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - rd, y + h);
+  ctx.lineTo(x + rd, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - rd);
+  ctx.lineTo(x, y + rd);
+  ctx.quadraticCurveTo(x, y, x + rd, y);
+  ctx.closePath();
+}
+
+function lum(hex: string) {
+  const c = hex.replace('#', '');
+  const rv = Number.parseInt(c.slice(0, 2), 16) / 255;
+  const gv = Number.parseInt(c.slice(2, 4), 16) / 255;
+  const bv = Number.parseInt(c.slice(4, 6), 16) / 255;
+  const f = (v: number) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  return 0.2126 * f(rv) + 0.7152 * f(gv) + 0.0722 * f(bv);
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -71,155 +129,319 @@ function createCanvas(width: number, height: number, scale = 2): CanvasLike {
   return canvas;
 }
 
-function hexToRgb(hex: string) {
-  const normalized = hex.replace('#', '').trim();
-  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null;
+function getPalette(patternResult: PatternResult, brand: ColorSystem): PaletteItem[] {
+  return patternResult.palette.map((entry) => ({
+    id: getVendorCode(entry.hex, brand),
+    color: entry.hex === 'transparent' ? '#ffffff' : entry.hex,
+    name: entry.hex,
+    count: entry.count,
+  }));
+}
+
+function buildDemoGrid(patternResult: PatternResult) {
+  const grid: (PatternResult['cells'][number] | null)[][] = [];
+  for (let y = 0; y < patternResult.height; y += 1) {
+    const row: (PatternResult['cells'][number] | null)[] = [];
+    for (let x = 0; x < patternResult.width; x += 1) {
+      row.push(patternResult.cells.find((cell) => cell.x === x && cell.y === y) ?? null);
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
+function calcLayout(cols: number, rows: number, cellSize: number, divStep: number, paletteCount: number): Layout {
+  const gridW = cols * cellSize;
+  const gridH = rows * cellSize;
+  const G = Math.max(gridW, gridH);
+
+  const padTop = G / 20;
+  const padLR = G / 40;
+  const padBot = G / 10;
+
+  const rulerSz = G / 30;
+  const rulerFS = Math.max(7, G / 60);
+
+  const titleFS = G / 20;
+  const subFS = G / 40;
+  const titleH = titleFS + padTop * 0.4 + subFS;
+
+  const cellLabelFS = cellSize * 0.36;
+
+  const swW = G / 10;
+  const swH = G / 20;
+  const swGapX = G / 80;
+  const swGapY = G / 60;
+  const swBotPad = G / 40;
+  const SW_COLS = 8;
+  const swRows = Math.ceil(paletteCount / SW_COLS);
+  const swIdFS = Math.max(8, swH * 0.5 * 0.55);
+  const swCntFS = Math.max(7, swH * 0.5 * 0.48);
+  const listTitleFS = subFS;
+  const swAreaH = swRows * swH + Math.max(0, swRows - 1) * swGapY;
+  const listH = listTitleFS + padTop * 0.3 + swAreaH;
+
+  const canvasW = padLR + rulerSz + gridW + rulerSz + padLR;
+  const canvasH = padTop + titleH + padTop + rulerSz + gridH + rulerSz + padTop + listH + swBotPad + padBot;
+
+  const xRulerL = padLR;
+  const xGrid = padLR + rulerSz;
+  const xRulerR = xGrid + gridW;
+  const yTitle = padTop;
+  const yRulerTop = padTop + titleH + padTop;
+  const yGrid = yRulerTop + rulerSz;
+  const yRulerBot = yGrid + gridH;
+  const yRulerL = yGrid;
+  const yList = yRulerBot + rulerSz + padTop;
+  const ySwatches = yList + listTitleFS + padTop * 0.3;
+
   return {
-    r: Number.parseInt(normalized.slice(0, 2), 16),
-    g: Number.parseInt(normalized.slice(2, 4), 16),
-    b: Number.parseInt(normalized.slice(4, 6), 16),
+    G, cellSize, divStep, gridW, gridH, cols, rows, padTop, padLR, padBot, rulerSz, rulerFS, titleFS, subFS, titleH,
+    cellLabelFS, swW, swH, swGapX, swGapY, swBotPad, SW_COLS, swRows, swIdFS, swCntFS, listTitleFS, swAreaH, listH,
+    canvasW, canvasH, xRulerL, xGrid, xRulerR, yTitle, yRulerTop, yGrid, yRulerBot, yRulerL, yList, ySwatches,
   };
 }
 
-function isLightColor(hex: string) {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return true;
-  const luminance = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
-  return luminance >= 160;
-}
-
-function getTextColorForSwatch(hex: string) {
-  return isLightColor(hex) ? '#2D2A2F' : '#FFFFFF';
-}
-
-function drawText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  options?: { font?: string; color?: string; align?: CanvasTextAlign; baseline?: CanvasTextBaseline },
-) {
-  ctx.save();
-  ctx.font = options?.font ?? '700 24px Nunito, sans-serif';
-  ctx.fillStyle = options?.color ?? '#5D534A';
-  ctx.textAlign = options?.align ?? 'left';
-  ctx.textBaseline = options?.baseline ?? 'alphabetic';
-  ctx.fillText(text, x, y);
-  ctx.restore();
-}
-
-function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.arcTo(x + w, y, x + w, y + h, radius);
-  ctx.arcTo(x + w, y + h, x, y + h, radius);
-  ctx.arcTo(x, y + h, x, y, radius);
-  ctx.arcTo(x, y, x + w, y, radius);
-  ctx.closePath();
-}
-
-function normalizeCellSymbol(vendorCode: string, cellSize: number) {
-  const normalized = vendorCode.trim();
-  if (!normalized) return '';
-  if (cellSize <= 12) return normalized.slice(-1);
-  if (cellSize <= 16) return normalized.slice(-2);
-  if (cellSize <= 22) return normalized.slice(-3);
-  return normalized;
-}
-
-function computeLayout(pattern: PatternResult) {
-  const gridSize = pattern.width * 30;
-  const rawLeftMargin = gridSize / 40;
-  const rawRightMargin = rawLeftMargin;
-  const rawTopMargin = gridSize / 20;
-  const rawGridBottomMargin = gridSize / 40;
-  const rawBottomMargin = gridSize / 10;
-  const rawRulerSize = gridSize / 20;
-  const rawHeaderPaddingY = gridSize / 40;
-  const rawAuthorFontSize = gridSize / 20;
-  const rawTitleFontSize = gridSize / 20;
-  const rawSubtitleFontSize = gridSize / 40;
-  const rawPaletteCardWidth = gridSize / 10;
-  const rawPaletteCardHeight = gridSize / 20;
-  const leftMargin = Math.max(8, rawLeftMargin);
-  const rightMargin = Math.max(8, rawRightMargin);
-  const topMargin = Math.max(16, rawTopMargin);
-  const gridBottomMargin = Math.max(8, rawGridBottomMargin);
-  const bottomMargin = Math.max(20, rawBottomMargin);
-  const rulerSize = Math.max(18, rawRulerSize);
-  const headerPaddingY = Math.max(8, rawHeaderPaddingY);
-  const authorFontSize = Math.max(16, rawAuthorFontSize);
-  const titleFontSize = Math.max(16, rawTitleFontSize);
-  const subtitleFontSize = Math.max(10, rawSubtitleFontSize);
-  const cellSymbolFontSize = clamp(30 * 0.42, 10, 18);
-  const paletteCardWidth = Math.max(48, rawPaletteCardWidth);
-  const paletteCardHeight = Math.max(30, rawPaletteCardHeight);
-  const paletteTextFontSize = Math.max(9, paletteCardHeight * 0.46);
-  const paletteCountFontSize = Math.max(8, paletteCardHeight * 0.34);
-  const paletteGap = Math.max(8, gridSize / 80);
-  const paletteRowGap = paletteGap;
-  const paletteColumns = 8;
-  const statsTitleGap = Math.max(10, gridSize / 40);
-  const statsSummaryGap = Math.max(8, gridSize / 60);
-  const statsSectionGap = Math.max(14, gridSize / 30);
-  const statsTitleHeight = Math.max(18, gridSize / 40);
-  const statsSummaryHeight = Math.max(16, gridSize / 50);
-  const paletteBlockTopGap = Math.max(10, gridSize / 40);
-
-  return {
-    gridSize,
-    rawLeftMargin,
-    rawRightMargin,
-    rawTopMargin,
-    rawGridBottomMargin,
-    rawBottomMargin,
-    leftMargin,
-    rightMargin,
-    topMargin,
-    gridBottomMargin,
-    bottomMargin,
-    rulerSize,
-    headerPaddingY,
-    authorFontSize,
-    titleFontSize,
-    subtitleFontSize,
-    cellSymbolFontSize,
-    rawPaletteCardWidth,
-    rawPaletteCardHeight,
-    paletteCardWidth,
-    paletteCardHeight,
-    paletteTextFontSize,
-    paletteCountFontSize,
-    paletteGap,
-    paletteRowGap,
-    paletteColumns,
-    statsTitleGap,
-    statsSummaryGap,
-    statsSectionGap,
-    statsTitleHeight,
-    statsSummaryHeight,
-    paletteBlockTopGap,
-  } satisfies LayoutMetrics;
-}
-
-function computeRulerSpec(pattern: PatternResult): RulerSpec {
-  const majorStep = pattern.width >= 24 ? 10 : 5;
-  const topLabels: number[] = [];
-  const leftLabels: number[] = [];
-
-  for (let i = 1; i <= pattern.width; i++) {
-    if (i === 1 || i === pattern.width || i % majorStep === 0) topLabels.push(i);
+function rulerNumbers(total: number, divStep: number) {
+  const res: Array<{ centerIdx: number; label: string }> = [];
+  for (let c = 0; c <= total; c += divStep) {
+    if (c === 0) res.push({ centerIdx: 0, label: '1' });
+    else res.push({ centerIdx: c - 1, label: String(c) });
   }
-  for (let i = 1; i <= pattern.height; i++) {
-    if (i === 1 || i === pattern.height || i % majorStep === 0) leftLabels.push(i);
-  }
-
-  return { topLabels, leftLabels };
+  return res;
 }
 
-function getContrastOutlineColor(fillColor: string) {
-  return isLightColor(fillColor) ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.55)';
+function drawRulerTop(ctx: CanvasRenderingContext2D, L: Layout) {
+  const { xGrid, yRulerTop, rulerSz, rulerFS, cellSize, cols, divStep } = L;
+  ctx.fillStyle = '#e8e2d4';
+  ctx.fillRect(r(xGrid), r(yRulerTop), r(L.gridW), r(rulerSz));
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4a4030';
+  ctx.font = `500 ${r(rulerFS)}px "Noto Sans SC", sans-serif`;
+  rulerNumbers(cols, divStep).forEach(({ centerIdx, label }) => {
+    if (centerIdx >= cols) return;
+    ctx.fillText(label, xGrid + centerIdx * cellSize + cellSize / 2, yRulerTop + rulerSz / 2);
+  });
+  ctx.strokeStyle = '#b0a090';
+  ctx.lineWidth = Math.max(0.5, L.G / 3000);
+  ctx.strokeRect(r(xGrid), r(yRulerTop), r(L.gridW), r(rulerSz));
+}
+
+function drawRulerBottom(ctx: CanvasRenderingContext2D, L: Layout) {
+  const { xGrid, yRulerBot, rulerSz, rulerFS, cellSize, cols, divStep } = L;
+  ctx.fillStyle = '#e8e2d4';
+  ctx.fillRect(r(xGrid), r(yRulerBot), r(L.gridW), r(rulerSz));
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4a4030';
+  ctx.font = `500 ${r(rulerFS)}px "Noto Sans SC", sans-serif`;
+  rulerNumbers(cols, divStep).forEach(({ centerIdx, label }) => {
+    if (centerIdx >= cols) return;
+    ctx.fillText(label, xGrid + centerIdx * cellSize + cellSize / 2, yRulerBot + rulerSz / 2);
+  });
+  ctx.strokeStyle = '#b0a090';
+  ctx.lineWidth = Math.max(0.5, L.G / 3000);
+  ctx.strokeRect(r(xGrid), r(yRulerBot), r(L.gridW), r(rulerSz));
+}
+
+function drawRulerLeft(ctx: CanvasRenderingContext2D, L: Layout) {
+  const { xRulerL, yGrid, rulerSz, rulerFS, cellSize, rows, divStep } = L;
+  ctx.fillStyle = '#e8e2d4';
+  ctx.fillRect(r(xRulerL), r(yGrid), r(rulerSz), r(L.gridH));
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4a4030';
+  ctx.font = `500 ${r(rulerFS)}px "Noto Sans SC", sans-serif`;
+  rulerNumbers(rows, divStep).forEach(({ centerIdx, label }) => {
+    if (centerIdx >= rows) return;
+    ctx.fillText(label, xRulerL + rulerSz / 2, yGrid + centerIdx * cellSize + cellSize / 2);
+  });
+  ctx.strokeStyle = '#b0a090';
+  ctx.lineWidth = Math.max(0.5, L.G / 3000);
+  ctx.strokeRect(r(xRulerL), r(yGrid), r(rulerSz), r(L.gridH));
+}
+
+function drawRulerRight(ctx: CanvasRenderingContext2D, L: Layout) {
+  const { xRulerR, yGrid, rulerSz, rulerFS, cellSize, rows, divStep } = L;
+  ctx.fillStyle = '#e8e2d4';
+  ctx.fillRect(r(xRulerR), r(yGrid), r(rulerSz), r(L.gridH));
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4a4030';
+  ctx.font = `500 ${r(rulerFS)}px "Noto Sans SC", sans-serif`;
+  rulerNumbers(rows, divStep).forEach(({ centerIdx, label }) => {
+    if (centerIdx >= rows) return;
+    ctx.fillText(label, xRulerR + rulerSz / 2, yGrid + centerIdx * cellSize + cellSize / 2);
+  });
+  ctx.strokeStyle = '#b0a090';
+  ctx.lineWidth = Math.max(0.5, L.G / 3000);
+  ctx.strokeRect(r(xRulerR), r(yGrid), r(rulerSz), r(L.gridH));
+}
+
+function drawSwatches(ctx: CanvasRenderingContext2D, L: Layout, palette: PaletteItem[]) {
+  const { xGrid, ySwatches, swW, swH, swGapX, swGapY, SW_COLS, swIdFS, swCntFS } = L;
+  const halfH = swH / 2;
+  const rad = Math.max(3, swH * 0.12);
+  palette.forEach((p, i) => {
+    const col = i % SW_COLS;
+    const row = Math.floor(i / SW_COLS);
+    const sx = xGrid + col * (swW + swGapX);
+    const sy = ySwatches + row * (swH + swGapY);
+    ctx.save();
+    rrect(ctx, sx, sy, swW, swH, rad);
+    ctx.clip();
+    ctx.fillStyle = p.color;
+    ctx.fillRect(sx, sy, swW, halfH);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(sx, sy + halfH, swW, halfH);
+    ctx.restore();
+    ctx.strokeStyle = '#c0b8ac';
+    ctx.lineWidth = Math.max(1, L.G / 3500);
+    rrect(ctx, sx, sy, swW, swH, rad);
+    ctx.stroke();
+    ctx.strokeStyle = '#d4cec6';
+    ctx.lineWidth = Math.max(0.5, L.G / 5000);
+    line(ctx, sx, sy + halfH, sx + swW, sy + halfH);
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = lum(p.color) > 0.35 ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.92)';
+    ctx.font = `700 ${r(swIdFS)}px "Noto Sans SC", sans-serif`;
+    ctx.fillText(p.id, sx + swW / 2, sy + halfH / 2);
+    ctx.fillStyle = '#1e1a12';
+    ctx.font = `400 ${r(swCntFS)}px "Noto Sans SC", sans-serif`;
+    ctx.fillText(String(p.count), sx + swW / 2, sy + halfH + halfH / 2);
+  });
+}
+
+function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options: DownloadPatternOptions) {
+  const { authorName, patternName, gridGap, brand } = options;
+  const normalizedPatternName = patternName.trim() || 'Dodoudou';
+  const normalizedAuthorName = authorName.trim();
+  const cols = patternResult.width;
+  const rows = patternResult.height;
+  const cellSize = 30;
+  const divStep = Math.max(1, Math.round(gridGap || 10));
+  const palette = getPalette(patternResult, brand);
+  const L = calcLayout(cols, rows, cellSize, divStep, palette.length);
+  const grid = buildDemoGrid(patternResult);
+
+  canvas.width = Math.round(L.canvasW);
+  canvas.height = Math.round(L.canvasH);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  ctx.fillStyle = '#f5f0e8';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#fdfaf4';
+  ctx.fillRect(0, 0, canvas.width, Math.round(L.yRulerTop - L.padTop * 0.3));
+
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#1e1a12';
+  ctx.font = `700 ${r(L.titleFS)}px "Noto Sans SC", sans-serif`;
+  ctx.fillText(normalizedPatternName, L.xGrid, L.yTitle);
+
+  ctx.fillStyle = '#7a6e5e';
+  ctx.font = `400 ${r(L.subFS)}px "Noto Sans SC", sans-serif`;
+  const total = palette.reduce((s, p) => s + p.count, 0);
+  const authorSuffix = normalizedAuthorName ? `  ·  设计：${normalizedAuthorName}` : '';
+  ctx.fillText(`${cols} × ${rows}  ·  共 ${total} 颗  ·  分割线每 ${divStep} 格${authorSuffix}`, L.xGrid, L.yTitle + L.titleFS + L.padTop * 0.4);
+  drawDash(ctx, L.xRulerL, L.yRulerTop - L.padTop * 0.22, L.xRulerR + L.rulerSz, L.yRulerTop - L.padTop * 0.22, '#c0b49a', Math.max(0.8, L.G / 1200));
+
+  drawRulerTop(ctx, L);
+  drawRulerBottom(ctx, L);
+  drawRulerLeft(ctx, L);
+  drawRulerRight(ctx, L);
+
+  for (let r2 = 0; r2 < rows; r2 += 1) {
+    for (let c2 = 0; c2 < cols; c2 += 1) {
+      const cell = grid[r2][c2];
+      const x1 = Math.floor(L.xGrid + c2 * cellSize);
+      const y1 = Math.floor(L.yGrid + r2 * cellSize);
+      const x2 = Math.floor(L.xGrid + (c2 + 1) * cellSize);
+      const y2 = Math.floor(L.yGrid + (r2 + 1) * cellSize);
+      ctx.fillStyle = cell ? cell.hex : '#ffffff';
+      ctx.fillRect(x1, y1, x2 - x1 + 1, y2 - y1 + 1);
+    }
+  }
+
+  const isTransparentCell = (cell: { hex?: string } | null | undefined) => !cell || cell.hex === 'transparent';
+
+  if (cellSize >= 16 && options.showSymbol) {
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.font = `600 ${r(L.cellLabelFS)}px "Noto Sans SC", sans-serif`;
+    for (let r2 = 0; r2 < rows; r2 += 1) {
+      for (let c2 = 0; c2 < cols; c2 += 1) {
+        const cell = grid[r2][c2];
+        if (isTransparentCell(cell)) continue;
+        const symbol = cell.vendorCode || getVendorCode(cell.hex, brand);
+        if (!symbol || symbol === '?') continue;
+        ctx.fillStyle = lum(cell.hex) > 0.35 ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.80)';
+        ctx.fillText(symbol, L.xGrid + (c2 + 0.5) * cellSize, L.yGrid + (r2 + 0.5) * cellSize);
+      }
+    }
+    ctx.textAlign = 'left';
+  }
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.09)';
+  ctx.lineWidth = Math.max(0.3, L.G / 8000);
+  for (let c2 = 0; c2 <= cols; c2 += 1) {
+    const x = Math.round(L.xGrid + c2 * cellSize);
+    line(ctx, x, L.yGrid, x, L.yGrid + L.gridH);
+  }
+  for (let r2 = 0; r2 <= rows; r2 += 1) {
+    const y = Math.round(L.yGrid + r2 * cellSize);
+    line(ctx, L.xGrid, y, L.xGrid + L.gridW, y);
+  }
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.32)';
+  ctx.lineWidth = Math.max(0.8, L.G / 1800);
+  for (let c2 = 0; c2 <= cols; c2 += divStep) {
+    const x = Math.round(L.xGrid + c2 * cellSize);
+    line(ctx, x, L.yGrid, x, L.yGrid + L.gridH);
+  }
+  for (let r2 = 0; r2 <= rows; r2 += divStep) {
+    const y = Math.round(L.yGrid + r2 * cellSize);
+    line(ctx, L.xGrid, y, L.xGrid + L.gridW, y);
+  }
+
+  ctx.strokeStyle = '#1e1a12';
+  ctx.lineWidth = Math.max(1.5, L.G / 900);
+  ctx.strokeRect(Math.round(L.xGrid), Math.round(L.yGrid), Math.round(L.gridW), Math.round(L.gridH));
+
+  drawDash(ctx, L.xRulerL, L.yList - L.padTop * 0.22, L.xRulerR + L.rulerSz, L.yList - L.padTop * 0.22, '#c0b49a', Math.max(0.8, L.G / 1200));
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#1e1a12';
+  ctx.font = `600 ${r(L.listTitleFS)}px "Noto Sans SC", sans-serif`;
+  ctx.fillText('物料清单', L.xGrid, L.yList);
+
+  drawSwatches(ctx, L, palette);
+
+  if (!options.showSymbolStats) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(93,83,74,0.62)';
+    ctx.font = `700 ${r(L.subFS)}px "Noto Sans SC", sans-serif`;
+    ctx.fillText('物料清单已关闭', L.xGrid, L.ySwatches + L.swAreaH + L.swGapY);
+    ctx.restore();
+  }
+
+  if (options.addWatermark && authorName.trim()) {
+    ctx.save();
+    ctx.globalAlpha = 0.11;
+    ctx.fillStyle = '#c593d4';
+    ctx.font = `800 ${Math.max(14, Math.round(cellSize * 0.28))}px "Noto Sans SC", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.translate(L.canvasW / 2, L.canvasH / 2);
+    ctx.rotate(-Math.PI / 6);
+    for (let y = -L.canvasH; y < L.canvasH * 1.5; y += 96) {
+      for (let x = -L.canvasW; x < L.canvasW * 1.5; x += 220) {
+        ctx.fillText(authorName.trim(), x, y);
+      }
+    }
+    ctx.restore();
+  }
 }
 
 async function canvasToBlob(canvas: CanvasLike) {
@@ -232,313 +454,28 @@ async function canvasToBlob(canvas: CanvasLike) {
   });
 }
 
+function formatDownloadFileName(options: DownloadPatternOptions) {
+  const patternName = options.patternName.trim() || 'Dodoudou';
+  const authorName = options.authorName.trim();
+  const date = new Date();
+  const yyyy = String(date.getFullYear());
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  const safePattern = patternName.replace(/[\\/:*?"<>|\s]+/g, '_');
+  const safeAuthor = authorName.replace(/[\\/:*?"<>|\s]+/g, '_');
+  const safeDate = `${yyyy}${mm}${dd}`;
+  const authorSuffix = safeAuthor ? `_${safeAuthor}` : '';
+  return `${safePattern}${authorSuffix}_${safeDate}.png`;
+}
+
 export async function downloadPatternImage(options: DownloadPatternOptions) {
-  const { patternResult, authorName, showGrid, gridGap, gridColor, showSymbol, showSymbolStats, addWatermark, brand } = options;
-
-  const log = (...args: unknown[]) => {
-    console.log('[downloadPatternImage]', ...args);
-  };
-
-  const layout = computeLayout(patternResult);
-  const rulerSpec = computeRulerSpec(patternResult);
-  log('网格尺寸', { width: patternResult.width, height: patternResult.height, cellSize: 30, gridWidth: patternResult.width * 30, gridHeight: patternResult.height * 30 });
-  log('布局参数', {
-    canvasWidth: layout.leftMargin + layout.rulerSize + patternResult.width * 30 + layout.rulerSize + layout.rightMargin,
-    leftMargin: layout.leftMargin,
-    rightMargin: layout.rightMargin,
-    topMargin: layout.topMargin,
-    gridBottomMargin: layout.gridBottomMargin,
-    bottomMargin: layout.bottomMargin,
-    authorFontSize: layout.authorFontSize,
-    titleFontSize: layout.titleFontSize,
-    subtitleFontSize: layout.subtitleFontSize,
-    cellSymbolFontSize: layout.cellSymbolFontSize,
-    paletteCardWidth: layout.paletteCardWidth,
-    paletteCardHeight: layout.paletteCardHeight,
-    paletteTextFontSize: layout.paletteTextFontSize,
-    paletteCountFontSize: layout.paletteCountFontSize,
-    rulerSize: layout.rulerSize,
-  });
-  const cellSize = 30;
-  const gridWidth = patternResult.width * cellSize;
-  const gridHeight = patternResult.height * cellSize;
-  const leftRulerWidth = layout.rulerSize;
-  const topRulerHeight = layout.rulerSize;
-  const boardX = layout.leftMargin + leftRulerWidth;
-  const boardY = layout.topMargin + topRulerHeight;
-  const boardWidth = gridWidth;
-  const boardHeight = gridHeight;
-  const canvasWidth = layout.leftMargin + leftRulerWidth + gridWidth + leftRulerWidth + layout.rightMargin;
-  log('画布尺寸', { width: canvasWidth, height: 0 });
-
-  const paletteCardRows = Math.max(1, Math.ceil(patternResult.palette.length / layout.paletteColumns));
-  const paletteAreaHeight = paletteCardRows * layout.paletteCardHeight + Math.max(0, paletteCardRows - 1) * layout.paletteRowGap;
-
-  const authorAreaHeight = layout.authorFontSize + layout.headerPaddingY * 2;
-  const statsTitleBlockHeight = layout.statsTitleHeight + layout.statsSummaryHeight + layout.statsSummaryGap;
-  const statsBlockHeight = statsTitleBlockHeight + layout.statsSectionGap;
-  const canvasHeight =
-    layout.topMargin +
-    authorAreaHeight +
-    layout.gridBottomMargin +
-    boardHeight +
-    layout.topMargin +
-    statsBlockHeight +
-    paletteAreaHeight +
-    layout.bottomMargin +
-    layout.paletteBlockTopGap;
-  log('画布尺寸', { width: canvasWidth, height: canvasHeight });
-
-  const exportScale = 2;
-  const canvas = createCanvas(canvasWidth, canvasHeight, exportScale);
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  ctx.scale(exportScale, exportScale);
-  ctx.imageSmoothingEnabled = false;
-
-  ctx.fillStyle = '#FFFDFB';
-  ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-
-  const normalizedAuthorName = authorName.trim();
-  const authorBaselineY = layout.topMargin + layout.headerPaddingY + layout.authorFontSize;
-  if (normalizedAuthorName) {
-    drawText(ctx, normalizedAuthorName, layout.leftMargin, authorBaselineY, {
-      font: `800 ${layout.authorFontSize}px Nunito, sans-serif`,
-      color: '#6A4E69',
-    });
-  } else {
-    log('作者署名为空，未绘制');
-  }
-
-  // Background blocks for ruler and board.
-  ctx.save();
-  ctx.fillStyle = '#F6F1E8';
-  ctx.fillRect(boardX - layout.rulerSize, boardY, layout.rulerSize, boardHeight);
-  ctx.fillRect(boardX, boardY - layout.rulerSize, boardWidth, layout.rulerSize);
-  ctx.restore();
-
-  // Board surface.
-  ctx.save();
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(boardX, boardY, boardWidth, boardHeight);
-  ctx.restore();
-
-  const gridEvery = Math.max(1, Math.round(gridGap));
-  const dividerColor = gridColor || '#B6B6B6';
-  const majorLineColor = dividerColor;
-
-  for (const cell of patternResult.cells) {
-    const x = boardX + cell.x * cellSize;
-    const y = boardY + cell.y * cellSize;
-    const swatchHex = cell.hex === 'transparent' ? '#F3F1EC' : cell.hex;
-
-    ctx.fillStyle = swatchHex;
-    ctx.fillRect(x, y, cellSize, cellSize);
-
-    if (showSymbol) {
-      const symbol = normalizeCellSymbol(cell.vendorCode, cellSize);
-      ctx.save();
-      ctx.font = `800 ${layout.cellSymbolFontSize}px Nunito, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = Math.max(1.6, Math.ceil(layout.cellSymbolFontSize * 0.18));
-      const fillColor = getTextColorForSwatch(swatchHex);
-      const outlineColor = getContrastOutlineColor(swatchHex);
-      ctx.strokeStyle = outlineColor;
-      ctx.fillStyle = fillColor;
-      ctx.strokeText(symbol, x + cellSize / 2, y + cellSize / 2);
-      ctx.fillText(symbol, x + cellSize / 2, y + cellSize / 2);
-      ctx.restore();
-    }
-  }
-
-  const drawGridPass = (strokeStyle: string, lineWidth: number, alpha = 1) => {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = strokeStyle;
-    ctx.lineWidth = lineWidth;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-
-    for (let i = 0; i <= patternResult.width; i++) {
-      const x = boardX + i * cellSize + 0.5;
-      ctx.moveTo(x, boardY);
-      ctx.lineTo(x, boardY + boardHeight);
-    }
-
-    for (let j = 0; j <= patternResult.height; j++) {
-      const y = boardY + j * cellSize + 0.5;
-      ctx.moveTo(boardX, y);
-      ctx.lineTo(boardX + boardWidth, y);
-    }
-
-    ctx.stroke();
-    ctx.restore();
-  };
-
-  drawGridPass('rgba(255,255,255,0.16)', 1.6, 0.55);
-  drawGridPass('rgba(93,83,74,0.08)', 0.8, 0.95);
-
-  if (showGrid) {
-    const drawMajorLine = (x1: number, y1: number, x2: number, y2: number) => {
-      const gradient = ctx.createLinearGradient(x1, y1, x2, y2);
-      gradient.addColorStop(0, 'rgba(255,255,255,0.18)');
-      gradient.addColorStop(0.45, majorLineColor);
-      gradient.addColorStop(0.65, 'rgba(93,83,74,0.24)');
-      gradient.addColorStop(1, 'rgba(255,255,255,0.12)');
-      ctx.save();
-      ctx.strokeStyle = gradient;
-      ctx.lineWidth = 2.1;
-      ctx.lineCap = 'round';
-      ctx.globalAlpha = 0.95;
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-      ctx.restore();
-    };
-
-    for (let i = 0; i <= patternResult.width; i += gridGap) {
-      const x = boardX + i * cellSize + 0.5;
-      drawMajorLine(x, boardY, x, boardY + boardHeight);
-    }
-
-    for (let j = 0; j <= patternResult.height; j += gridGap) {
-      const y = boardY + j * cellSize + 0.5;
-      drawMajorLine(boardX, y, boardX + boardWidth, y);
-    }
-  }
-
-  // Outer border.
-  ctx.save();
-  ctx.strokeStyle = 'rgba(93,83,74,0.1)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(boardX + 0.5, boardY + 0.5, boardWidth - 1, boardHeight - 1);
-  ctx.restore();
-
-  // Coordinate rulers.
-  ctx.save();
-  ctx.fillStyle = '#E7DDD0';
-  ctx.fillRect(boardX, boardY - layout.rulerSize, boardWidth, layout.rulerSize);
-  ctx.fillRect(boardX - layout.rulerSize, boardY, layout.rulerSize, boardHeight);
-  ctx.restore();
-
-  ctx.save();
-  ctx.strokeStyle = 'rgba(93,83,74,0.08)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(boardX - layout.rulerSize + 0.5, boardY + 0.5, layout.rulerSize - 1, boardHeight - 1);
-  ctx.strokeRect(boardX + 0.5, boardY - layout.rulerSize + 0.5, boardWidth - 1, layout.rulerSize - 1);
-  ctx.restore();
-
-  rulerSpec.topLabels.forEach((label) => {
-    const x = boardX + (label - 0.5) * cellSize;
-    drawText(ctx, `${label}`, x, boardY - layout.rulerSize * 0.28, {
-      font: `700 ${clamp(layout.subtitleFontSize, 10, 18)}px Nunito, sans-serif`,
-      color: '#9A8E84',
-      align: 'center',
-      baseline: 'middle',
-    });
-  });
-
-  rulerSpec.leftLabels.forEach((label) => {
-    const y = boardY + (label - 0.5) * cellSize;
-    drawText(ctx, `${label}`, boardX - layout.rulerSize * 0.32, y, {
-      font: `700 ${clamp(layout.subtitleFontSize, 10, 18)}px Nunito, sans-serif`,
-      color: '#9A8E84',
-      align: 'center',
-      baseline: 'middle',
-    });
-  });
-
-  const statsTitleY = boardY + boardHeight + layout.gridBottomMargin + layout.statsTitleHeight;
-  drawText(ctx, '物料清单', layout.leftMargin, statsTitleY, {
-    font: `800 ${layout.titleFontSize}px Nunito, sans-serif`,
-    color: '#5D534A',
-  });
-  drawText(ctx, `${patternResult.stats.colorCount} 色  ${patternResult.stats.totalCells} 颗`, canvasWidth - layout.rightMargin, statsTitleY, {
-    font: `800 ${layout.subtitleFontSize}px Nunito, sans-serif`,
-    color: '#7D6B74',
-    align: 'right',
-  });
-
-  const paletteStartY = statsTitleY + layout.statsSummaryGap + layout.statsSectionGap;
-  log('色块布局', {
-    cardWidth: layout.paletteCardWidth,
-    cardHeight: layout.paletteCardHeight,
-    textFontSize: layout.paletteTextFontSize,
-    countFontSize: layout.paletteCountFontSize,
-    rows: paletteCardRows,
-    columns: layout.paletteColumns,
-  });
-  patternResult.palette.forEach((entry, index) => {
-    const row = Math.floor(index / layout.paletteColumns);
-    const col = index % layout.paletteColumns;
-    const x = layout.leftMargin + col * (layout.paletteCardWidth + layout.paletteGap);
-    const y = paletteStartY + row * (layout.paletteCardHeight + layout.paletteRowGap);
-    const swatchColor = entry.hex === 'transparent' ? '#F3F1EC' : entry.hex;
-    const textColor = getTextColorForSwatch(swatchColor);
-
-    drawRoundRect(ctx, x, y, layout.paletteCardWidth, layout.paletteCardHeight, clamp(cellSize * 0.12, 4, 10));
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(93,83,74,0.06)';
-    ctx.stroke();
-
-    const swatchInset = clamp(layout.paletteCardHeight * 0.16, 4, 10);
-    const swatchHeight = clamp(layout.paletteCardHeight * 0.36, 10, 24);
-    drawRoundRect(ctx, x + swatchInset, y + swatchInset, layout.paletteCardWidth - swatchInset * 2, swatchHeight, clamp(cellSize * 0.08, 3, 8));
-    ctx.fillStyle = swatchColor;
-    ctx.fill();
-
-    drawText(ctx, getVendorCode(entry.hex, brand), x + layout.paletteCardWidth / 2, y + swatchInset + swatchHeight / 2, {
-      font: `800 ${layout.paletteTextFontSize}px Nunito, sans-serif`,
-      color: textColor,
-      align: 'center',
-      baseline: 'middle',
-    });
-    drawText(ctx, `${entry.count}`, x + layout.paletteCardWidth / 2, y + layout.paletteCardHeight - swatchInset, {
-      font: `700 ${layout.paletteCountFontSize}px Nunito, sans-serif`,
-      color: '#5D534A',
-      align: 'center',
-      baseline: 'middle',
-    });
-  });
-
-  if (!showSymbolStats) {
-    ctx.save();
-    ctx.fillStyle = 'rgba(93,83,74,0.62)';
-    ctx.font = `700 ${clamp(layout.subtitleFontSize, 10, 18)}px Nunito, sans-serif`;
-    ctx.fillText('物料清单已关闭', layout.leftMargin, paletteStartY + layout.paletteCardHeight + layout.paletteRowGap);
-    ctx.restore();
-  }
-
-  if (addWatermark) {
-    const watermarkText = normalizedAuthorName;
-    ctx.save();
-    ctx.globalAlpha = 0.11;
-    ctx.fillStyle = '#C593D4';
-    ctx.font = `800 ${Math.max(14, Math.round(cellSize * 0.28))}px Nunito, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.translate(canvasWidth / 2, canvasHeight / 2);
-    ctx.rotate(-Math.PI / 6);
-    if (watermarkText) {
-      for (let y = -canvasHeight; y < canvasHeight * 1.5; y += 96) {
-        for (let x = -canvasWidth; x < canvasWidth * 1.5; x += 220) {
-          ctx.fillText(watermarkText, x, y);
-        }
-      }
-    }
-    ctx.restore();
-  }
-
+  const canvas = createCanvas(1, 1, 4);
+  drawToCanvas(canvas, options.patternResult, options);
   const blob = await canvasToBlob(canvas);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `${authorName.trim() || 'dodoudou'}-图纸.png`;
+  link.download = formatDownloadFileName(options);
   link.click();
   URL.revokeObjectURL(url);
 }

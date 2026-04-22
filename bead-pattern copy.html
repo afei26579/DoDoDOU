@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>拼豆图纸生成器</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f0ebe0; --surface: #fdfaf4; --border: #ccc0a8;
+    --text: #1e1a12; --muted: #7a6e5e; --accent: #b83224;
+  }
+  body {
+    font-family: 'Noto Sans SC', sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; padding: 28px 16px 60px; gap: 16px;
+  }
+  h1 { font-size: 18px; font-weight: 700; letter-spacing: 0.1em; }
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 20px;
+    width: 100%; max-width: 1000px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.07);
+  }
+  .panel-label {
+    font-size: 10px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.04em; }
+  input[type=number], input[type=text] {
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 9px; font-size: 13px; font-family: inherit;
+    background: white; color: var(--text);
+  }
+  input[type=number] { width: 76px; }
+  input[type=text]   { width: 190px; }
+  input:focus { outline: none; border-color: var(--accent); }
+  .btn {
+    padding: 7px 15px; border-radius: 6px; border: none;
+    font-family: inherit; font-size: 12px; font-weight: 700;
+    cursor: pointer; letter-spacing: 0.04em; transition: all 0.14s; white-space: nowrap;
+  }
+  .btn-red  { background: var(--accent); color: #fff; }
+  .btn-red:hover  { background: #9a2519; transform: translateY(-1px); }
+  .btn-dark { background: var(--text); color: #fff; }
+  .btn-dark:hover { background: #3a3020; transform: translateY(-1px); }
+  .btn-sm { font-size: 11px; padding: 5px 11px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: flex; align-items: center; gap: 4px;
+    background: white; border: 1px solid var(--border);
+    border-radius: 5px; padding: 3px 7px; font-size: 11px;
+  }
+  .chip input[type=color] {
+    width: 18px; height: 18px; padding: 0; border-radius: 3px;
+    border: 1px solid rgba(0,0,0,0.15); cursor: pointer; flex-shrink: 0;
+  }
+  .chip .del { cursor: pointer; color: #bbb; margin-left: 3px; font-size: 13px; line-height: 1; }
+  .chip .del:hover { color: var(--accent); }
+
+  #preview-wrap {
+    background: #ddd5c2; border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px; width: 100%; max-width: 1000px; overflow: auto;
+    display: flex; justify-content: center;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,0.08);
+  }
+  #previewCanvas { display: block; max-width: 100%; height: auto; image-rendering: pixelated; border-radius: 2px; }
+  .hint { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.9; }
+  .pill {
+    display: inline-block; background: white; border: 1px solid var(--border);
+    border-radius: 3px; padding: 0 7px; font-size: 11px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<h1>🧩 拼豆图纸生成器</h1>
+
+<div class="panel">
+  <div class="panel-label">图纸参数</div>
+  <div class="row">
+    <div class="field"><label>列数</label>
+      <input type="number" id="cols" value="30" min="5" max="500"></div>
+    <div class="field"><label>行数</label>
+      <input type="number" id="rows" value="30" min="5" max="500"></div>
+    <div class="field"><label>格子大小 px</label>
+      <input type="number" id="cellSize" value="30" min="8" max="80"></div>
+    <div class="field"><label>分割线间隔（格）</label>
+      <input type="number" id="divStep" value="10" min="1" max="50"></div>
+    <div class="field"><label>标题</label>
+      <input type="text" id="title" value="拼豆图纸 · 三花猫"></div>
+    <div class="field"><label>作者</label>
+      <input type="text" id="author" value="设计：Hana" style="width:120px"></div>
+    <div class="field"><label>&nbsp;</label>
+      <button class="btn btn-red" onclick="render()">🎨 预览</button></div>
+    <div class="field"><label>&nbsp;</label>
+      <button class="btn btn-dark" onclick="download()">⬇ 下载</button></div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-label">色板管理（点色块换色 · × 删除）</div>
+  <div class="chips" id="chips"></div>
+  <button class="btn btn-dark btn-sm" style="margin-top:10px" onclick="addColor()">+ 添加颜色</button>
+</div>
+
+<div id="preview-wrap">
+  <canvas id="previewCanvas"></canvas>
+</div>
+
+<p class="hint">
+  格子固定 <span class="pill" id="hintCell">30px</span> ·
+  画布尺寸 <span class="pill" id="hintSize">—</span>
+</p>
+
+<script>
+let palette = [
+  { id:'T01', color:'#f47c67', name:'珊瑚红', count:350 },
+  { id:'T02', color:'#f5f5f5', name:'白',     count:290 },
+  { id:'T03', color:'#5bafd6', name:'天蓝',   count:147 },
+  { id:'T04', color:'#e8b84b', name:'黄',     count:134 },
+  { id:'T05', color:'#e07832', name:'橙',     count:98  },
+  { id:'T06', color:'#f2a0a0', name:'粉',     count:55  },
+  { id:'T07', color:'#6abf7a', name:'绿',     count:43  },
+  { id:'T08', color:'#1a1a1a', name:'黑',     count:38  },
+];
+
+function addColor() {
+  const n = palette.length + 1;
+  palette.push({ id:'T'+(n<10?'0':'')+n, color:'#888888', name:'新色', count:0 });
+  refreshChips(); render();
+}
+function refreshChips() {
+  const wrap = document.getElementById('chips');
+  wrap.innerHTML = '';
+  palette.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.className = 'chip';
+    d.innerHTML =
+      `<input type="color" value="${p.color}" title="换色" oninput="palette[${i}].color=this.value;render()">
+       <span style="font-weight:700">${p.id}</span>
+       <span style="color:#7a6e5e">${p.name} · ${p.count}颗</span>
+       <span class="del" onclick="palette.splice(${i},1);refreshChips();render()">×</span>`;
+    wrap.appendChild(d);
+  });
+}
+
+function buildDemoGrid(cols, rows) {
+  const grid = [];
+  for (let r = 0; r < rows; r++) {
+    const row = [];
+    for (let c = 0; c < cols; c++) {
+      const cx = c - cols/2, cy = r - rows/2;
+      const d = Math.sqrt(cx*cx + cy*cy);
+      if      (d < cols*0.10) row.push(palette[7]);
+      else if (d < cols*0.22) row.push(palette[2]);
+      else if (d < cols*0.36) row.push(palette[3]);
+      else if (c%8===0||r%8===0) row.push(palette[4]);
+      else row.push(palette[1]);
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
+function calcLayout(cols, rows, cellSize, divStep) {
+  const gridW = cols * cellSize;
+  const gridH = rows * cellSize;
+  const G     = Math.max(gridW, gridH);
+
+  const padTop = G / 20;
+  const padLR  = G / 40;
+  const padBot = G / 10;
+
+  const rulerSz = G / 30;
+  const rulerFS = Math.max(7, G / 60);
+
+  const titleFS = G / 20;
+  const subFS   = G / 40;
+  const titleH  = titleFS + padTop * 0.4 + subFS;
+
+  const cellLabelFS = cellSize * 0.36;
+
+  const swW     = G / 10;
+  const swH     = G / 20;
+  const swGapX  = G / 80;
+  const swGapY  = G / 60;
+  const swBotPad= G / 40;
+  const SW_COLS = 8;
+  const swRows  = Math.ceil(palette.length / SW_COLS);
+  const swIdFS  = Math.max(8, swH * 0.5 * 0.55);
+  const swCntFS = Math.max(7, swH * 0.5 * 0.48);
+  const listTitleFS = subFS;
+  const swAreaH = swRows * swH + (swRows - 1) * swGapY;
+  const listH   = listTitleFS + padTop * 0.3 + swAreaH;
+
+  const canvasW = padLR + rulerSz + gridW + rulerSz + padLR;
+  const canvasH = padTop + titleH + padTop
+                + rulerSz + gridH + rulerSz
+                + padTop + listH + swBotPad + padBot;
+
+  const xRulerL = padLR;
+  const xGrid   = padLR + rulerSz;
+  const xRulerR = xGrid + gridW;
+
+  const yTitle    = padTop;
+  const yRulerTop = padTop + titleH + padTop;
+  const yGrid     = yRulerTop + rulerSz;
+  const yRulerBot = yGrid + gridH;
+  const yRulerL   = yGrid;
+  const yList     = yRulerBot + rulerSz + padTop;
+  const ySwatches = yList + listTitleFS + padTop * 0.3;
+
+  return {
+    G, cellSize, divStep,
+    gridW, gridH, cols, rows,
+    padTop, padLR, padBot,
+    rulerSz, rulerFS,
+    titleFS, subFS, titleH,
+    cellLabelFS,
+    swW, swH, swGapX, swGapY, swBotPad, SW_COLS, swRows,
+    swIdFS, swCntFS, listTitleFS, swAreaH, listH,
+    canvasW, canvasH,
+    xRulerL, xGrid, xRulerR,
+    yTitle, yRulerTop, yGrid, yRulerBot, yRulerL, yList, ySwatches,
+  };
+}
+
+function drawToCanvas(canvas, cols, rows, cellSize, divStep, titleText, authorText) {
+  const L    = calcLayout(cols, rows, cellSize, divStep);
+  const grid = buildDemoGrid(cols, rows);
+
+  canvas.width  = Math.round(L.canvasW);
+  canvas.height = Math.round(L.canvasH);
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#f5f0e8';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#fdfaf4';
+  ctx.fillRect(0, 0, canvas.width, Math.round(L.yRulerTop - L.padTop * 0.3));
+
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#1e1a12';
+  ctx.font = `700 ${r(L.titleFS)}px "Noto Sans SC", sans-serif`;
+  ctx.fillText(titleText, L.xGrid, L.yTitle);
+
+  ctx.fillStyle = '#7a6e5e';
+  ctx.font = `400 ${r(L.subFS)}px "Noto Sans SC", sans-serif`;
+  const total = palette.reduce((s,p) => s+p.count, 0);
+  ctx.fillText(
+    `${cols} × ${rows} 格  ·  分割线每 ${divStep} 格  ·  共 ${total} 颗  ·  ${authorText}`,
+    L.xGrid, L.yTitle + L.titleFS + L.padTop * 0.4
+  );
+  drawDash(ctx, L.xRulerL, L.yRulerTop - L.padTop*0.22,
+                L.xRulerR + L.rulerSz, L.yRulerTop - L.padTop*0.22,
+                '#c0b49a', Math.max(0.8, L.G/1200));
+
+  drawRulerTop(ctx, L);
+  drawRulerBottom(ctx, L);
+  drawRulerLeft(ctx, L);
+  drawRulerRight(ctx, L);
+
+  for (let r2 = 0; r2 < rows; r2++) {
+    for (let c2 = 0; c2 < cols; c2++) {
+      const cell = grid[r2][c2];
+      const x1 = Math.floor(L.xGrid + c2 * cellSize);
+      const y1 = Math.floor(L.yGrid + r2 * cellSize);
+      const x2 = Math.floor(L.xGrid + (c2+1) * cellSize);
+      const y2 = Math.floor(L.yGrid + (r2+1) * cellSize);
+      ctx.fillStyle = cell ? cell.color : '#ffffff';
+      ctx.fillRect(x1, y1, x2-x1+1, y2-y1+1);
+    }
+  }
+
+  if (cellSize >= 16) {
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.font = `600 ${r(L.cellLabelFS)}px "Noto Sans SC", sans-serif`;
+    for (let r2 = 0; r2 < rows; r2++) {
+      for (let c2 = 0; c2 < cols; c2++) {
+        const cell = grid[r2][c2];
+        if (!cell) continue;
+        ctx.fillStyle = lum(cell.color) > 0.35 ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.80)';
+        ctx.fillText(cell.id,
+          L.xGrid + (c2+0.5)*cellSize,
+          L.yGrid + (r2+0.5)*cellSize
+        );
+      }
+    }
+    ctx.textAlign = 'left';
+  }
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.09)';
+  ctx.lineWidth = Math.max(0.3, L.G/8000);
+  for (let c2 = 0; c2 <= cols; c2++) {
+    const x = Math.round(L.xGrid + c2*cellSize);
+    line(ctx, x, L.yGrid, x, L.yGrid+L.gridH);
+  }
+  for (let r2 = 0; r2 <= rows; r2++) {
+    const y = Math.round(L.yGrid + r2*cellSize);
+    line(ctx, L.xGrid, y, L.xGrid+L.gridW, y);
+  }
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.32)';
+  ctx.lineWidth = Math.max(0.8, L.G/1800);
+  for (let c2 = 0; c2 <= cols; c2 += divStep) {
+    const x = Math.round(L.xGrid + c2*cellSize);
+    line(ctx, x, L.yGrid, x, L.yGrid+L.gridH);
+  }
+  for (let r2 = 0; r2 <= rows; r2 += divStep) {
+    const y = Math.round(L.yGrid + r2*cellSize);
+    line(ctx, L.xGrid, y, L.xGrid+L.gridW, y);
+  }
+
+  ctx.strokeStyle = '#1e1a12';
+  ctx.lineWidth = Math.max(1.5, L.G/900);
+  ctx.strokeRect(Math.round(L.xGrid), Math.round(L.yGrid),
+                 Math.round(L.gridW), Math.round(L.gridH));
+
+  drawDash(ctx, L.xRulerL, L.yList - L.padTop*0.22,
+                L.xRulerR + L.rulerSz, L.yList - L.padTop*0.22,
+                '#c0b49a', Math.max(0.8, L.G/1200));
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#1e1a12';
+  ctx.font = `600 ${r(L.listTitleFS)}px "Noto Sans SC", sans-serif`;
+  ctx.fillText('物料清单', L.xGrid, L.yList);
+
+  drawSwatches(ctx, L);
+}
+
+// ══════════════════════════════════════════════════════════════
+// ★ 坐标尺数字生成
+//   规则：
+//   - idx=0（第1格左边缘）→ 标 "1"，文字显示在第 1 格中心（centerIdx=0）
+//   - idx=divStep（第divStep格右边缘）→ 标 divStep 的数字，
+//     文字显示在该分割线左边那格的中心（centerIdx = idx-1）
+//   例：divStep=10 → 标 1, 10, 20, 30 …
+// ══════════════════════════════════════════════════════════════
+function rulerNumbers(total, divStep) {
+  const res = [];
+  for (let c = 0; c <= total; c += divStep) {
+    if (c === 0) {
+      // 第一格：标 "1"，显示在第0格中心
+      res.push({ centerIdx: 0, label: '1' });
+    } else {
+      // 分割线在第c格右边缘，标数字 c，显示在第c-1格中心
+      res.push({ centerIdx: c - 1, label: String(c) });
+    }
+  }
+  return res;
+}
+
+function drawRulerTop(ctx, L) {
+  const { xGrid, yRulerTop, rulerSz, rulerFS, cellSize, cols, divStep } = L;
+  ctx.fillStyle = '#e8e2d4';
+  ctx.fillRect(r(xGrid), r(yRulerTop), r(L.gridW), r(rulerSz));
+
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4a4030';
+  ctx.font = `500 ${r(rulerFS)}px "Noto Sans SC", sans-serif`;
+
+  rulerNumbers(cols, divStep).forEach(({ centerIdx, label }) => {
+    if (centerIdx >= cols) return;
+    ctx.fillText(label,
+      xGrid + centerIdx * cellSize + cellSize / 2,
+      yRulerTop + rulerSz / 2
+    );
+  });
+
+  ctx.strokeStyle = '#b0a090';
+  ctx.lineWidth = Math.max(0.5, L.G/3000);
+  ctx.strokeRect(r(xGrid), r(yRulerTop), r(L.gridW), r(rulerSz));
+  ctx.textAlign = 'left';
+}
+
+function drawRulerBottom(ctx, L) {
+  const { xGrid, yRulerBot, rulerSz, rulerFS, cellSize, cols, divStep } = L;
+  ctx.fillStyle = '#e8e2d4';
+  ctx.fillRect(r(xGrid), r(yRulerBot), r(L.gridW), r(rulerSz));
+
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4a4030';
+  ctx.font = `500 ${r(rulerFS)}px "Noto Sans SC", sans-serif`;
+
+  rulerNumbers(cols, divStep).forEach(({ centerIdx, label }) => {
+    if (centerIdx >= cols) return;
+    ctx.fillText(label,
+      xGrid + centerIdx * cellSize + cellSize / 2,
+      yRulerBot + rulerSz / 2
+    );
+  });
+
+  ctx.strokeStyle = '#b0a090';
+  ctx.lineWidth = Math.max(0.5, L.G/3000);
+  ctx.strokeRect(r(xGrid), r(yRulerBot), r(L.gridW), r(rulerSz));
+  ctx.textAlign = 'left';
+}
+
+function drawRulerLeft(ctx, L) {
+  const { xRulerL, yGrid, rulerSz, rulerFS, cellSize, rows, divStep } = L;
+  ctx.fillStyle = '#e8e2d4';
+  ctx.fillRect(r(xRulerL), r(yGrid), r(rulerSz), r(L.gridH));
+
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4a4030';
+  ctx.font = `500 ${r(rulerFS)}px "Noto Sans SC", sans-serif`;
+
+  rulerNumbers(rows, divStep).forEach(({ centerIdx, label }) => {
+    if (centerIdx >= rows) return;
+    ctx.fillText(label,
+      xRulerL + rulerSz / 2,
+      yGrid + centerIdx * cellSize + cellSize / 2
+    );
+  });
+
+  ctx.strokeStyle = '#b0a090';
+  ctx.lineWidth = Math.max(0.5, L.G/3000);
+  ctx.strokeRect(r(xRulerL), r(yGrid), r(rulerSz), r(L.gridH));
+  ctx.textAlign = 'left';
+}
+
+function drawRulerRight(ctx, L) {
+  const { xRulerR, yGrid, rulerSz, rulerFS, cellSize, rows, divStep } = L;
+  ctx.fillStyle = '#e8e2d4';
+  ctx.fillRect(r(xRulerR), r(yGrid), r(rulerSz), r(L.gridH));
+
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#4a4030';
+  ctx.font = `500 ${r(rulerFS)}px "Noto Sans SC", sans-serif`;
+
+  rulerNumbers(rows, divStep).forEach(({ centerIdx, label }) => {
+    if (centerIdx >= rows) return;
+    ctx.fillText(label,
+      xRulerR + rulerSz / 2,
+      yGrid + centerIdx * cellSize + cellSize / 2
+    );
+  });
+
+  ctx.strokeStyle = '#b0a090';
+  ctx.lineWidth = Math.max(0.5, L.G/3000);
+  ctx.strokeRect(r(xRulerR), r(yGrid), r(rulerSz), r(L.gridH));
+  ctx.textAlign = 'left';
+}
+
+function drawSwatches(ctx, L) {
+  const { xGrid, ySwatches, swW, swH, swGapX, swGapY, SW_COLS, swIdFS, swCntFS } = L;
+  const halfH = swH / 2;
+  const rad   = Math.max(3, swH * 0.12);
+
+  palette.forEach((p, i) => {
+    const col = i % SW_COLS;
+    const row = Math.floor(i / SW_COLS);
+    const sx  = xGrid + col * (swW + swGapX);
+    const sy  = ySwatches + row * (swH + swGapY);
+
+    ctx.save();
+    rrect(ctx, sx, sy, swW, swH, rad);
+    ctx.clip();
+
+    ctx.fillStyle = p.color;
+    ctx.fillRect(sx, sy, swW, halfH);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(sx, sy + halfH, swW, halfH);
+
+    ctx.restore();
+
+    ctx.strokeStyle = '#c0b8ac';
+    ctx.lineWidth = Math.max(1, L.G / 3500);
+    rrect(ctx, sx, sy, swW, swH, rad);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#d4cec6';
+    ctx.lineWidth = Math.max(0.5, L.G / 5000);
+    line(ctx, sx, sy + halfH, sx + swW, sy + halfH);
+
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = lum(p.color) > 0.35 ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.92)';
+    ctx.font = `700 ${r(swIdFS)}px "Noto Sans SC", sans-serif`;
+    ctx.fillText(p.id, sx + swW/2, sy + halfH/2);
+
+    ctx.fillStyle = '#1e1a12';
+    ctx.font = `400 ${r(swCntFS)}px "Noto Sans SC", sans-serif`;
+    ctx.fillText(String(p.count), sx + swW/2, sy + halfH + halfH/2);
+
+    ctx.textAlign = 'left';
+  });
+}
+
+function r(n)  { return Math.max(1, Math.round(n)); }
+function line(ctx, x1, y1, x2, y2) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+function drawDash(ctx, x1, y1, x2, y2, color, lw) {
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.setLineDash([6,4]);
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.setLineDash([]); ctx.restore();
+}
+function rrect(ctx, x, y, w, h, rd) {
+  ctx.beginPath();
+  ctx.moveTo(x+rd, y);
+  ctx.lineTo(x+w-rd,y); ctx.quadraticCurveTo(x+w,y,x+w,y+rd);
+  ctx.lineTo(x+w,y+h-rd); ctx.quadraticCurveTo(x+w,y+h,x+w-rd,y+h);
+  ctx.lineTo(x+rd,y+h); ctx.quadraticCurveTo(x,y+h,x,y+h-rd);
+  ctx.lineTo(x,y+rd); ctx.quadraticCurveTo(x,y,x+rd,y);
+  ctx.closePath();
+}
+function lum(hex) {
+  const c = hex.replace('#','');
+  const rv = parseInt(c.slice(0,2),16)/255;
+  const gv = parseInt(c.slice(2,4),16)/255;
+  const bv = parseInt(c.slice(4,6),16)/255;
+  const f  = v => v <= 0.04045 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
+  return 0.2126*f(rv) + 0.7152*f(gv) + 0.0722*f(bv);
+}
+
+function getP() {
+  return {
+    cols:    Math.max(5,  parseInt(document.getElementById('cols').value)     || 30),
+    rows:    Math.max(5,  parseInt(document.getElementById('rows').value)     || 30),
+    cell:    Math.max(8,  parseInt(document.getElementById('cellSize').value) || 30),
+    divStep: Math.max(1,  parseInt(document.getElementById('divStep').value)  || 10),
+    title:   document.getElementById('title').value  || '拼豆图纸',
+    author:  document.getElementById('author').value || '',
+  };
+}
+
+function render() {
+  const { cols, rows, cell, divStep, title, author } = getP();
+  drawToCanvas(document.getElementById('previewCanvas'),
+               cols, rows, cell, divStep, title, author);
+  document.getElementById('hintCell').textContent = cell + 'px';
+  const L = calcLayout(cols, rows, cell, divStep);
+  document.getElementById('hintSize').textContent =
+    `${Math.round(L.canvasW)} × ${Math.round(L.canvasH)} px`;
+}
+
+function download() {
+  const { cols, rows, cell, divStep, title, author } = getP();
+  const off = document.createElement('canvas');
+  drawToCanvas(off, cols, rows, cell, divStep, title, author);
+  const a = document.createElement('a');
+  a.download = `${title.replace(/[\s·]/g,'_')}_${cols}x${rows}.png`;
+  a.href = off.toDataURL('image/png');
+  a.click();
+}
+
+refreshChips();
+render();
+['cols','rows','cellSize','divStep','title','author'].forEach(id =>
+  document.getElementById(id).addEventListener('input', render)
+);
+window.addEventListener('resize', render);
+</script>
+</body>
+</html>
