@@ -28,12 +28,14 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
   const [showSymbol, setShowSymbol] = useState(true);
   const [showSymbolStats, setShowSymbolStats] = useState(true);
   const [addWatermark, setAddWatermark] = useState(true);
+  const [highDefinition, setHighDefinition] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     if (!open) return;
 
     setPatternName(defaultPatternName);
+    setHighDefinition(false);
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -56,6 +58,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
         showSymbol,
         showSymbolStats,
         addWatermark,
+        highDefinition,
         brand,
         patternResult,
       };
@@ -204,6 +207,22 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
                 onClick={() => setAddWatermark((current) => !current)}
               />
             </div>
+            <div className="download-modal__divider" />
+            <div className="download-modal__setting-row download-modal__setting-row--list">
+              <div className="download-modal__setting-title">
+                <span className="download-modal__setting-icon">⤢</span>
+                <strong>高清导出</strong>
+              </div>
+              <button
+                type="button"
+                className={`download-switch ${highDefinition ? 'is-on' : ''}`}
+                role="switch"
+                aria-checked={highDefinition}
+                aria-label="高清导出"
+                onClick={() => setHighDefinition((current) => !current)}
+              />
+            </div>
+            
           </section>
         </div>
 

@@ -10,6 +10,7 @@ export type DownloadPatternOptions = {
   showSymbol: boolean;
   showSymbolStats: boolean;
   addWatermark: boolean;
+  highDefinition?: boolean;
   brand: ColorSystem;
   patternResult: PatternResult;
 };
@@ -113,11 +114,7 @@ function lum(hex: string) {
   return 0.2126 * f(rv) + 0.7152 * f(gv) + 0.0722 * f(bv);
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function createCanvas(width: number, height: number, scale = 2): CanvasLike {
+function createCanvas(width: number, height: number, scale = 1): CanvasLike {
   const scaledWidth = Math.max(1, Math.floor(width * scale));
   const scaledHeight = Math.max(1, Math.floor(height * scale));
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(scaledWidth, scaledHeight);
@@ -127,6 +124,10 @@ function createCanvas(width: number, height: number, scale = 2): CanvasLike {
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   return canvas;
+}
+
+function getExportScale(options: DownloadPatternOptions) {
+  return options.highDefinition ? 3 : 1;
 }
 
 function getPalette(patternResult: PatternResult, brand: ColorSystem): PaletteItem[] {
@@ -314,8 +315,8 @@ function drawSwatches(ctx: CanvasRenderingContext2D, L: Layout, palette: Palette
   });
 }
 
-function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options: DownloadPatternOptions) {
-  const { authorName, patternName, gridGap, brand } = options;
+function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options: DownloadPatternOptions, scale: number) {
+  const { authorName, patternName, showGrid, gridGap, gridColor, showSymbolStats, brand } = options;
   const normalizedPatternName = patternName.trim() || 'Dodoudou';
   const normalizedAuthorName = authorName.trim();
   const cols = patternResult.width;
@@ -326,10 +327,11 @@ function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options:
   const L = calcLayout(cols, rows, cellSize, divStep, palette.length);
   const grid = buildDemoGrid(patternResult);
 
-  canvas.width = Math.round(L.canvasW);
-  canvas.height = Math.round(L.canvasH);
+  canvas.width = Math.round(L.canvasW * scale);
+  canvas.height = Math.round(L.canvasH * scale);
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
+  ctx.scale(scale, scale);
 
   ctx.fillStyle = '#f5f0e8';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -346,7 +348,8 @@ function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options:
   const total = palette.reduce((s, p) => s + p.count, 0);
   const authorSuffix = normalizedAuthorName ? `  ·  设计：${normalizedAuthorName}` : '';
   ctx.fillText(`${cols} × ${rows}  ·  共 ${total} 颗  ·  分割线每 ${divStep} 格${authorSuffix}`, L.xGrid, L.yTitle + L.titleFS + L.padTop * 0.4);
-  drawDash(ctx, L.xRulerL, L.yRulerTop - L.padTop * 0.22, L.xRulerR + L.rulerSz, L.yRulerTop - L.padTop * 0.22, '#c0b49a', Math.max(0.8, L.G / 1200));
+  const gridLineColor = gridColor || '#c0b49a';
+  drawDash(ctx, L.xRulerL, L.yRulerTop - L.padTop * 0.22, L.xRulerR + L.rulerSz, L.yRulerTop - L.padTop * 0.22, gridLineColor, Math.max(0.8, L.G / 1200));
 
   drawRulerTop(ctx, L);
   drawRulerBottom(ctx, L);
@@ -395,15 +398,17 @@ function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options:
     line(ctx, L.xGrid, y, L.xGrid + L.gridW, y);
   }
 
-  ctx.strokeStyle = 'rgba(0,0,0,0.32)';
-  ctx.lineWidth = Math.max(0.8, L.G / 1800);
-  for (let c2 = 0; c2 <= cols; c2 += divStep) {
-    const x = Math.round(L.xGrid + c2 * cellSize);
-    line(ctx, x, L.yGrid, x, L.yGrid + L.gridH);
-  }
-  for (let r2 = 0; r2 <= rows; r2 += divStep) {
-    const y = Math.round(L.yGrid + r2 * cellSize);
-    line(ctx, L.xGrid, y, L.xGrid + L.gridW, y);
+  if (showGrid) {
+    ctx.strokeStyle = gridLineColor;
+    ctx.lineWidth = Math.max(0.8, L.G / 1800);
+    for (let c2 = 0; c2 <= cols; c2 += divStep) {
+      const x = Math.round(L.xGrid + c2 * cellSize);
+      line(ctx, x, L.yGrid, x, L.yGrid + L.gridH);
+    }
+    for (let r2 = 0; r2 <= rows; r2 += divStep) {
+      const y = Math.round(L.yGrid + r2 * cellSize);
+      line(ctx, L.xGrid, y, L.xGrid + L.gridW, y);
+    }
   }
 
   ctx.strokeStyle = '#1e1a12';
@@ -416,9 +421,11 @@ function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options:
   ctx.font = `600 ${r(L.listTitleFS)}px "Noto Sans SC", sans-serif`;
   ctx.fillText('物料清单', L.xGrid, L.yList);
 
-  drawSwatches(ctx, L, palette);
+  if (showSymbolStats) {
+    drawSwatches(ctx, L, palette);
+  }
 
-  if (!options.showSymbolStats) {
+  if (!showSymbolStats) {
     ctx.save();
     ctx.fillStyle = 'rgba(93,83,74,0.62)';
     ctx.font = `700 ${r(L.subFS)}px "Noto Sans SC", sans-serif`;
@@ -454,7 +461,7 @@ async function canvasToBlob(canvas: CanvasLike) {
   });
 }
 
-function formatDownloadFileName(options: DownloadPatternOptions) {
+function formatDownloadFileName(options: DownloadPatternOptions, scale: number) {
   const patternName = options.patternName.trim() || 'Dodoudou';
   const authorName = options.authorName.trim();
   const date = new Date();
@@ -465,17 +472,19 @@ function formatDownloadFileName(options: DownloadPatternOptions) {
   const safeAuthor = authorName.replace(/[\\/:*?"<>|\s]+/g, '_');
   const safeDate = `${yyyy}${mm}${dd}`;
   const authorSuffix = safeAuthor ? `_${safeAuthor}` : '';
-  return `${safePattern}${authorSuffix}_${safeDate}.png`;
+  const scaleSuffix = scale > 1 ? `_${scale}x` : '';
+  return `${safePattern}${authorSuffix}${scaleSuffix}_${safeDate}.png`;
 }
 
 export async function downloadPatternImage(options: DownloadPatternOptions) {
-  const canvas = createCanvas(1, 1, 4);
-  drawToCanvas(canvas, options.patternResult, options);
+  const scale = getExportScale(options);
+  const canvas = createCanvas(1, 1, scale);
+  drawToCanvas(canvas, options.patternResult, options, scale);
   const blob = await canvasToBlob(canvas);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = formatDownloadFileName(options);
+  link.download = formatDownloadFileName(options, scale);
   link.click();
   URL.revokeObjectURL(url);
 }
