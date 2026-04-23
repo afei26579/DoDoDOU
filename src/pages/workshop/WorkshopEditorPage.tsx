@@ -55,34 +55,27 @@ const QUICK_COLORS = [
 
 function buildFallbackPattern(): PatternResult {
   const cells: PatternCell[] = [];
-  for (let y = 0; y < 24; y += 1) {
-    for (let x = 0; x < 24; x += 1) {
-      const dx = x - 11.5;
-      const dy = y - 11.5;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      const isCore = distance < 5.2;
-      const isAccent = distance >= 3.2 && distance < 7.2 && (x + y) % 2 === 0;
-      const hex = isCore ? '#cda3ea' : isAccent ? '#ffd2ad' : '#f6efe8';
+  for (let y = 0; y < 30; y += 1) {
+    for (let x = 0; x < 30; x += 1) {
+      const hex = '#ffffff';
       cells.push({
         x,
         y,
-        colorId: hex,
-        vendorCode: hex,
+        colorId: 'white',
+        vendorCode: 'white',
         hex,
       });
     }
   }
 
   return {
-    width: 24,
-    height: 24,
+    width: 30,
+    height: 30,
     cells,
     palette: [
-      { colorId: '#cda3ea', vendorCode: '#cda3ea', hex: '#cda3ea', count: 88 },
-      { colorId: '#ffd2ad', vendorCode: '#ffd2ad', hex: '#ffd2ad', count: 56 },
-      { colorId: '#f6efe8', vendorCode: '#f6efe8', hex: '#f6efe8', count: 432 },
+      { colorId: 'white', vendorCode: 'white', hex: '#ffffff', count: 900 },
     ],
-    stats: { totalCells: 576, colorCount: 3 },
+    stats: { totalCells: 900, colorCount: 1 },
   };
 }
 
@@ -201,11 +194,19 @@ export function WorkshopEditorPage() {
     originLeft?: number;
     originTop?: number;
   } | null>(null);
-  const [projectData, setProjectData] = useState<EditorProjectData | null>(null);
+  const initialFallbackPattern = useMemo(() => buildFallbackPattern(), []);
+  const initialFallbackGrid = useMemo(() => patternToGrid(initialFallbackPattern).grid, [initialFallbackPattern]);
+  const [projectData, setProjectData] = useState<EditorProjectData | null>({
+    title: '未命名图纸',
+    imageUrl: null,
+    pattern: initialFallbackPattern,
+    activeColor: '#ffffff',
+    config: { canvasSize: 30, brand: 'MARD', style: '动漫', colorMergeThreshold: 30 },
+  });
   const [tool, setTool] = useState<Tool>('brush');
-  const [selectedColor, setSelectedColor] = useState(DEFAULT_COLOR);
-  const [grid, setGrid] = useState<string[][]>([]);
-  const [gridReady, setGridReady] = useState(false);
+  const [selectedColor, setSelectedColor] = useState('#ffffff');
+  const [grid, setGrid] = useState<string[][]>(initialFallbackGrid);
+  const [gridReady, setGridReady] = useState(true);
   const [isHydrated, setIsHydrated] = useState(false);
   const [history, setHistory] = useState<HistorySnapshot[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
@@ -214,7 +215,7 @@ export function WorkshopEditorPage() {
   const [showGrid, setShowGrid] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
-  const [preview, setPreview] = useState<PreviewState>({ open: true, width: 150, height: 150, x: 0, y: 0 });
+  const [preview, setPreview] = useState<PreviewState>({ open: true, width: 180, height: 180, x: 0, y: 0 });
   const [patternName, setPatternName] = useState('');
   const [canvasMetrics, setCanvasMetrics] = useState({ cellSize: 1, width: 1, height: 1, renderWidth: 1, renderHeight: 1 });
   const [bgColor, setBgColor] = useState(CANVAS_BG);
@@ -241,20 +242,42 @@ export function WorkshopEditorPage() {
 
   useEffect(() => {
     let alive = true;
-    if (!projectId) return;
+    console.debug('[workshop-editor] load start', { projectId });
+    if (!projectId) {
+      console.debug('[workshop-editor] no project id, use fallback');
+      return;
+    }
 
     getWorkshopProject(projectId)
       .then((record) => {
+        console.debug('[workshop-editor] loaded record', {
+          hasRecord: Boolean(record),
+          hasPatternResult: Boolean(record?.patternResult),
+          hasUploadedImage: Boolean(record?.uploadedImage),
+          patternSize: record?.patternResult ? `${record.patternResult.width}x${record.patternResult.height}` : null,
+          cellCount: record?.patternResult?.cells?.length ?? 0,
+          paletteCount: record?.patternResult?.palette?.length ?? 0,
+          viewMode: record?.viewMode,
+        });
         if (!alive) return;
         const loadedPattern = record?.patternResult ?? buildFallbackPattern();
         const loadedGridInfo = patternToGrid(loadedPattern);
-        const loadedColor = record?.patternResult?.palette?.[0]?.hex ?? DEFAULT_COLOR;
+        const loadedColor = record?.patternResult?.palette?.[0]?.hex ?? '#ffffff';
         const loadedConfig = record?.config ?? {
           canvasSize: loadedPattern.width,
           brand: 'MARD',
           style: '动漫',
           colorMergeThreshold: 30,
         };
+
+        console.debug('[workshop-editor] pattern to grid', {
+          patternSize: `${loadedPattern.width}x${loadedPattern.height}`,
+          gridSize: `${loadedGridInfo.width}x${loadedGridInfo.height}`,
+          firstRowLength: loadedGridInfo.grid[0]?.length ?? 0,
+          firstCell: loadedGridInfo.grid[0]?.[0] ?? null,
+          loadedColor,
+          sampleRow: loadedGridInfo.grid[0]?.slice(0, 10) ?? [],
+        });
 
         setProjectData({
           title: record?.uploadedImage?.name ?? '未命名图纸',
@@ -275,27 +298,33 @@ export function WorkshopEditorPage() {
         setHistory([{ cells: copyGrid(loadedGridInfo.grid), activeColor: loadedColor, config: loadedConfig }]);
         setHistoryIndex(0);
       })
-      .catch(() => {
+      .catch((error) => {
+        console.debug('[workshop-editor] load failed, use fallback', error);
         if (!alive) return;
         const fallback = buildFallbackPattern();
         const loadedGridInfo = patternToGrid(fallback);
+        console.debug('[workshop-editor] fallback pattern', {
+          patternSize: `${fallback.width}x${fallback.height}`,
+          gridSize: `${loadedGridInfo.width}x${loadedGridInfo.height}`,
+          firstCell: loadedGridInfo.grid[0]?.[0] ?? null,
+        });
         setProjectData({
           title: '未命名图纸',
           imageUrl: null,
           pattern: fallback,
-          activeColor: DEFAULT_COLOR,
+          activeColor: '#ffffff',
           config: { canvasSize: fallback.width, brand: 'MARD', style: '动漫', colorMergeThreshold: 30 },
         });
         setPatternName('未命名图纸');
         setGrid(loadedGridInfo.grid);
-        setSelectedColor(DEFAULT_COLOR);
+        setSelectedColor('#ffffff');
         setRows(loadedGridInfo.height);
         setCols(loadedGridInfo.width);
         setBgColor('#ffffff');
         setShowGrid(true);
         setGridReady(true);
         setIsHydrated(true);
-        setHistory([{ cells: copyGrid(loadedGridInfo.grid), activeColor: DEFAULT_COLOR, config: { canvasSize: fallback.width, brand: 'MARD', style: '动漫', colorMergeThreshold: 30 } }]);
+        setHistory([{ cells: copyGrid(loadedGridInfo.grid), activeColor: '#ffffff', config: { canvasSize: fallback.width, brand: 'MARD', style: '动漫', colorMergeThreshold: 30 } }]);
         setHistoryIndex(0);
       });
 
@@ -325,12 +354,23 @@ export function WorkshopEditorPage() {
     const canvas = canvasRef.current;
     const previewCanvas = previewCanvasRef.current;
     const bubbleCanvas = bubbleCanvasRef.current;
-    if (!canvas || !previewCanvas || !bubbleCanvas || !grid.length) return;
+    if (!canvas || !previewCanvas || !grid.length) {
+      console.debug('[workshop-editor] draw skipped', {
+        hasCanvas: Boolean(canvas),
+        hasPreviewCanvas: Boolean(previewCanvas),
+        hasBubbleCanvas: Boolean(bubbleCanvas),
+        gridLength: grid.length,
+      });
+      return;
+    }
 
     const ctx = canvas.getContext('2d');
     const pCtx = previewCanvas.getContext('2d');
-    const bCtx = bubbleCanvas.getContext('2d');
-    if (!ctx || !pCtx || !bCtx) return;
+    const bCtx = bubbleCanvas?.getContext('2d');
+    if (!ctx || !pCtx) {
+      console.debug('[workshop-editor] context missing', { hasCtx: Boolean(ctx), hasPCtx: Boolean(pCtx), hasBCtx: Boolean(bCtx) });
+      return;
+    }
 
     const rect = containerRef.current?.getBoundingClientRect();
     const availableWidth = Math.max(240, rect?.width ?? window.innerWidth);
@@ -338,6 +378,18 @@ export function WorkshopEditorPage() {
     const cellSize = Math.max(1, Math.floor(Math.min(availableWidth / cols, availableHeight / rows)));
     const width = cols * cellSize;
     const height = rows * cellSize;
+    console.debug('[workshop-editor] draw canvas', {
+      availableWidth,
+      availableHeight,
+      cols,
+      rows,
+      cellSize,
+      width,
+      height,
+      bgColor,
+      showGrid,
+      sampleRow: grid[0]?.slice(0, 5) ?? [],
+    });
     setCanvasMetrics({ cellSize, width, height, renderWidth: cols, renderHeight: rows });
 
     canvas.width = width;
@@ -397,17 +449,19 @@ export function WorkshopEditorPage() {
       pCtx.fillRect(c, r, 1, 1);
     }));
 
-    bubbleCanvas.width = 32;
-    bubbleCanvas.height = 32;
-    bCtx.fillStyle = bgColor;
-    bCtx.fillRect(0, 0, 32, 32);
-    const sx = 32 / cols;
-    const sy = 32 / rows;
-    grid.forEach((row, r) => row.forEach((hex, c) => {
-      if (!hex) return;
-      bCtx.fillStyle = hex;
-      bCtx.fillRect(Math.floor(c * sx), Math.floor(r * sy), Math.max(1, Math.ceil(sx)), Math.max(1, Math.ceil(sy)));
-    }));
+    if (bubbleCanvas && bCtx) {
+      bubbleCanvas.width = 32;
+      bubbleCanvas.height = 32;
+      bCtx.fillStyle = bgColor;
+      bCtx.fillRect(0, 0, 32, 32);
+      const sx = 32 / cols;
+      const sy = 32 / rows;
+      grid.forEach((row, r) => row.forEach((hex, c) => {
+        if (!hex) return;
+        bCtx.fillStyle = hex;
+        bCtx.fillRect(Math.floor(c * sx), Math.floor(r * sy), Math.max(1, Math.ceil(sx)), Math.max(1, Math.ceil(sy)));
+      }));
+    }
   }, [bgColor, cols, grid, rows, showGrid]);
 
   const commitGrid = (nextGrid: string[][], nextColor = selectedColor) => {
@@ -451,9 +505,16 @@ export function WorkshopEditorPage() {
 
   const persistNow = async () => {
     if (!projectId || !projectData) return;
+    const nextPattern = grid.length ? rebuildPatternFromGrid(projectData.pattern, grid) : projectData.pattern;
+    console.debug('[workshop-editor] persist', {
+      projectId,
+      patternSize: `${nextPattern.width}x${nextPattern.height}`,
+      cellCount: nextPattern.cells.length,
+      paletteCount: nextPattern.palette.length,
+    });
     await saveWorkshopProject(projectId, {
       config: projectData.config,
-      patternResult: grid.length ? rebuildPatternFromGrid(projectData.pattern, grid) : projectData.pattern,
+      patternResult: nextPattern,
       viewMode: 'pattern',
     });
   };
@@ -639,16 +700,13 @@ export function WorkshopEditorPage() {
           </button>
           <div className="workshop-editor__titlebar-text">
             <h1>{projectData?.title ?? '图纸编辑'}</h1>
-            <p>Canvas Editor</p>
           </div>
         </div>
         <div className="workshop-editor__titlebar-actions">
-          <button type="button" className="workshop-editor__top-btn" onClick={undo} disabled={historyIndex <= 0}>撤销</button>
-          <button type="button" className="workshop-editor__top-btn" onClick={redo} disabled={historyIndex >= history.length - 1}>重做</button>
-          <button type="button" className="workshop-editor__top-btn" onClick={() => setGrid(Array.from({ length: rows }, () => Array(cols).fill('')))}>清空</button>
-          <button type="button" className="workshop-editor__top-btn workshop-editor__top-btn--primary" onClick={exportPattern}>导出</button>
-          <button type="button" className="workshop-editor__top-btn" onClick={persistNow}>保存</button>
-          <button type="button" className="workshop-editor__top-btn" onClick={() => setShowSettings(true)}>设置</button>
+          <button type="button" className="workshop-editor__top-btn workshop-editor__top-btn--icon" onClick={undo} disabled={historyIndex <= 0} aria-label="撤销">↶</button>
+          <button type="button" className="workshop-editor__top-btn workshop-editor__top-btn--icon" onClick={redo} disabled={historyIndex >= history.length - 1} aria-label="重做">↷</button>
+          <button type="button" className="workshop-editor__top-btn workshop-editor__top-btn--icon" onClick={() => setGrid(Array.from({ length: rows }, () => Array(cols).fill('')))} aria-label="清空">⌫</button>
+          <button type="button" className="workshop-editor__top-btn workshop-editor__top-btn--icon workshop-editor__top-btn--primary" onClick={exportPattern} aria-label="导出">⭳</button>
         </div>
       </header>
 
@@ -656,7 +714,6 @@ export function WorkshopEditorPage() {
         <div className="workshop-editor__canvas-stage">
           {projectData?.imageUrl ? <img className="workshop-editor__source-image" src={projectData.imageUrl} alt="来源图" /> : null}
           <canvas ref={canvasRef} className="workshop-editor__canvas" />
-          <div className="workshop-editor__coords">{cols} × {rows}</div>
           <div className="workshop-editor__zoom-bar">
             <button type="button" className="workshop-editor__mini-btn" onClick={() => setScale((current) => Math.max(0.2, +(current - 0.1).toFixed(2)))}>−</button>
             <span>{Math.round(scale * 100)}%</span>
@@ -667,10 +724,6 @@ export function WorkshopEditorPage() {
 
         <div className={`workshop-editor__preview-panel ${preview.open ? '' : 'is-collapsed'}`} ref={previewPanelRef} style={{ width: preview.width, height: preview.height, left: preview.x, top: preview.y }}>
           <div className="workshop-editor__preview-header">
-            <div>
-              <p>预览</p>
-              <h3>裁剪结果</h3>
-            </div>
             <button type="button" className="workshop-editor__preview-close" onClick={handlePreviewToggle}>{preview.open ? '–' : '+'}</button>
           </div>
           <div className="workshop-editor__preview-body">
@@ -779,17 +832,17 @@ export function WorkshopEditorPage() {
 
       <style>{`
         .workshop-editor { min-height: 100vh; background: var(--bg, #fdfbf7); overflow: hidden; color: #5d534a; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-        .workshop-editor__titlebar { position: fixed; top: 0; left: 0; right: 0; height: ${TITLEBAR_H}px; z-index: 30; display: flex; align-items: center; justify-content: space-between; padding: 0 14px; background: linear-gradient(135deg, #f0e6f8 0%, #eaf4f0 50%, #fef3ec 100%); border-bottom: 1px solid #e8d5f0; }
-        .workshop-editor__titlebar-left { display: flex; align-items: center; gap: 10px; }
-        .workshop-editor__titlebar-text h1 { font-size: 18px; line-height: 1.1; margin: 0; }
-        .workshop-editor__titlebar-text p { margin: 2px 0 0; font-size: 10px; letter-spacing: .12em; color: rgba(93,83,74,.58); text-transform: uppercase; }
-        .workshop-editor__titlebar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-        .workshop-editor__top-btn { height: 34px; padding: 0 12px; border-radius: 12px; border: 1px solid rgba(216,180,226,.35); background: rgba(255,255,255,.78); color: #5d534a; font-size: 12px; font-weight: 700; cursor: pointer; }
+        .workshop-editor__titlebar { position: fixed; top: 0; left: 0; right: 0; height: ${TITLEBAR_H}px; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 12px; background: linear-gradient(135deg, #f0e6f8 0%, #eaf4f0 50%, #fef3ec 100%); border-bottom: 1px solid #e8d5f0; box-sizing: border-box; overflow: hidden; }
+        .workshop-editor__titlebar-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; overflow: hidden; }
+        .workshop-editor__titlebar-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .workshop-editor__titlebar-text h1 { font-size: 16px; line-height: 1.1; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .workshop-editor__titlebar-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; flex-wrap: nowrap; justify-content: flex-end; min-width: 0; }
+        .workshop-editor__top-btn { height: 28px; min-width: 28px; padding: 0 8px; border-radius: 10px; border: 1px solid rgba(216,180,226,.35); background: rgba(255,255,255,.78); color: #5d534a; font-size: 12px; font-weight: 700; cursor: pointer; flex: 0 0 auto; white-space: nowrap; }
         .workshop-editor__top-btn:disabled { opacity: .4; cursor: not-allowed; }
-        .workshop-editor__top-btn--icon { width: 34px; padding: 0; }
+        .workshop-editor__top-btn--icon { width: 28px; padding: 0; display: grid; place-items: center; }
         .workshop-editor__top-btn--primary { background: #d8b4e2; color: #fff; }
         .workshop-editor__layout { position: fixed; inset: ${TITLEBAR_H}px 0 0 0; overflow: hidden; background: repeating-conic-gradient(#e8e4de 0% 25%, #fdfbf7 0% 50%) 0 0 / 18px 18px; touch-action: none; }
-        .workshop-editor__canvas-stage { position: absolute; inset: 0; display: grid; place-items: center; }
+        .workshop-editor__canvas-stage { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; justify-content: center; }
         .workshop-editor__canvas { image-rendering: pixelated; box-shadow: 0 6px 40px rgba(93,83,74,.16); transform-origin: 0 0; z-index: 2; pointer-events: auto; background: transparent; }
         .workshop-editor__source-image { position: absolute; inset: 24px; width: calc(100% - 48px); height: calc(100% - 48px); object-fit: contain; opacity: .12; pointer-events: none; z-index: 1; }
         .workshop-editor__coords { position: absolute; left: 14px; top: 14px; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,.8); font-size: 12px; font-weight: 700; }
@@ -797,11 +850,9 @@ export function WorkshopEditorPage() {
         .workshop-editor__mini-btn { width: 30px; height: 30px; border: 0; border-radius: 10px; background: rgba(216,180,226,.18); font-weight: 800; cursor: pointer; }
         .workshop-editor__preview-panel { position: absolute; top: 70px; right: 14px; background: #fff; border: 1px solid rgba(216,180,226,.35); border-radius: 20px; box-shadow: 0 8px 28px rgba(93,83,74,.14); overflow: hidden; display: grid; grid-template-rows: auto 1fr; touch-action: none; user-select: none; }
         .workshop-editor__preview-panel.is-collapsed { opacity: 0; pointer-events: none; transform: scale(.85); }
-        .workshop-editor__preview-header { padding: 10px 12px 8px; display: flex; align-items: center; justify-content: space-between; background: linear-gradient(180deg, rgba(247,241,237,.92), #fff); cursor: move; }
-        .workshop-editor__preview-header p { margin: 0; font-size: 10px; text-transform: uppercase; letter-spacing: .14em; color: #b894cc; font-weight: 800; }
-        .workshop-editor__preview-header h3 { margin: 2px 0 0; font-size: 14px; }
-        .workshop-editor__preview-close { width: 30px; height: 30px; border: 0; border-radius: 10px; background: rgba(93,83,74,.08); cursor: pointer; font-size: 18px; }
-        .workshop-editor__preview-body { padding: 10px; background: #f4efe9; }
+        .workshop-editor__preview-header { height: 18px; display: flex; align-items: center; justify-content: flex-end; padding: 6px 8px 0; background: linear-gradient(180deg, rgba(247,241,237,.92), #fff); cursor: move; }
+        .workshop-editor__preview-close { width: 18px; height: 18px; border: 0; border-radius: 999px; background: rgba(93,83,74,.08); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; }
+        .workshop-editor__preview-body { padding: 10px; background: #f4efe9; display: grid; place-items: center; }
         .workshop-editor__preview-canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; border-radius: 14px; background: #fff; }
         .workshop-editor__preview-resize { position: absolute; right: 4px; bottom: 4px; width: 18px; height: 18px; border: 0; padding: 0; cursor: nwse-resize; background: linear-gradient(135deg, transparent 0 40%, rgba(93,83,74,.32) 40% 50%, transparent 50% 65%, rgba(93,83,74,.32) 65% 75%, transparent 75% 100%); border-bottom-right-radius: 16px; }
         .workshop-editor__bubble { position: absolute; top: 70px; right: 14px; width: 52px; height: 52px; border: 2px solid rgba(255,255,255,.6); border-radius: 16px; background: linear-gradient(145deg, #e8ccf5 0%, #d0a8e8 50%, #b880d4 100%); box-shadow: 0 4px 18px rgba(168,126,192,.45); display: grid; place-items: center; cursor: pointer; }
