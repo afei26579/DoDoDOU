@@ -67,8 +67,11 @@ export function WorkshopPage({
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [isCropPreviewOpen, setIsCropPreviewOpen] = useState(false);
   const [cropPreviewDataUrl, setCropPreviewDataUrl] = useState<string | null>(null);
+  const [cropPreviewSize, setCropPreviewSize] = useState({ width: 420, height: 300 });
+  const [cropPreviewPosition, setCropPreviewPosition] = useState({ x: 0, y: 0 });
   const { uploadedImage, cropTransform, config, patternResult, isGenerating } = flowState;
   const cropPreviewImageRef = useRef<HTMLImageElement | null>(null);
+  const cropPreviewDragRef = useRef<{ kind: 'move' | 'resize'; startX: number; startY: number; startWidth: number; startHeight: number; startLeft: number; startTop: number } | null>(null);
 
   const tagLabel = useMemo(() => {
     if (activeTag === 'size') return `${config.canvasSize} × ${config.canvasSize}`;
@@ -180,7 +183,56 @@ export function WorkshopPage({
       outputSize: 1200,
     });
     setCropPreviewDataUrl(previewCanvas.toDataURL('image/png'));
+    setCropPreviewSize({ width: 420, height: 300 });
+    setCropPreviewPosition({ x: 0, y: 0 });
     setIsCropPreviewOpen(true);
+  };
+
+  const handleCropPreviewPointerDown = (event: React.PointerEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    const kind = target.closest('[data-resize-handle]') ? 'resize' : 'move';
+    cropPreviewDragRef.current = {
+      kind,
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: cropPreviewSize.width,
+      startHeight: cropPreviewSize.height,
+      startLeft: cropPreviewPosition.x,
+      startTop: cropPreviewPosition.y,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleCropPreviewPointerMove = (event: React.PointerEvent<HTMLElement>) => {
+    const drag = cropPreviewDragRef.current;
+    if (!drag) return;
+
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+
+    if (drag.kind === 'move') {
+      setCropPreviewPosition({
+        x: drag.startLeft + deltaX,
+        y: drag.startTop + deltaY,
+      });
+      return;
+    }
+
+    setCropPreviewSize({
+      width: Math.max(280, drag.startWidth + deltaX),
+      height: Math.max(220, drag.startHeight + deltaY),
+    });
+  };
+
+  const handleCropPreviewPointerUp = (event: React.PointerEvent<HTMLElement>) => {
+    if (cropPreviewDragRef.current) {
+      cropPreviewDragRef.current = null;
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        // no-op
+      }
+    }
   };
 
   return (
@@ -270,7 +322,21 @@ export function WorkshopPage({
 
       {isCropPreviewOpen ? (
         <div className="crop-preview-modal__backdrop" role="presentation" onClick={() => setIsCropPreviewOpen(false)}>
-          <section className="crop-preview-modal" role="dialog" aria-modal="true" aria-label="裁剪后的图片预览" onClick={(event) => event.stopPropagation()}>
+          <section
+            className="crop-preview-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="裁剪后的图片预览"
+            onClick={(event) => event.stopPropagation()}
+            onPointerDown={handleCropPreviewPointerDown}
+            onPointerMove={handleCropPreviewPointerMove}
+            onPointerUp={handleCropPreviewPointerUp}
+            style={{
+              width: cropPreviewSize.width,
+              height: cropPreviewSize.height,
+              transform: `translate(${cropPreviewPosition.x}px, ${cropPreviewPosition.y}px)`,
+            }}
+          >
             <header className="crop-preview-modal__header">
               <div>
                 <p>裁剪预览</p>
@@ -288,6 +354,8 @@ export function WorkshopPage({
                 <div className="crop-preview-modal__loading">正在生成预览...</div>
               )}
             </div>
+
+            <button type="button" className="crop-preview-modal__resize-handle" data-resize-handle="true" aria-label="调整预览窗口大小" />
           </section>
         </div>
       ) : null}
@@ -298,6 +366,94 @@ export function WorkshopPage({
         brand={config.brand}
         patternResult={patternResult}
       />
+
+      <style>{`
+        .crop-preview-modal__backdrop {
+          position: fixed;
+          inset: 0;
+          background: rgba(18, 16, 20, 0.42);
+          backdrop-filter: blur(3px);
+          display: grid;
+          place-items: center;
+          z-index: 40;
+          padding: 16px;
+        }
+        .crop-preview-modal {
+          position: relative;
+          border-radius: 22px;
+          background: #fff;
+          box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+          border: 1px solid rgba(93, 83, 74, 0.08);
+          overflow: hidden;
+          display: grid;
+          grid-template-rows: auto 1fr;
+          user-select: none;
+          touch-action: none;
+        }
+        .crop-preview-modal__header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 14px 14px 10px;
+          cursor: move;
+          background: linear-gradient(180deg, rgba(247, 241, 237, 0.9), rgba(255, 255, 255, 1));
+        }
+        .crop-preview-modal__header p {
+          margin: 0 0 4px;
+          font-size: 11px;
+          letter-spacing: 0.14em;
+          color: var(--accent-strong);
+          font-weight: 800;
+          text-transform: uppercase;
+        }
+        .crop-preview-modal__header h3 {
+          margin: 0;
+          font-size: 16px;
+        }
+        .crop-preview-modal__close {
+          width: 36px;
+          height: 36px;
+          border: 0;
+          border-radius: 12px;
+          background: rgba(93, 83, 74, 0.08);
+          color: var(--ink);
+          font-size: 20px;
+          cursor: pointer;
+        }
+        .crop-preview-modal__body {
+          background: #f4efe9;
+          padding: 12px;
+          overflow: hidden;
+        }
+        .crop-preview-modal__image,
+        .crop-preview-modal__loading {
+          width: 100%;
+          height: 100%;
+          display: block;
+          object-fit: contain;
+          border-radius: 16px;
+          background: #fff;
+        }
+        .crop-preview-modal__loading {
+          display: grid;
+          place-items: center;
+          color: rgba(93, 83, 74, 0.65);
+        }
+        .crop-preview-modal__resize-handle {
+          position: absolute;
+          right: 6px;
+          bottom: 6px;
+          width: 18px;
+          height: 18px;
+          border: 0;
+          padding: 0;
+          cursor: nwse-resize;
+          background:
+            linear-gradient(135deg, transparent 0 40%, rgba(93, 83, 74, 0.32) 40% 50%, transparent 50% 65%, rgba(93, 83, 74, 0.32) 65% 75%, transparent 75% 100%);
+          border-bottom-right-radius: 16px;
+        }
+      `}</style>
     </main>
   );
 }
