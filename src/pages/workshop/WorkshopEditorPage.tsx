@@ -36,6 +36,16 @@ type HistoryState = {
   length: number;
 };
 
+type ZoomPoint = {
+  x: number;
+  y: number;
+};
+
+type PointerPoint = {
+  clientX: number;
+  clientY: number;
+};
+
 const TOOL_ITEMS: Array<{ id: Tool; label: string; icon: string }> = [
   { id: 'brush', label: '画笔', icon: '✏️' },
   { id: 'eraser', label: '橡皮', icon: '🧹' },
@@ -46,6 +56,7 @@ const TOOL_ITEMS: Array<{ id: Tool; label: string; icon: string }> = [
 
 const DEFAULT_COLORS = ['#000000', '#FFFFFF', '#FF6600', '#FFDAC1', '#D8B4E2'];
 const HISTORY_LIMIT = 80;
+const SAVE_DEBOUNCE_MS = 800;
 const WORKSHOP_EDITOR_DRAFT_PREFIX = 'dodoudou:workshop-editor-draft:';
 
 function getDraftKey(projectId: string) {
@@ -139,17 +150,30 @@ export function WorkshopEditorPage() {
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const bubbleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const toolbarRef = useRef<HTMLDivElement | null>(null);
+  const canvasStageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(120);
+  const [canvasLayout, setCanvasLayout] = useState({
+    width: 0,
+    height: 0,
+    scale: 1,
+    offsetY: 0,
+    scaleOffsetX: 0,
+    scaleOffsetY: 0,
+  });
   const historyRef = useRef<string[][][]>([]);
   const historyIndexRef = useRef(0);
   const toastTimerRef = useRef<number | null>(null);
+  const saveTimerRef = useRef<number | null>(null);
+  const projectReadyRef = useRef(false);
+  const pendingPersistRef = useRef<{ grid: string[][]; history: string[][][]; historyIndex: number } | null>(null);
 
   const [grid, setGrid] = useState(() => createEmptyGrid(32, 32));
   const [cols, setCols] = useState(32);
   const [rows, setRows] = useState(32);
   const [bgColor, setBgColor] = useState('#f5f0eb');
   const [showGrid, setShowGrid] = useState(true);
-  const [tool, setTool] = useState<Tool>('brush');
+  const [tool, setTool] = useState<Tool>('pan');
   const [brushSize, setBrushSize] = useState(1);
   const [eraserSize, setEraserSize] = useState(1);
   const [currentColor, setCurrentColor] = useState('#D8B4E2');
@@ -157,8 +181,17 @@ export function WorkshopEditorPage() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [toolbarPos, setToolbarPos] = useState({ x: 0, y: 0 });
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const hasUserAdjustedViewRef = useRef(false);
+  const pinchRef = useRef<{
+    startDistance: number;
+    startScale: number;
+    startOffset: { x: number; y: number };
+    center: ZoomPoint;
+  } | null>(null);
+  const touchZoomPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawnSet, setDrawnSet] = useState<Set<string>>(new Set());
   const [sourcePatternResult, setSourcePatternResult] = useState<PatternResult | null>(null);
@@ -166,6 +199,28 @@ export function WorkshopEditorPage() {
   const [historyState, setHistoryState] = useState<HistoryState>({ index: 0, length: 1 });
 
   const currentRecentColors = makeRecentColors(currentColor, recentColors);
+
+  useEffect(() => {
+    projectReadyRef.current = projectReady;
+  }, [projectReady]);
+
+  useEffect(() => {
+    const updateToolbarHeight = () => {
+      if (!toolbarRef.current) return;
+      setToolbarHeight(toolbarRef.current.getBoundingClientRect().height);
+    };
+
+    updateToolbarHeight();
+    window.addEventListener('resize', updateToolbarHeight);
+
+    const observer = toolbarRef.current ? new ResizeObserver(updateToolbarHeight) : null;
+    if (observer && toolbarRef.current) observer.observe(toolbarRef.current);
+
+    return () => {
+      window.removeEventListener('resize', updateToolbarHeight);
+      observer?.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -241,6 +296,28 @@ export function WorkshopEditorPage() {
   useEffect(() => {
     if (!canvasRef.current || !previewCanvasRef.current) return;
 
+    const headerHeight = 56;
+    const availableHeight = Math.max(0, window.innerHeight - headerHeight - toolbarHeight);
+    const availableWidth = window.innerWidth;
+    const cellSize = Math.max(1, Math.floor(availableWidth / cols));
+    const displayWidth = availableWidth;
+    const displayHeight = Math.round(rows * cellSize);
+    const yOffset = Math.max(0, (availableHeight - displayHeight) / 2);
+    const scaleOffsetX = 0;
+
+    setCanvasLayout((current) => ({
+      ...current,
+      width: displayWidth,
+      height: displayHeight,
+      offsetY: yOffset,
+      scaleOffsetX,
+      scaleOffsetY: yOffset,
+    }));
+
+    if (!hasUserAdjustedViewRef.current) {
+      setOffset({ x: scaleOffsetX, y: yOffset });
+    }
+
     paintGridToCanvas({
       canvas: canvasRef.current,
       previewCanvas: previewCanvasRef.current,
@@ -250,14 +327,59 @@ export function WorkshopEditorPage() {
       rows,
       bgColor,
       showGrid,
+      displayWidth,
+      displayHeight,
     });
-  }, [bgColor, cols, grid, rows, showGrid]);
+  }, [bgColor, cols, grid, rows, showGrid, toolbarHeight]);
 
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     };
   }, []);
+
+  const flushPersistedState = (payload = pendingPersistRef.current) => {
+    if (!payload || !projectId) return;
+
+    const gridSnapshot = cloneGrid(payload.grid);
+    const historySnapshot = cloneHistory(payload.history);
+
+    writeEditorDraft(projectId, {
+      grid: gridSnapshot,
+      history: historySnapshot,
+      historyIndex: payload.historyIndex,
+    });
+
+    if (!projectReadyRef.current) return;
+
+    void saveWorkshopProject(projectId, {
+      editorState: {
+        grid: gridSnapshot,
+        history: historySnapshot,
+        historyIndex: payload.historyIndex,
+      },
+    });
+  };
+
+  const schedulePersistState = (nextGrid: string[][], nextHistory: string[][][], nextIndex: number) => {
+    pendingPersistRef.current = {
+      grid: cloneGrid(nextGrid),
+      history: cloneHistory(nextHistory),
+      historyIndex: nextIndex,
+    };
+
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+
+    if (!projectId) return;
+
+    saveTimerRef.current = window.setTimeout(() => {
+      saveTimerRef.current = null;
+      flushPersistedState();
+    }, SAVE_DEBOUNCE_MS);
+  };
 
   const showToast = (message: string) => {
     setToast(message);
@@ -276,32 +398,53 @@ export function WorkshopEditorPage() {
     setRecentColors((current) => [hex, ...current.filter((item) => item !== hex)].slice(0, 8));
   };
 
+  const clampScale = (nextScale: number) => Math.min(12, Math.max(0.2, +nextScale.toFixed(2)));
+
+  const getCenteredOffset = (nextScale = 1) => ({
+    x: Math.max(0, (window.innerWidth - canvasLayout.width * nextScale) / 2),
+    y: Math.max(0, (window.innerHeight - headerHeight - toolbarHeight - canvasLayout.height * nextScale) / 2),
+  });
+
+  const applyZoom = (nextScale: number, focalPoint?: PointerPoint) => {
+    const canvas = canvasRef.current;
+    const stage = canvasStageRef.current;
+    if (!canvas || !stage) return;
+
+    const currentScale = scale;
+    const clampedScale = clampScale(nextScale);
+    if (clampedScale === currentScale) return;
+
+    const stageRect = stage.getBoundingClientRect();
+    const scaleRatio = clampedScale / currentScale;
+
+    hasUserAdjustedViewRef.current = true;
+    setOffset((current) => {
+      if (!focalPoint) {
+        return getCenteredOffset(clampedScale);
+      }
+
+      const pointX = focalPoint.clientX - stageRect.left;
+      const pointY = focalPoint.clientY - stageRect.top;
+
+      return {
+        x: pointX - (pointX - current.x) * scaleRatio,
+        y: pointY - (pointY - current.y) * scaleRatio,
+      };
+    });
+
+    setScale(clampedScale);
+  };
+
+  const zoomAt = (clientX: number, clientY: number, factor: number) => {
+    applyZoom(scale * factor, { clientX, clientY });
+  };
+
   const persistEditorState = (nextGrid: string[][], nextHistory: string[][][], nextIndex: number) => {
     historyRef.current = nextHistory;
     historyIndexRef.current = nextIndex;
     setHistoryState({ index: nextIndex, length: nextHistory.length });
     setGrid(nextGrid);
-
-    if (!projectId) return;
-
-    const gridSnapshot = cloneGrid(nextGrid);
-    const historySnapshot = cloneHistory(nextHistory);
-
-    writeEditorDraft(projectId, {
-      grid: gridSnapshot,
-      history: historySnapshot,
-      historyIndex: nextIndex,
-    });
-
-    if (!projectReady) return;
-
-    void saveWorkshopProject(projectId, {
-      editorState: {
-        grid: gridSnapshot,
-        history: historySnapshot,
-        historyIndex: nextIndex,
-      },
-    });
+    schedulePersistState(nextGrid, nextHistory, nextIndex);
   };
 
   const commitGrid = (nextGrid: string[][]) => {
@@ -354,12 +497,20 @@ export function WorkshopEditorPage() {
       lastCell: '',
     };
 
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Ignore capture errors.
+    }
   };
 
   const finishDrag = (event: React.PointerEvent<HTMLElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
+
+    if (drag.kind === 'pan') {
+      hasUserAdjustedViewRef.current = true;
+    }
 
     dragRef.current = null;
 
@@ -558,14 +709,14 @@ export function WorkshopEditorPage() {
             <button
               type="button"
               className={styles.smallActionBtn}
-              onClick={() => setScale((current) => Math.max(0.2, +(current - 0.1).toFixed(2)))}
+              onClick={() => applyZoom(scale - 0.1)}
             >
               －
             </button>
             <button
               type="button"
               className={styles.smallActionBtn}
-              onClick={() => setScale((current) => Math.min(12, +(current + 0.1).toFixed(2)))}
+              onClick={() => applyZoom(scale + 0.1)}
             >
               ＋
             </button>
@@ -573,7 +724,7 @@ export function WorkshopEditorPage() {
               type="button"
               className={styles.smallActionBtn}
               onClick={() => {
-                setOffset({ x: 0, y: 0 });
+                setOffset(getCenteredOffset(1));
                 setScale(1);
                 showToast('↺ 视图已重置');
               }}
@@ -595,6 +746,33 @@ export function WorkshopEditorPage() {
       return;
     }
 
+    if (tool === 'pan') {
+      beginDrag(event, 'pan', offset.x, offset.y);
+      return;
+    }
+
+    if (event.pointerType === 'touch') {
+      touchZoomPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+      if (touchZoomPointersRef.current.size >= 2) {
+        const [a, b] = Array.from(touchZoomPointersRef.current.values());
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        pinchRef.current = {
+          startDistance: Math.hypot(dx, dy),
+          startScale: scale,
+          startOffset: { ...offset },
+          center: {
+            x: (a.x + b.x) / 2,
+            y: (a.y + b.y) / 2,
+          },
+        };
+        setIsDrawing(false);
+        setDrawnSet(new Set());
+        return;
+      }
+    }
+
     const cell = toCellPoint(event.clientX, event.clientY, canvasRef.current, cols, rows);
     if (!cell) return;
 
@@ -609,11 +787,6 @@ export function WorkshopEditorPage() {
     if (tool === 'fill') {
       commitGrid(floodFill(grid, cell.row, cell.col, currentColor));
       showToast('已执行填充');
-      return;
-    }
-
-    if (tool === 'pan') {
-      beginDrag(event, 'pan', offset.x, offset.y);
       return;
     }
 
@@ -639,7 +812,46 @@ export function WorkshopEditorPage() {
   };
 
   const handleCanvasPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'touch' && touchZoomPointersRef.current.has(event.pointerId)) {
+      touchZoomPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+      if (touchZoomPointersRef.current.size >= 2 && pinchRef.current) {
+        const [a, b] = Array.from(touchZoomPointersRef.current.values());
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const distance = Math.hypot(dx, dy);
+        const nextScale = clampScale(pinchRef.current.startScale * (distance / pinchRef.current.startDistance));
+        const stage = canvasStageRef.current;
+        if (!stage) return;
+
+        const rect = stage.getBoundingClientRect();
+        const centerX = pinchRef.current.center.x - rect.left;
+        const centerY = pinchRef.current.center.y - rect.top;
+        const scaleRatio = nextScale / pinchRef.current.startScale;
+
+        setOffset({
+          x: centerX - (centerX - pinchRef.current.startOffset.x) * scaleRatio,
+          y: centerY - (centerY - pinchRef.current.startOffset.y) * scaleRatio,
+        });
+        setScale(nextScale);
+      }
+      return;
+    }
+
     const drag = dragRef.current;
+    if (drag && drag.pointerId === event.pointerId && drag.kind === 'pan') {
+      const dx = event.clientX - drag.startX;
+      const dy = event.clientY - drag.startY;
+      drag.moved = true;
+      hasUserAdjustedViewRef.current = true;
+      setOffset({
+        x: drag.originOffsetX + dx,
+        y: drag.originOffsetY + dy,
+      });
+      return;
+    }
+
+    if (!drag || drag.pointerId !== event.pointerId) return;
     if (!drag || drag.pointerId !== event.pointerId) return;
 
     const dx = event.clientX - drag.startX;
@@ -681,11 +893,20 @@ export function WorkshopEditorPage() {
   };
 
   const handleCanvasPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (dragRef.current?.pointerId !== event.pointerId) return;
+    if (event.pointerType === 'touch') {
+      touchZoomPointersRef.current.delete(event.pointerId);
+      if (touchZoomPointersRef.current.size < 2) {
+        pinchRef.current = null;
+      }
+    }
+
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
 
     dragRef.current = null;
     setIsDrawing(false);
     setDrawnSet(new Set());
+    pinchRef.current = null;
 
     try {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -736,11 +957,57 @@ export function WorkshopEditorPage() {
   };
 
   const clearCanvas = () => {
+    setClearConfirmOpen(true);
+  };
+
+  const confirmClearCanvas = () => {
+    setClearConfirmOpen(false);
     const clearedGrid = createEmptyGrid(cols, rows);
     commitGrid(clearedGrid);
     showToast('已清空画布');
   };
 
+  const cancelClearCanvas = () => {
+    setClearConfirmOpen(false);
+  };
+
+  useEffect(() => {
+    const handlePageFlush = () => {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      flushPersistedState();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        handlePageFlush();
+      }
+    };
+
+    window.addEventListener('pagehide', handlePageFlush);
+    window.addEventListener('beforeunload', handlePageFlush);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('pagehide', handlePageFlush);
+      window.removeEventListener('beforeunload', handlePageFlush);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [projectId]);
+
+  const headerHeight = 56;
+  const canvasStageStyle = {
+    top: `${headerHeight}px`,
+    bottom: `${Math.max(0, toolbarHeight + 18)}px`,
+  };
+
+  const canvasTransformStyle = {
+    width: `${canvasLayout.width}px`,
+    height: `${canvasLayout.height}px`,
+    transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+  };
 
   return (
     <main className={styles.page}>
@@ -807,42 +1074,18 @@ export function WorkshopEditorPage() {
         onPointerMove={handleCanvasPointerMove}
         onPointerUp={handleCanvasPointerUp}
         onPointerCancel={handleCanvasPointerUp}
+        onWheel={(event) => {
+          const factor = event.deltaY < 0 ? 1.12 : 0.9;
+          applyZoom(scale * factor, { clientX: event.clientX, clientY: event.clientY });
+        }}
+        style={{ outline: 'none' }}
       >
-        <div className={styles.canvasStage}>
+        <div ref={canvasStageRef} className={styles.canvasStage} style={canvasStageStyle}>
           <canvas
             ref={canvasRef}
             className={styles.canvas}
-            style={{
-              transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-            }}
+            style={canvasTransformStyle}
           />
-          <div className={styles.zoomBar}>
-            <button
-              type="button"
-              className={styles.miniBtn}
-              onClick={() => setScale((current) => Math.max(0.2, +(current - 0.1).toFixed(2)))}
-            >
-              －
-            </button>
-            <button
-              type="button"
-              className={styles.miniBtn}
-              onClick={() => setScale((current) => Math.min(12, +(current + 0.1).toFixed(2)))}
-            >
-              ＋
-            </button>
-            <button
-              type="button"
-              className={styles.miniBtn}
-              onClick={() => {
-                setOffset({ x: 0, y: 0 });
-                setScale(1);
-                showToast('↺ 视图已重置');
-              }}
-            >
-              ↺
-            </button>
-          </div>
         </div>
 
         <WorkshopPreviewPanel
@@ -928,6 +1171,30 @@ export function WorkshopEditorPage() {
                   }}
                 />
               ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {clearConfirmOpen ? (
+        <div className={styles.modalBackdrop} onClick={cancelClearCanvas}>
+          <section className={styles.modal} onClick={(event) => event.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <h3>清空画布</h3>
+              <button type="button" className={styles.closeBtn} onClick={cancelClearCanvas} aria-label="关闭弹窗">
+                ×
+              </button>
+            </header>
+            <div style={{ color: 'rgba(93,83,74,.78)', lineHeight: 1.7, fontSize: 14 }}>
+              确定要清空当前画布吗？此操作不可撤销。
+            </div>
+            <div className={styles.modalActions}>
+              <button type="button" onClick={cancelClearCanvas}>
+                取消
+              </button>
+              <button type="button" className={styles.primaryBtn} onClick={confirmClearCanvas}>
+                确认清空
+              </button>
             </div>
           </section>
         </div>

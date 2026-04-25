@@ -60,6 +60,8 @@ export function paintGridToCanvas({
   rows,
   bgColor,
   showGrid,
+  displayWidth,
+  displayHeight,
 }: {
   canvas: HTMLCanvasElement;
   previewCanvas: HTMLCanvasElement;
@@ -69,6 +71,8 @@ export function paintGridToCanvas({
   rows: number;
   bgColor: string;
   showGrid: boolean;
+  displayWidth?: number;
+  displayHeight?: number;
 }) {
   const ctx = canvas.getContext('2d');
   const pCtx = previewCanvas.getContext('2d');
@@ -78,8 +82,8 @@ export function paintGridToCanvas({
   const cellSize = 16;
   canvas.width = cols * cellSize;
   canvas.height = rows * cellSize;
-  canvas.style.width = `${canvas.width}px`;
-  canvas.style.height = `${canvas.height}px`;
+  canvas.style.width = displayWidth ? `${displayWidth}px` : `${canvas.width}px`;
+  canvas.style.height = displayHeight ? `${displayHeight}px` : `${canvas.height}px`;
 
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
