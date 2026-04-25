@@ -54,6 +54,12 @@ export type PatternResult = {
 
 export type WorkshopViewMode = 'image' | 'pattern';
 
+export type WorkshopEditorState = {
+  grid: string[][];
+  history: string[][][];
+  historyIndex: number;
+};
+
 export type WorkshopFlowState = {
   uploadedImage: UploadedImage | null;
   cropTransform: CropTransform;

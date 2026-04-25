@@ -111,8 +111,12 @@ export function WorkshopPreviewPanel({ previewCanvasRef, bubbleCanvasRef }: Prev
         ref={panelRef}
         className={`${styles.previewPanel} ${open ? '' : styles.previewCollapsed}`}
         style={{ width: panel.w, height: panel.h, left: panel.x, top: panel.y }}
+        onPointerDown={(e) => beginDrag(e, (e.target as HTMLElement).closest('[data-resize-handle]') ? 'resize' : 'move', panel.x, panel.y)}
+        onPointerMove={updateDrag}
+        onPointerUp={(e) => finishDrag(e)}
+        onPointerCancel={(e) => finishDrag(e)}
       >
-        <div id="preview-drag-layer" className={styles.previewDragLayer} onPointerDown={(e) => beginDrag(e, (e.target as HTMLElement).closest('[data-resize-handle]') ? 'resize' : 'move', panel.x, panel.y)} onPointerMove={updateDrag} onPointerUp={(e) => finishDrag(e)} onPointerCancel={(e) => finishDrag(e)} />
+        <div id="preview-drag-layer" className={styles.previewDragLayer} aria-hidden="true" />
         <div id="preview-canvas-wrap" className={styles.previewCanvasWrap}>
           <canvas ref={previewCanvasRef} id="preview-canvas" className={styles.previewCanvas} />
           <button id="preview-toggle-btn" type="button" className={styles.previewToggle} onClick={() => setOpen(false)} title="折叠预览">✕</button>
@@ -125,11 +129,12 @@ export function WorkshopPreviewPanel({ previewCanvasRef, bubbleCanvasRef }: Prev
           id="preview-bubble"
           type="button"
           className={styles.bubble}
-          style={{ left: bubble.x, top: bubble.y, right: 'auto' }}
+          style={{ left: bubble.x, top: bubble.y, right: 'auto', display: 'flex' }}
           onPointerDown={(e) => beginDrag(e, 'bubble', bubble.x, bubble.y)}
           onPointerMove={updateDrag}
-          onPointerUp={(e) => finishDrag(e, () => setOpen(true))}
-          onPointerCancel={(e) => finishDrag(e, () => setOpen(true))}
+          onPointerUp={(e) => finishDrag(e)}
+          onPointerCancel={(e) => finishDrag(e)}
+          onClick={() => setOpen(true)}
           aria-label="展开预览"
           title="点击展开预览"
         >
