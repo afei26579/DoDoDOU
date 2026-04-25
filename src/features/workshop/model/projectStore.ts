@@ -1,4 +1,4 @@
-import type { CropTransform, PatternResult, UploadedImage, WorkshopConfig, WorkshopEditorState } from './types';
+import type { CropTransform, PatternResult, UploadedImage, WorkshopConfig } from './types';
 
 const DB_NAME = 'dodoudou-workshop';
 const DB_VERSION = 1;
@@ -12,7 +12,6 @@ export type WorkshopProjectRecord = {
   config: WorkshopConfig;
   patternResult: PatternResult | null;
   viewMode: 'image' | 'pattern';
-  editorState?: WorkshopEditorState;
   updatedAt: number;
 };
 
@@ -84,7 +83,6 @@ export async function saveWorkshopProject(projectId: string, patch: WorkshopProj
     },
     patternResult: patch.patternResult ?? current?.patternResult ?? null,
     viewMode: patch.viewMode ?? current?.viewMode ?? 'image',
-    editorState: patch.editorState ?? current?.editorState,
     updatedAt: Date.now(),
   };
   MEMORY_CACHE.set(projectId, record);

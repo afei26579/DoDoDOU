@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import styles from './WorkshopEditorPage.module.css';
 import { WorkshopPreviewPanel } from './components/WorkshopPreviewPanel';
+import { getWorkshopProject } from '../../features/workshop/model/projectStore';
 import {
-  getWorkshopProject,
-  saveWorkshopProject,
-} from '../../features/workshop/model/projectStore';
-import type { PatternResult } from '../../features/workshop/model/types';
+  deleteWorkshopDraft,
+  getWorkshopDraft,
+  saveWorkshopDraft,
+} from '../../features/workshop/model/draftStore';
+import type { PatternResult, WorkshopEditorState } from '../../features/workshop/model/types';
 import {
   PALETTE,
   createEmptyGrid,
@@ -57,57 +59,53 @@ const TOOL_ITEMS: Array<{ id: Tool; label: string; icon: string }> = [
 const DEFAULT_COLORS = ['#000000', '#FFFFFF', '#FF6600', '#FFDAC1', '#D8B4E2'];
 const HISTORY_LIMIT = 80;
 const SAVE_DEBOUNCE_MS = 800;
-const WORKSHOP_EDITOR_DRAFT_PREFIX = 'dodoudou:workshop-editor-draft:';
+const WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX = 'dodoudou:workshop-editor-local-draft:';
 
-function getDraftKey(projectId: string) {
-  return `${WORKSHOP_EDITOR_DRAFT_PREFIX}${projectId}`;
+function getLocalDraftKey(projectId: string) {
+  return `${WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX}${projectId}`;
 }
 
-function readEditorDraft(projectId: string) {
+function readLocalEditorDraft(projectId: string) {
   if (typeof window === 'undefined') return null;
 
-  const raw = window.localStorage.getItem(getDraftKey(projectId));
+  const raw = window.localStorage.getItem(getLocalDraftKey(projectId));
   if (!raw) return null;
 
   try {
-    return JSON.parse(raw) as {
-      grid: string[][];
-      history: string[][][];
-      historyIndex: number;
-    };
+    return JSON.parse(raw) as WorkshopEditorState;
   } catch {
     return null;
   }
 }
 
-function writeEditorDraft(projectId: string, payload: { grid: string[][]; history: string[][][]; historyIndex: number }) {
+function writeLocalEditorDraft(projectId: string, state: WorkshopEditorState) {
   if (typeof window === 'undefined') return;
 
   try {
-    window.localStorage.setItem(getDraftKey(projectId), JSON.stringify(payload));
+    window.localStorage.setItem(getLocalDraftKey(projectId), JSON.stringify(state));
   } catch (error) {
     if (!(error instanceof DOMException) || error.name !== 'QuotaExceededError') {
       throw error;
     }
 
-    const slimPayload = {
-      grid: payload.grid,
-      history: [payload.grid],
+    const slimState: WorkshopEditorState = {
+      grid: state.grid,
+      history: [state.grid],
       historyIndex: 0,
     };
 
     try {
-      window.localStorage.setItem(getDraftKey(projectId), JSON.stringify(slimPayload));
+      window.localStorage.setItem(getLocalDraftKey(projectId), JSON.stringify(slimState));
     } catch {
-      // Ignore storage quota issues; IndexedDB persistence still handles the full state.
+      // Ignore localStorage quota failures; IndexedDB draft persistence still handles the full state.
     }
   }
 }
 
-function clearEditorDraft(projectId: string) {
+function clearLocalEditorDraft(projectId: string) {
   if (typeof window === 'undefined') return;
 
-  window.localStorage.removeItem(getDraftKey(projectId));
+  window.localStorage.removeItem(getLocalDraftKey(projectId));
 }
 
 function makeRecentColors(currentColor: string, recentColors: string[]) {
@@ -166,7 +164,7 @@ export function WorkshopEditorPage() {
   const toastTimerRef = useRef<number | null>(null);
   const saveTimerRef = useRef<number | null>(null);
   const projectReadyRef = useRef(false);
-  const pendingPersistRef = useRef<{ grid: string[][]; history: string[][][]; historyIndex: number } | null>(null);
+  const pendingPersistRef = useRef<WorkshopEditorState | null>(null);
 
   const [grid, setGrid] = useState(() => createEmptyGrid(32, 32));
   const [cols, setCols] = useState(32);
@@ -231,12 +229,15 @@ export function WorkshopEditorPage() {
         return;
       }
 
-      const draft = readEditorDraft(projectId);
-      if (draft?.grid?.length) {
-        setGrid(cloneGrid(draft.grid));
-        historyRef.current = cloneHistory(draft.history?.length ? draft.history : [draft.grid]);
+      const draft = await getWorkshopDraft(projectId).catch(() => null);
+      const localDraft = readLocalEditorDraft(projectId);
+      const restoredState = draft?.state ?? localDraft;
+
+      if (restoredState?.grid?.length) {
+        setGrid(cloneGrid(restoredState.grid));
+        historyRef.current = cloneHistory(restoredState.history?.length ? restoredState.history : [restoredState.grid]);
         historyIndexRef.current = Math.min(
-          draft.historyIndex ?? draft.history.length - 1,
+          restoredState.historyIndex ?? restoredState.history.length - 1,
           historyRef.current.length - 1,
         );
         setHistoryState({ index: historyIndexRef.current, length: historyRef.current.length });
@@ -247,31 +248,19 @@ export function WorkshopEditorPage() {
 
       if (project?.patternResult) {
         const { patternResult } = project;
-        const nextGrid = draft?.grid?.length ? cloneGrid(draft.grid) : buildGridFromPattern(patternResult);
+        const nextGrid = restoredState?.grid?.length ? cloneGrid(restoredState.grid) : buildGridFromPattern(patternResult);
 
         setSourcePatternResult(patternResult);
         setCols(patternResult.width);
         setRows(patternResult.height);
         setGrid(nextGrid);
 
-        if (!draft?.grid?.length) {
-          if (project.editorState?.history?.length) {
-            const nextHistory = cloneHistory(project.editorState.history);
-            const nextIndex = Math.min(
-              project.editorState.historyIndex ?? nextHistory.length - 1,
-              nextHistory.length - 1,
-            );
-
-            historyRef.current = nextHistory;
-            historyIndexRef.current = nextIndex;
-            setHistoryState({ index: nextIndex, length: nextHistory.length });
-          } else {
-            historyRef.current = [cloneGrid(nextGrid)];
-            historyIndexRef.current = 0;
-            setHistoryState({ index: 0, length: 1 });
-          }
+        if (!restoredState?.grid?.length) {
+          historyRef.current = [cloneGrid(nextGrid)];
+          historyIndexRef.current = 0;
+          setHistoryState({ index: 0, length: 1 });
         }
-      } else if (!draft?.grid?.length) {
+      } else if (!restoredState?.grid?.length) {
         const initialGrid = cloneGrid(grid);
         historyRef.current = [initialGrid];
         historyIndexRef.current = 0;
@@ -281,7 +270,8 @@ export function WorkshopEditorPage() {
       setProjectReady(true);
 
       if (projectId) {
-        clearEditorDraft(projectId);
+        await deleteWorkshopDraft(projectId).catch(() => undefined);
+        clearLocalEditorDraft(projectId);
       }
     }
 
@@ -300,10 +290,10 @@ export function WorkshopEditorPage() {
     const availableHeight = Math.max(0, window.innerHeight - headerHeight - toolbarHeight);
     const availableWidth = window.innerWidth;
     const cellSize = Math.max(1, Math.floor(availableWidth / cols));
-    const displayWidth = availableWidth;
-    const displayHeight = Math.round(rows * cellSize);
+    const displayWidth = cols * cellSize;
+    const displayHeight = rows * cellSize;
     const yOffset = Math.max(0, (availableHeight - displayHeight) / 2);
-    const scaleOffsetX = 0;
+    const scaleOffsetX = Math.max(0, (availableWidth - displayWidth) / 2);
 
     setCanvasLayout((current) => ({
       ...current,
@@ -339,27 +329,21 @@ export function WorkshopEditorPage() {
     };
   }, []);
 
-  const flushPersistedState = (payload = pendingPersistRef.current) => {
+  const flushPersistedState = async (payload = pendingPersistRef.current) => {
     if (!payload || !projectId) return;
 
-    const gridSnapshot = cloneGrid(payload.grid);
-    const historySnapshot = cloneHistory(payload.history);
-
-    writeEditorDraft(projectId, {
-      grid: gridSnapshot,
-      history: historySnapshot,
+    const editorState: WorkshopEditorState = {
+      grid: cloneGrid(payload.grid),
+      history: cloneHistory(payload.history),
       historyIndex: payload.historyIndex,
-    });
+    };
 
-    if (!projectReadyRef.current) return;
-
-    void saveWorkshopProject(projectId, {
-      editorState: {
-        grid: gridSnapshot,
-        history: historySnapshot,
-        historyIndex: payload.historyIndex,
-      },
-    });
+    try {
+      await saveWorkshopDraft(projectId, { state: editorState });
+      writeLocalEditorDraft(projectId, editorState);
+    } catch {
+      writeLocalEditorDraft(projectId, editorState);
+    }
   };
 
   const schedulePersistState = (nextGrid: string[][], nextHistory: string[][][], nextIndex: number) => {
@@ -377,7 +361,7 @@ export function WorkshopEditorPage() {
 
     saveTimerRef.current = window.setTimeout(() => {
       saveTimerRef.current = null;
-      flushPersistedState();
+      void flushPersistedState();
     }, SAVE_DEBOUNCE_MS);
   };
 
