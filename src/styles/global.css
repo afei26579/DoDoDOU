@@ -677,8 +677,8 @@ p { margin: 0; }
 .preview-action { border: 1px solid #ebe6de; border-radius: 18px; padding: 14px 10px; background: #fff; color: rgba(93,83,74,0.72); }
 .preview-action.is-active { background: rgba(216,180,226,0.12); border-color: rgba(197,147,212,0.22); color: var(--accent-strong); }
 
-.download-modal__backdrop { position: fixed; inset: 0; background: rgba(93, 83, 74, 0.26); display: grid; align-items: end; z-index: 30; }
-.download-modal { width: 100%; max-width: 390px; margin: 0 auto; border-radius: 28px 28px 0 0; padding: 12px 14px 16px; box-shadow: 0 -12px 30px rgba(93,83,74,0.14); background: linear-gradient(180deg, #fffdfb 0%, #faf4ee 100%); animation: workshop-fade-in 220ms ease-out; }
+.download-modal__backdrop { position: fixed; inset: 0; background: rgba(93, 83, 74, 0.26); display: grid; align-items: end; z-index: 1200; pointer-events: auto; }
+.download-modal { width: 100%; max-width: 390px; margin: 0 auto; border-radius: 28px 28px 0 0; padding: 12px 14px 16px; box-shadow: 0 -12px 30px rgba(93,83,74,0.14); background: linear-gradient(180deg, #fffdfb 0%, #faf4ee 100%); animation: workshop-fade-in 220ms ease-out; position: relative; z-index: 1201; }
 .download-modal__handle { width: 42px; height: 4px; border-radius: 999px; background: rgba(93,83,74,0.14); margin: 4px auto 12px; }
 .download-modal__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .download-modal__header h3 { margin: 0; font-size: 22px; font-family: var(--font-title); }

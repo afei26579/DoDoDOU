@@ -88,7 +88,7 @@ export function paintGridToCanvas({
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   grid.forEach((row, r) => row.forEach((hex, c) => {
-    if (!hex) return;
+    if (!hex || hex === 'transparent') return;
     ctx.fillStyle = hex;
     ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
   }));
@@ -116,7 +116,7 @@ export function paintGridToCanvas({
   pCtx.fillStyle = bgColor;
   pCtx.fillRect(0, 0, cols, rows);
   grid.forEach((row, r) => row.forEach((hex, c) => {
-    if (!hex) return;
+    if (!hex || hex === 'transparent') return;
     pCtx.fillStyle = hex;
     pCtx.fillRect(c, r, 1, 1);
   }));
@@ -129,7 +129,7 @@ export function paintGridToCanvas({
     const scX = 32 / cols;
     const scY = 32 / rows;
     grid.forEach((row, r) => row.forEach((hex, c) => {
-      if (!hex) return;
+      if (!hex || hex === 'transparent') return;
       bCtx.fillStyle = hex;
       bCtx.fillRect(Math.floor(c * scX), Math.floor(r * scY), Math.max(1, Math.ceil(scX)), Math.max(1, Math.ceil(scY)));
     }));
@@ -146,7 +146,7 @@ export function exportGridAsImage(grid: string[][], cols: number, rows: number, 
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, ec.width, ec.height);
   grid.forEach((row, r) => row.forEach((hex, c) => {
-    if (!hex) return;
+    if (!hex || hex === 'transparent') return;
     ctx.fillStyle = hex;
     ctx.fillRect(c * csz, r * csz, csz, csz);
   }));

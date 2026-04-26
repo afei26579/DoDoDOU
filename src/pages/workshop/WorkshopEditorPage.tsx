@@ -2,17 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import styles from './WorkshopEditorPage.module.css';
 import { WorkshopPreviewPanel } from './components/WorkshopPreviewPanel';
+import { DownloadSettingsModal } from './DownloadSettingsModal';
 import { getWorkshopProject } from '../../features/workshop/model/projectStore';
 import {
   deleteWorkshopDraft,
   getWorkshopDraft,
   saveWorkshopDraft,
 } from '../../features/workshop/model/draftStore';
-import type { PatternResult, WorkshopEditorState } from '../../features/workshop/model/types';
+import type { PatternResult, WorkshopEditorState, WorkshopConfig } from '../../features/workshop/model/types';
+import { defaultWorkshopConfig } from '../../features/workshop/model/defaults';
+import { getVendorCode } from '../../lib/pattern/color-system';
 import {
-  PALETTE,
   createEmptyGrid,
-  exportGridAsImage,
   floodFill,
   paintGridToCanvas,
   toCellPoint,
@@ -140,6 +141,60 @@ function cloneHistory(history: string[][][]) {
   return history.map((snap) => snap.map((row) => [...row]));
 }
 
+function gridToPatternResult(grid: string[][], brand: WorkshopConfig['brand']): PatternResult {
+  const height = grid.length;
+  const width = grid[0]?.length ?? 0;
+  const cells: PatternResult['cells'] = [];
+  const paletteMap = new Map<string, { count: number; vendorCode: string }>();
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const hex = grid[y]?.[x] ?? 'transparent';
+
+      if (!hex || hex === 'transparent') {
+        cells.push({
+          x,
+          y,
+          colorId: '__TRANSPARENT__',
+          vendorCode: '',
+          hex: 'transparent',
+        });
+        continue;
+      }
+
+      const vendorCode = getVendorCode(hex, brand);
+      cells.push({
+        x,
+        y,
+        colorId: hex,
+        vendorCode,
+        hex,
+      });
+
+      const current = paletteMap.get(hex) ?? { count: 0, vendorCode };
+      current.count += 1;
+      current.vendorCode = vendorCode;
+      paletteMap.set(hex, current);
+    }
+  }
+
+  return {
+    width,
+    height,
+    cells,
+    palette: Array.from(paletteMap.entries()).map(([hex, value]) => ({
+      colorId: hex,
+      vendorCode: value.vendorCode,
+      hex,
+      count: value.count,
+    })),
+    stats: {
+      totalCells: width * height,
+      colorCount: paletteMap.size,
+    },
+  };
+}
+
 export function WorkshopEditorPage() {
   const navigate = useNavigate();
   const { projectId } = useParams();
@@ -192,11 +247,20 @@ export function WorkshopEditorPage() {
   const touchZoomPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawnSet, setDrawnSet] = useState<Set<string>>(new Set());
-  const [sourcePatternResult, setSourcePatternResult] = useState<PatternResult | null>(null);
   const [projectReady, setProjectReady] = useState(false);
   const [historyState, setHistoryState] = useState<HistoryState>({ index: 0, length: 1 });
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [downloadBrand, setDownloadBrand] = useState<WorkshopConfig['brand']>(defaultWorkshopConfig.brand);
 
   const currentRecentColors = makeRecentColors(currentColor, recentColors);
+  const downloadPatternResult = gridToPatternResult(grid, downloadBrand);
+
+  useEffect(() => {
+    if (!downloadModalOpen) return;
+    console.log('[WorkshopEditorPage] download grid', grid);
+    console.log('[WorkshopEditorPage] download patternResult', downloadPatternResult);
+  }, [downloadModalOpen, downloadPatternResult, grid]);
+  const isDownloadModalOpen = downloadModalOpen;
 
   useEffect(() => {
     projectReadyRef.current = projectReady;
@@ -250,7 +314,9 @@ export function WorkshopEditorPage() {
         const { patternResult } = project;
         const nextGrid = restoredState?.grid?.length ? cloneGrid(restoredState.grid) : buildGridFromPattern(patternResult);
 
-        setSourcePatternResult(patternResult);
+        console.log('[WorkshopEditorPage] patternResult', patternResult);
+        console.log('[WorkshopEditorPage] gridFromPatternResult', nextGrid);
+
         setCols(patternResult.width);
         setRows(patternResult.height);
         setGrid(nextGrid);
@@ -731,6 +797,7 @@ export function WorkshopEditorPage() {
     }
 
     if (tool === 'pan') {
+      if (isDownloadModalOpen) return;
       beginDrag(event, 'pan', offset.x, offset.y);
       return;
     }
@@ -1007,8 +1074,7 @@ export function WorkshopEditorPage() {
             ←
           </button>
           <div className={styles.titlebarText}>
-            <h1>拼豆豆编辑器</h1>
-            <p>PIXEL BEAD PATTERN EDITOR</p>
+            <h1>落笔生花</h1>
           </div>
         </div>
         <div className={styles.titlebarActions}>
@@ -1041,7 +1107,10 @@ export function WorkshopEditorPage() {
           <button
             type="button"
             className={styles.primaryBtn}
-            onClick={() => exportGridAsImage({ grid, bgColor, cols, rows })}
+            onClick={() => {
+              setDownloadBrand(defaultWorkshopConfig.brand);
+              setDownloadModalOpen(true);
+            }}
             disabled={!grid.length}
             title="导出"
           >
@@ -1076,6 +1145,15 @@ export function WorkshopEditorPage() {
           previewCanvasRef={previewCanvasRef}
           bubbleCanvasRef={bubbleCanvasRef}
         />
+
+        <DownloadSettingsModal
+          open={downloadModalOpen}
+          onClose={() => setDownloadModalOpen(false)}
+          brand={downloadBrand}
+          patternResult={downloadPatternResult}
+          defaultPatternName=""
+        />
+        {downloadModalOpen && <div className={styles.modalShield} aria-hidden="true" />}
 
         <section
           ref={toolbarRef}
