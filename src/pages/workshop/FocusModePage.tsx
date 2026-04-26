@@ -1,247 +1,299 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
 import styles from './FocusModePage.module.css';
 
-type ColorItem = { code: string; name: string; hex: string; count: number };
+type PatternMode = 'smart' | 'color-block' | 'edge-first' | 'region-first' | 'row-by-row';
 
-const DEFAULT_PALETTE: ColorItem[] = [
-  { code: 'S-07', name: '樱花粉', hex: '#E8A4C8', count: 42 },
-  { code: 'S-14', name: '天空蓝', hex: '#A8D8EA', count: 37 },
-  { code: 'S-22', name: '薄荷绿', hex: '#B5EAD7', count: 58 },
-  { code: 'S-31', name: '柠檬黄', hex: '#FFE566', count: 24 },
-  { code: 'S-38', name: '珊瑚橙', hex: '#FFDAC1', count: 18 },
-  { code: 'S-45', name: '丁香紫', hex: '#D8B4E2', count: 64 },
-];
-
-const DEMO_GRID_SIZE = 20;
-const BEAD_SIZE = 16;
-
-function generateDemoGrid() {
-  const grid: number[][] = [];
-  for (let r = 0; r < DEMO_GRID_SIZE; r += 1) {
-    grid[r] = [];
-    for (let c = 0; c < DEMO_GRID_SIZE; c += 1) {
-      const dx = c - DEMO_GRID_SIZE / 2 + 0.5;
-      const dy = r - DEMO_GRID_SIZE / 2 + 0.5;
-      const hx = dx / (DEMO_GRID_SIZE * 0.5);
-      const hy = dy / (DEMO_GRID_SIZE * 0.5);
-      const isHeart = hx * hx + (hy - 0.3 * Math.sqrt(Math.abs(hx))) ** 2 < 0.55;
-      if (isHeart) {
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        grid[r][c] = dist < 2.5 ? 0 : dist < 4.5 ? 3 : dist < 6.5 ? 1 : 5;
-      } else {
-        const bg = (r + c) % 6;
-        grid[r][c] = bg < 1 ? 1 : bg < 2 ? 2 : bg < 3 ? 4 : 5;
-      }
-    }
-  }
-  return grid;
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
+type ToggleKey = 'highlight' | 'grid' | 'dim' | 'label';
 
 export function FocusModePage() {
   const navigate = useNavigate();
   const { projectId } = useParams();
   const { state, isHydrating } = useWorkshopFlow(projectId ?? null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const minimapRef = useRef<HTMLCanvasElement | null>(null);
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ x: number; y: number; startX: number; startY: number } | null>(null);
-  const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [completed, setCompleted] = useState<Set<number>>(() => new Set());
-  const [showToast, setShowToast] = useState('');
+  const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
+  const [patternMode, setPatternMode] = useState<PatternMode>('smart');
+  const [toggles, setToggles] = useState<Record<ToggleKey, boolean>>({
+    highlight: true,
+    grid: true,
+    dim: true,
+    label: false,
+  });
+  const [handedness, setHandedness] = useState<'left' | 'right'>('left');
+  const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
 
-  const grid = useMemo(() => generateDemoGrid(), []);
-  const palette = useMemo(() => DEFAULT_PALETTE, []);
-  const currentColor = palette[currentIndex] ?? palette[0];
-  const nextColor = palette.find((item, index) => index > currentIndex && !completed.has(index)) ?? null;
-  const totalCount = palette.reduce((sum, item) => sum + item.count, 0);
-  const doneCount = [...completed].reduce((sum, idx) => sum + (palette[idx]?.count ?? 0), 0);
-  const percent = totalCount ? Math.round((doneCount / totalCount) * 100) : 0;
+  const currentColor = useMemo(() => state.patternResult?.palette[0] ?? null, [state.patternResult]);
+  const palette = state.patternResult?.palette ?? [];
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const minimap = minimapRef.current;
-    if (!canvas || !minimap) return;
-
-    const ctx = canvas.getContext('2d');
-    const miniCtx = minimap.getContext('2d');
-    if (!ctx || !miniCtx) return;
-
-    canvas.width = DEMO_GRID_SIZE * BEAD_SIZE;
-    canvas.height = DEMO_GRID_SIZE * BEAD_SIZE;
-    minimap.width = 80;
-    minimap.height = 80;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const now = Date.now();
-
-    for (let r = 0; r < DEMO_GRID_SIZE; r += 1) {
-      for (let c = 0; c < DEMO_GRID_SIZE; c += 1) {
-        const color = palette[grid[r][c]];
-        const x = c * BEAD_SIZE;
-        const y = r * BEAD_SIZE;
-        const isCurrent = grid[r][c] === currentIndex;
-        const isDone = completed.has(grid[r][c]);
-        ctx.save();
-        ctx.globalAlpha = isDone && !isCurrent ? 0.3 : isCurrent ? 1 : 0.6;
-        roundRect(ctx, x + 1.5, y + 1.5, BEAD_SIZE - 3, BEAD_SIZE - 3, 5);
-        if (isCurrent) {
-          const pulse = 0.5 + 0.5 * Math.sin(now / 400);
-          ctx.fillStyle = color.hex;
-          ctx.shadowColor = color.hex;
-          ctx.shadowBlur = 6 + pulse * 5;
-        } else {
-          ctx.fillStyle = color.hex;
-        }
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-
-    miniCtx.clearRect(0, 0, minimap.width, minimap.height);
-    const cellW = minimap.width / DEMO_GRID_SIZE;
-    const cellH = minimap.height / DEMO_GRID_SIZE;
-    for (let r = 0; r < DEMO_GRID_SIZE; r += 1) {
-      for (let c = 0; c < DEMO_GRID_SIZE; c += 1) {
-        miniCtx.fillStyle = palette[grid[r][c]].hex;
-        miniCtx.globalAlpha = completed.has(grid[r][c]) ? 0.35 : 1;
-        miniCtx.fillRect(c * cellW, r * cellH, cellW, cellH);
-      }
-    }
-    miniCtx.globalAlpha = 1;
-  }, [completed, currentIndex, grid, palette]);
-
-  useEffect(() => {
-    if (!showToast) return;
-    const timer = window.setTimeout(() => setShowToast(''), 2200);
-    return () => window.clearTimeout(timer);
-  }, [showToast]);
-
-  const handleNext = () => {
-    setCompleted((current) => new Set(current).add(currentIndex));
-    const next = palette.findIndex((_, idx) => idx > currentIndex && !completed.has(idx));
-    if (next >= 0) {
-      setCurrentIndex(next);
-      setShowToast(`已切换至 ${palette[next].code} ${palette[next].name}`);
-    } else {
-      setShowToast('全部色块已完成');
-    }
-  };
-
-  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    dragRef.current = { x: pan.x, y: pan.y, startX: event.clientX, startY: event.clientY };
+  const handlePreviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: previewPos.x,
+      originY: previewPos.y,
+    };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const handlePointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragRef.current) return;
-    setPan({ x: dragRef.current.x + (event.clientX - dragRef.current.startX), y: dragRef.current.y + (event.clientY - dragRef.current.startY) });
+  const handlePreviewPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+
+    setPreviewPos({
+      x: drag.originX + (event.clientX - drag.startX),
+      y: drag.originY + (event.clientY - drag.startY),
+    });
   };
 
-  const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handlePreviewPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = null;
-    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch {}
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // ignore
+    }
   };
 
   return (
     <main className={styles.page} aria-label="专注模式页面">
-      <header className={styles.header}>
-        <div className={styles.headerLeft}>
-          <div className={styles.headerIcon} aria-hidden="true">▦</div>
-          <div className={styles.headerTitle}>沉浸式<span>拼豆</span></div>
+      <header className={styles.titlebar}>
+        <div className={styles.titlebarLeft}>
+          <button
+            type="button"
+            className={styles.backButton}
+            onClick={() => navigate(`/workshop/result/${projectId ?? ''}`)}
+            aria-label="返回结果页"
+          >
+            ←
+          </button>
+          <div className={styles.titlebarText}>
+            <h1>专注模式</h1>
+          </div>
         </div>
-        <div className={styles.headerRight}>
-          <div className={styles.progressBadge}>{palette.filter((item) => item.count > 0).length - completed.size}/{palette.filter((item) => item.count > 0).length} 色</div>
-          <button type="button" className={styles.iconBtn} onClick={() => setSettingsOpen(true)}>⚙</button>
+
+        <div className={styles.titlebarRight}>
+          <button type="button" className={styles.settingsButton} onClick={() => setSettingsOpen(true)} aria-label="打开设置">
+            ⚙
+          </button>
+          {isHydrating ? <div className={styles.loadingBadge}>加载中...</div> : null}
         </div>
       </header>
 
-      <section className={styles.colorHint}>
-        <div className={styles.currentCard}>
-          <div className={styles.colorDotWrap}><div className={styles.colorDot} style={{ background: currentColor.hex }} /></div>
-          <div className={styles.colorInfo}>
-            <div className={styles.colorCode}>{currentColor.code}</div>
-            <div className={styles.colorName}>{currentColor.name}</div>
-            <div className={styles.colorCount}>{currentColor.count} 粒</div>
+      <section className={styles.currentColorSection} aria-label="当前正在拼的颜色">
+        <div className={styles.currentColorCard}>
+          <div className={styles.currentColorBadge}>当前</div>
+          <div className={styles.currentColorDotWrap}>
+            <div
+              className={`${styles.currentColorDot} ${currentColor ? styles.currentColorDotPulse : ''}`}
+              style={{ background: currentColor?.hex ?? '#D8B4E2' }}
+            />
           </div>
-        </div>
-        <div className={styles.hintArrow}>→</div>
-        <div className={styles.nextCard}>
-          <div className={styles.nextLabel}>NEXT</div>
-          <div className={styles.nextDot} style={{ background: nextColor?.hex ?? currentColor.hex }} />
-          <div className={styles.nextCode}>{nextColor?.code ?? '完成'}</div>
+          <div className={styles.currentColorInfo}>
+            <div className={styles.currentColorCode}>{currentColor?.vendorCode ?? '等待图纸'}</div>
+            <div className={styles.currentColorName}>{currentColor ? `#${currentColor.hex.replace('#', '')}` : '图纸加载后显示当前颜色'}</div>
+            <div className={styles.currentColorCount}>{currentColor ? `${currentColor.count} 粒` : '—'}</div>
+          </div>
+          <div className={styles.currentColorArrow}>→</div>
+          <div className={styles.nextColorCard}>
+            <div className={styles.nextColorLabel}>NEXT</div>
+            <div className={styles.nextColorDot} style={{ background: palette[1]?.hex ?? currentColor?.hex ?? '#D8B4E2' }} />
+            <div className={styles.nextColorCode}>{palette[1]?.vendorCode ?? '完成'}</div>
+          </div>
         </div>
       </section>
 
-      <main className={styles.canvasArea}>
-        <div className={styles.canvasContainer} onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}>
-          <div className={styles.canvasWrapper} ref={wrapperRef} style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
-            <canvas ref={canvasRef} className={styles.canvas} />
-          </div>
-          <div className={styles.canvasTip}><span className={styles.tipDot} />高亮显示当前色块</div>
-          <div className={styles.zoomHint}>{Math.round(zoom * 100)}%</div>
-          <div className={styles.zoomControls}>
-            <button type="button" className={styles.zoomBtn} onClick={() => setZoom((current) => Math.min(current * 1.3, 6))}>+</button>
-            <button type="button" className={styles.zoomBtn} onClick={() => setZoom((current) => Math.max(current / 1.3, 0.3))}>−</button>
-            <button type="button" className={styles.zoomBtn} onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}>⌂</button>
+      <section className={styles.canvasSection} aria-label="图纸区域">
+        <div className={styles.canvasPlaceholder}>
+          <div className={styles.placeholderCard}>
+            <p className={styles.placeholderLabel}>图纸区域</p>
+            <h2>这里先作为中间图纸占位区</h2>
+            <p className={styles.placeholderHint}>
+              后续会基于当前项目的图纸内容，放置专注编辑所需的画布与操作反馈。
+            </p>
           </div>
         </div>
-      </main>
+      </section>
 
-      <footer className={styles.footer}>
-        <div className={styles.footerInner}>
-          <div className={styles.minimapWrap}>
-            <canvas ref={minimapRef} className={styles.minimapCanvas} width={80} height={80} />
+      <section className={styles.paletteSection} aria-label="色块区域">
+        <div className={styles.paletteStrip}>
+          {palette.length > 0 ? (
+            palette.map((item) => (
+              <button
+                key={`${item.vendorCode}-${item.hex}`}
+                type="button"
+                className={styles.paletteDotButton}
+                aria-label={item.vendorCode}
+                title={item.vendorCode}
+              >
+                <span className={styles.paletteDot} style={{ background: item.hex }}>
+                  <span className={styles.paletteDotLabel}>{item.vendorCode}</span>
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className={styles.paletteEmpty}>图纸加载后，这里会展示当前图纸使用的全部颜色。</div>
+          )}
+        </div>
+      </section>
+
+      <div
+        className={styles.previewFloat}
+        aria-label="图纸预览浮层"
+        style={{ transform: `translate(${previewPos.x}px, ${previewPos.y}px)` }}
+      >
+        <div
+          className={styles.previewFrame}
+          onPointerDown={handlePreviewPointerDown}
+          onPointerMove={handlePreviewPointerMove}
+          onPointerUp={handlePreviewPointerUp}
+          onPointerCancel={handlePreviewPointerUp}
+        >
+          <div className={styles.previewFrame__header}>
+            <div>
+              <p className={styles.placeholderLabel}>图纸预览</p>
+              <h2>专注拼豆预览框</h2>
+            </div>
+            <div className={styles.previewFrame__badge}>{state.patternResult ? '已载入' : '等待图纸'}</div>
           </div>
-          <div className={styles.progressInfo}>
-            <div className={styles.progressText}><span>整体进度</span><strong>{percent}%</strong></div>
-            <div className={styles.progressBarWrap}><div className={styles.progressBar} style={{ width: `${percent}%` }} /></div>
-            <div className={styles.progressCounts}>已完成 {completed.size} 色块 · 剩余 {palette.length - completed.size} 色块</div>
+
+          <div className={styles.previewFrame__canvas}>
+            <div className={styles.previewFrame__grid} />
+            <div className={styles.previewFrame__art} aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+            <div className={`${styles.previewFrame__corner} ${styles['previewFrame__corner--tl']}`} />
+            <div className={`${styles.previewFrame__corner} ${styles['previewFrame__corner--tr']}`} />
+            <div className={`${styles.previewFrame__corner} ${styles['previewFrame__corner--bl']}`} />
+            <div className={`${styles.previewFrame__corner} ${styles['previewFrame__corner--br']}`} />
           </div>
-          <button type="button" className={styles.nextBtn} onClick={handleNext}><span>→</span><small>下一色</small></button>
+
+          <div className={styles.previewFrame__footer}>
+            <span>预览框</span>
+            <span>当前图纸内容将显示在这里</span>
+          </div>
+        </div>
+      </div>
+
+      <footer className={styles.toolbarSection} aria-label="操作面板">
+        <div className={styles.gamepadPanel}>
+          <div className={styles.gamepadPanel__cluster}>
+            <button type="button" className={styles.gamepadPanel__action} aria-label="缩小图纸">
+              −
+            </button>
+            <button type="button" className={styles.gamepadPanel__action} aria-label="放大图纸">
+              +
+            </button>
+          </div>
+
+          <div className={styles.gamepadPanel__mainGroup}>
+            <button type="button" className={styles.gamepadPanel__secondaryButton}>
+              次按钮
+            </button>
+            <button type="button" className={styles.gamepadPanel__primaryButton}>
+              主按钮
+            </button>
+          </div>
         </div>
       </footer>
 
-      {settingsOpen ? (
-        <div className={styles.overlay} role="presentation" onClick={() => setSettingsOpen(false)}>
-          <aside className={styles.panel} role="dialog" aria-modal="true" aria-label="拼豆设置" onClick={(event) => event.stopPropagation()}>
-            <div className={styles.panelHeader}>
-              <strong>拼豆设置</strong>
-              <button type="button" className={styles.closeBtn} onClick={() => setSettingsOpen(false)}>✕</button>
+      <div
+        className={`${styles.settingsOverlay} ${settingsOpen ? styles.settingsOverlayOpen : ''}`}
+        role="presentation"
+        onClick={() => setSettingsOpen(false)}
+      >
+        <aside
+          className={`${styles.settingsPanel} ${settingsOpen ? styles.settingsPanelOpen : ''}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label="设置"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div className={styles.settingsHeader}>
+              <div className={styles.settingsTitle}>
+                <div className={styles.settingsTitleIcon} aria-hidden="true">⚙</div>
+                拼豆设置
+              </div>
+              <button type="button" className={styles.settingsCloseButton} onClick={() => setSettingsOpen(false)} aria-label="关闭设置">
+                ×
+              </button>
             </div>
-            <div className={styles.panelBody}>
-              <section><h4>拼豆方案</h4><p>色块优先 / 边缘优先 / 区域优先 / 逐行拼接</p></section>
-              <section><h4>显示设置</h4><p>高亮当前色块 / 显示格线 / 暗化已完成色块 / 显示色号标记</p></section>
-              <section><h4>色块清单</h4><p>{state.patternResult ? '来自当前项目的专注拼豆视图' : '示例心形图纸，保持与 demo 视觉一致'}</p></section>
-            </div>
-          </aside>
-        </div>
-      ) : null}
 
-      {showToast ? <div className={styles.toast}>{showToast}</div> : null}
-      {state.isGenerating || isHydrating ? <div className={styles.loadingBadge}>加载中...</div> : null}
-      <button type="button" className={styles.floatingBack} onClick={() => navigate(`/workshop/result/${projectId ?? ''}`)}>返回预览</button>
+            <div className={styles.settingsBody}>
+              <section>
+                <div className={styles.settingsSectionTitle}>📋 拼豆方案</div>
+                <div className={styles.modeOptions}>
+                  {[
+                    { id: 'smart', icon: '✨', name: '智能模式', desc: '根据图纸自动推荐拼豆方案', color: '#EEF0FF' },
+                    { id: 'color-block', icon: '🎨', name: '色块优先', desc: '按颜色分组，一次拼完一种颜色', color: '#F5E6FA' },
+                    { id: 'edge-first', icon: '🔲', name: '边缘优先', desc: '先完成图案边缘，再填充内部', color: '#E8F8F3' },
+                    { id: 'region-first', icon: '📍', name: '区域优先', desc: '按区块划分，逐区域完成', color: '#FFF3EC' },
+                    { id: 'row-by-row', icon: '↕', name: '逐行、逐列模式', desc: '按行或按列顺序进行拼豆', color: '#F2F7EA' },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`${styles.modeOption} ${patternMode === item.id ? styles.modeOptionActive : ''}`}
+                      onClick={() => setPatternMode(item.id as PatternMode)}
+                    >
+                      <div className={styles.modeOptionIcon} style={{ background: item.color }}>{item.icon}</div>
+                      <div className={styles.modeOptionText}>
+                        <div className={styles.modeOptionName}>{item.name}</div>
+                        <div className={styles.modeOptionDesc}>{item.desc}</div>
+                      </div>
+                      <div className={styles.modeRadio} />
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section>
+                <div className={styles.settingsSectionTitle}>🎮 操作模式</div>
+                <div className={styles.handednessRow}>
+                  <div className={styles.toggleInfo}>
+                    <div className={styles.toggleName}>操作习惯</div>
+                    <div className={styles.toggleDesc}>根据你的握持习惯切换面板布局</div>
+                  </div>
+                  <div className={styles.handednessSwitch} role="group" aria-label="操作习惯">
+                    <button type="button" className={`${styles.handednessOption} ${handedness === 'left' ? styles.isOn : ''}`} onClick={() => setHandedness('left')} aria-label="左手模式">
+                      左手
+                    </button>
+                    <button type="button" className={`${styles.handednessOption} ${handedness === 'right' ? styles.isOn : ''}`} onClick={() => setHandedness('right')} aria-label="右手模式">
+                      右手
+                    </button>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <div className={styles.settingsSectionTitle}>🖼️ 显示设置</div>
+                {([
+                  ['highlight', '高亮当前色块', '当前颜色的豆粒闪烁高亮'],
+                  ['grid', '显示格线', '在豆豆之间显示网格线'],
+                  ['dim', '暗化已完成色块', '已拼完的颜色半透明显示'],
+                  ['label', '显示色号标记', '在豆粒上显示色号文字'],
+                ] as Array<[ToggleKey, string, string]>).map(([key, name, desc]) => (
+                  <div key={key} className={styles.toggleRow}>
+                    <div className={styles.toggleInfo}>
+                      <div className={styles.toggleName}>{name}</div>
+                      <div className={styles.toggleDesc}>{desc}</div>
+                    </div>
+                    <button
+                      className={`${styles.toggleSwitch} ${toggles[key] ? styles.isOn : ''}`}
+                      type="button"
+                      aria-label={name}
+                      aria-pressed={toggles[key]}
+                      onClick={() => setToggles((current) => ({ ...current, [key]: !current[key] }))}
+                    />
+                  </div>
+                ))}
+              </section>
+
+          </div>
+        </aside>
+      </div>
     </main>
   );
 }

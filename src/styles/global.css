@@ -53,6 +53,13 @@ p { margin: 0; }
   overflow: hidden;
 }
 
+.app-shell--fullscreen {
+  max-width: none;
+  width: 100%;
+  min-height: 100dvh;
+  padding-bottom: 0;
+}
+
 .card-surface {
   border-radius: var(--radius-lg);
   background: var(--surface);
@@ -65,6 +72,13 @@ p { margin: 0; }
 }
 
 .layered-shell { padding: 20px 16px 0; display: grid; gap: 16px; }
+
+.layered-shell--fullscreen {
+  width: 100%;
+  min-height: 100dvh;
+  padding: 0;
+  gap: 0;
+}
 
 .discovery-page { display: grid; gap: 18px; }
 .home-hero { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 4px 2px 0; }
@@ -770,7 +784,9 @@ p { margin: 0; }
   box-shadow: 0 16px 28px rgba(197,147,212,0.35);
 }
 
-.focus-mode-page { min-height: calc(100vh - 92px); display: grid; gap: 14px; background: #463e38; color: #fff; margin: -92px -16px 0; padding: 92px 16px 24px; }
+.focus-mode-page { min-height: 100dvh; display: grid; gap: 14px; background: #463e38; color: #fff; margin: 0; padding: 92px 16px 24px; }
+
+.focus-mode-page .layered-shell { padding: 0; gap: 0; }
 .focus-mode-stage { padding: 12px; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.08); }
 .focus-mode-stage__canvas { height: 360px; position: relative; border-radius: 22px; overflow: hidden; background: #2f2a25; }
 .focus-mode-stage__grid { position: absolute; inset: 0; background-image: linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px); background-size: 24px 24px; opacity: 0.7; }

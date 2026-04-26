@@ -46,9 +46,11 @@ export function App() {
   const normalizedPath = useMemo(() => normalizePath(location.pathname), [location.pathname]);
   const activeTab: NavItemId = routeToTab[normalizedPath] ?? 'discovery';
   const shouldHideBottomNav =
-    hiddenBottomNavPaths.has(location.pathname) ||
-    location.pathname.startsWith('/workshop/editor/');
+    hiddenBottomNavPaths.has(normalizedPath) ||
+    location.pathname.startsWith('/workshop/editor/') ||
+    location.pathname.startsWith('/workshop/focus/');
   const showBottomNav = !shouldHideBottomNav;
+  const isFullScreenRoute = normalizedPath.startsWith('/workshop/focus') || normalizedPath.startsWith('/workshop/editor');
 
   const handleUploadToWorkshop = async (image: { name: string; type: string; size: number; dataUrl: string }) => {
     const dimensions = await new Promise<{ width: number; height: number }>((resolve, reject) => {
@@ -73,8 +75,8 @@ export function App() {
   };
 
   return (
-    <div className="app-shell">
-      <div className="layered-shell" aria-label="页面容器">
+    <div className={isFullScreenRoute ? 'app-shell app-shell--fullscreen' : 'app-shell'}>
+      <div className={isFullScreenRoute ? 'layered-shell layered-shell--fullscreen' : 'layered-shell'} aria-label="页面容器">
         <Routes>
           <Route
             path="/"
