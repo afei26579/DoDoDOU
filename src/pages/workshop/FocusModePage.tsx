@@ -141,6 +141,8 @@ export function FocusModePage() {
   const [handedness, setHandedness] = useState<'left' | 'right'>('left');
   const [activeColorKey, setActiveColorKey] = useState<string | null>(null);
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
+  const [completedColorKeys, setCompletedColorKeys] = useState<string[]>([]);
+  const [completedCellKeys, setCompletedCellKeys] = useState<string[]>([]);
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [floatPreviewDataUrl, setFloatPreviewDataUrl] = useState<string | null>(null);
@@ -194,12 +196,16 @@ export function FocusModePage() {
     if (!patternResult || palette.length === 0) {
       setActiveColorKey(null);
       setActiveCellKey(null);
+      setCompletedColorKeys([]);
+      setCompletedCellKeys([]);
       return;
     }
 
     if (!activeColorKey || !orderedColorEntries.some((item) => item.colorKey === activeColorKey)) {
       setActiveColorKey(null);
       setActiveCellKey(null);
+      setCompletedColorKeys([]);
+      setCompletedCellKeys([]);
     }
   }, [activeColorKey, orderedColorEntries, palette, patternResult]);
 
@@ -220,6 +226,21 @@ export function FocusModePage() {
 
   const activeBlockCount = activeColorEntry?.blocks.length ?? 0;
   const currentBlock = currentBlockIndex >= 0 ? activeColorEntry?.blocks[currentBlockIndex] ?? null : null;
+  const completedCellsBeforeCurrentBlock = useMemo(() => {
+    if (!activeColorEntry || currentBlockIndex < 0) return 0;
+    if (activeCellKey && currentBlock) {
+      const currentBlockCellIndex = currentBlock.cells.findIndex((cell) => `${cell.x},${cell.y}` === activeCellKey);
+      if (currentBlockCellIndex >= 0) {
+        return activeColorEntry.blocks.slice(0, currentBlockIndex).reduce((sum, block) => sum + block.cells.length, 0) + currentBlockCellIndex;
+      }
+    }
+    return activeColorEntry.blocks.slice(0, currentBlockIndex).reduce((sum, block) => sum + block.cells.length, 0);
+  }, [activeCellKey, activeColorEntry, currentBlock, currentBlockIndex]);
+  const activeBlockProgress = activeColorEntry && activeColorEntry.cells.length > 0 ? completedCellsBeforeCurrentBlock / activeColorEntry.cells.length : 0;
+  const remainingCellsCount = activeColorEntry ? Math.max(activeColorEntry.cells.length - completedCellsBeforeCurrentBlock, 0) : 0;
+
+  const activeColorIndex = activeColorKey ? orderedColorEntries.findIndex((item) => item.colorKey === activeColorKey) : -1;
+  const isCurrentColorCompleted = activeColorKey ? completedColorKeys.includes(activeColorKey) : false;
 
   const currentStepLabel = useMemo(() => {
     if (!activeColorEntry) return '请选择一个色号';
@@ -234,11 +255,25 @@ export function FocusModePage() {
     setActiveCellKey(firstBlock ? `${firstBlock.cells[0]?.x},${firstBlock.cells[0]?.y}` : null);
   };
 
+  const markBlockCompleted = (block: OrderedBlock | null) => {
+    if (!activeColorEntry || !block) return;
+    const blockCellKeys = block.cells.map((cell) => `${cell.x},${cell.y}`);
+    setCompletedCellKeys((current) => {
+      const next = new Set(current);
+      for (const key of blockCellKeys) next.add(key);
+      return Array.from(next);
+    });
+  };
+
   const gotoBlock = (direction: 'prev' | 'next') => {
     if (!activeColorEntry || activeColorEntry.blocks.length === 0) return;
 
     const currentIndex = currentBlockIndex >= 0 ? currentBlockIndex : -1;
     const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+
+    if (direction === 'next') {
+      markBlockCompleted(currentBlock);
+    }
 
     if (nextIndex >= 0 && nextIndex < activeColorEntry.blocks.length) {
       const nextBlock = activeColorEntry.blocks[nextIndex];
@@ -251,6 +286,12 @@ export function FocusModePage() {
       : -1;
 
     if (direction === 'next') {
+      if (currentColorIndex >= 0) {
+        const currentColorKey = orderedColorEntries[currentColorIndex]?.colorKey;
+        if (currentColorKey) {
+          setCompletedColorKeys((current) => (current.includes(currentColorKey) ? current : [...current, currentColorKey]));
+        }
+      }
       const nextColor = orderedColorEntries[currentColorIndex + 1];
       if (nextColor) {
         const firstBlock = nextColor.blocks[0] ?? null;
@@ -288,6 +329,7 @@ export function FocusModePage() {
       pattern: patternResult,
       activeColorKey,
       activeBlockCellKeys: currentBlock?.cells.map((cell) => `${cell.x},${cell.y}`) ?? [],
+      completedCellKeys,
       activeOpacity: 0.5,
       separator: {
         visible: toggles.separator,
@@ -296,7 +338,7 @@ export function FocusModePage() {
       },
     });
     setFloatPreviewDataUrl(canvas.toDataURL('image/png'));
-  }, [activeCellKey, activeColorKey, patternResult, separatorColor, separatorInterval, toggles.separator]);
+  }, [activeCellKey, activeColorEntry, activeColorKey, completedCellKeys, currentBlock, patternResult, separatorColor, separatorInterval, toggles.separator]);
 
   const handlePreviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = {
@@ -359,13 +401,13 @@ export function FocusModePage() {
             <div className={styles.currentColorName}>{currentColor ? `#${currentColor.hex.replace('#', '')}` : '图纸加载后显示当前颜色'}</div>
             <div className={styles.currentColorCount}>{currentColor ? `${currentColor.count} 粒` : '—'}</div>
             <div className={styles.currentColorCount}>{currentStepLabel}</div>
-            {activeColorEntry ? <div className={styles.currentColorCount}>当前色号剩余 {Math.max(activeBlockCount - Math.max(currentBlockIndex + 1, 0), 0)} 块</div> : null}
+            {activeColorEntry ? <div className={styles.currentColorCount}>当前色块剩余 {remainingCellsCount} 颗</div> : null}
           </div>
           <div className={styles.currentColorArrow}>→</div>
           <div className={styles.nextColorCard}>
             <div className={styles.nextColorLabel}>NEXT</div>
-            <div className={styles.nextColorDot} style={{ background: palette[1]?.hex ?? currentColor?.hex ?? '#D8B4E2' }} />
-            <div className={styles.nextColorCode}>{palette[1]?.vendorCode ?? '完成'}</div>
+            <div className={styles.nextColorDot} style={{ background: palette[activeColorIndex + 1]?.hex ?? currentColor?.hex ?? '#D8B4E2' }} />
+            <div className={styles.nextColorCode}>{palette[activeColorIndex + 1]?.vendorCode ?? '完成'}</div>
           </div>
         </div>
       </section>
@@ -391,18 +433,34 @@ export function FocusModePage() {
           {palette.length > 0 ? (
             palette.map((item) => {
               const colorKey = `${item.colorId}-${item.vendorCode}-${item.hex}`;
+              const isActive = activeColorKey === colorKey;
+              const colorIndex = palette.findIndex((entry) => `${entry.colorId}-${entry.vendorCode}-${entry.hex}` === colorKey);
+              const isCompleted = activeColorKey === colorKey ? isCurrentColorCompleted : completedColorKeys.includes(colorKey);
+              const ringProgress = isCompleted ? 1 : isActive ? Math.max(0, Math.min(1, activeBlockProgress)) : 0;
               return (
                 <button
                   key={`${item.vendorCode}-${item.hex}`}
                   type="button"
-                  className={`${styles.paletteDotButton} ${activeColorKey === colorKey ? styles.paletteDotButtonActive : ''}`}
+                  className={`${styles.paletteDotButton} ${isActive ? styles.paletteDotButtonActive : ''} ${isCompleted ? styles.paletteDotButtonCompleted : ''}`}
                   aria-label={item.vendorCode}
-                  aria-pressed={activeColorKey === colorKey}
+                  aria-pressed={isActive}
                   title={item.vendorCode}
                   onClick={() => activateColor(colorKey)}
                 >
-                  <span className={styles.paletteDot} style={{ background: item.hex }}>
-                    {toggles.label ? <span className={styles.paletteDotLabel}>{item.vendorCode}</span> : null}
+                  <span className={styles.paletteDotWrap}>
+                    <svg className={styles.paletteDotRing} viewBox="0 0 48 48" aria-hidden="true">
+                      <circle className={styles.paletteDotRingTrack} cx="24" cy="24" r="20" />
+                      <circle
+                        className={styles.paletteDotRingBar}
+                        cx="24"
+                        cy="24"
+                        r="20"
+                        style={{ strokeDashoffset: `${125.66 - ringProgress * 125.66}` }}
+                      />
+                    </svg>
+                    <span className={styles.paletteDot} style={{ background: item.hex }}>
+                      {toggles.label ? <span className={styles.paletteDotLabel}>{item.vendorCode}</span> : null}
+                    </span>
                   </span>
                 </button>
               );

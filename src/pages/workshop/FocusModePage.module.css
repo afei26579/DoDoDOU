@@ -44,7 +44,7 @@
 .currentColorArrow { flex-shrink: 0; color: #c49bd4; font-size: 18px; opacity: 0.6; }
 .nextColorCard { width: 80px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 8px; border-radius: 16px; background: #fdfbf7; border: 1.5px dashed rgba(216, 180, 226, 0.5); }
 .nextColorLabel { font-size: 9px; font-weight: 800; color: #9b8e84; letter-spacing: 0.12em; }
-.nextColorDot { width: 32px; height: 32px; }
+.nextColorDot { width: 32px; height: 32px; border-radius: 999px; border: 2px solid rgba(255, 255, 255, 0.96); box-shadow: 0 4px 10px rgba(0,0,0,0.12); }
 .nextColorCode { line-height: 1.1; }
 
 .titlebarLeft, .titlebarRight { display: flex; align-items: center; }
@@ -67,9 +67,14 @@
 .paletteSection { flex-shrink: 0; padding: 10px 16px; margin: 0 16px; border-radius: 22px; border: 1px solid rgba(216, 180, 226, 0.24); background: rgba(255, 255, 255, 0.88); box-shadow: 0 10px 28px rgba(93, 83, 74, 0.06); }
 .paletteStrip { display: flex; align-items: center; gap: 12px; overflow-x: auto; min-height: 66px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .paletteStrip::-webkit-scrollbar { display: none; }
-.paletteDotButton { flex: 0 0 auto; width: 46px; height: 46px; border: 0; background: transparent; padding: 0; display: grid; place-items: center; scroll-snap-align: center; opacity: 0.4; transition: opacity 0.2s ease, transform 0.2s ease; }
+.paletteDotButton { flex: 0 0 auto; width: 46px; height: 46px; border: 0; background: transparent; padding: 0; display: grid; place-items: center; scroll-snap-align: center; opacity: 1; transition: opacity 0.2s ease, transform 0.2s ease; }
 .paletteDotButtonActive { opacity: 1; transform: translateY(-1px) scale(1.02); }
-.paletteDot { position: relative; width: 46px; height: 46px; border-radius: 999px; display: grid; place-items: center; border: 2px solid rgba(255, 255, 255, 0.95); box-shadow: 0 4px 12px rgba(0,0,0,0.15), 0 0 0 1px rgba(93,83,74,0.08); overflow: hidden; }
+.paletteDotButtonCompleted { opacity: 0.4; }
+.paletteDotWrap { position: relative; width: 46px; height: 46px; display: grid; place-items: center; }
+.paletteDotRing { position: absolute; inset: 0; width: 46px; height: 46px; transform: rotate(-90deg); overflow: visible; pointer-events: none; }
+.paletteDotRingTrack { fill: none; stroke: rgba(93,83,74,0.22); stroke-width: 4.5; }
+.paletteDotRingBar { fill: none; stroke: rgba(132, 193, 102, 0.98); stroke-width: 4.5; stroke-linecap: round; stroke-dasharray: 125.66; transition: stroke-dashoffset 0.24s ease; }
+.paletteDot { position: relative; width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; border: 2px solid rgba(255, 255, 255, 0.95); box-shadow: 0 4px 12px rgba(0,0,0,0.15), 0 0 0 1px rgba(93,83,74,0.08); overflow: hidden; }
 .paletteDotLabel { position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; line-height: 1; font-weight: 800; color: #ffffff; background: transparent; border-radius: 999px; padding: 0 4px; text-align: center; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 6px rgba(0, 0, 0, 0.25); pointer-events: none; }
 .paletteEmpty { width: 100%; padding: 14px; border-radius: 16px; border: 1px dashed rgba(216, 180, 226, 0.38); color: #9b8e84; background: rgba(255, 255, 255, 0.7); }
 

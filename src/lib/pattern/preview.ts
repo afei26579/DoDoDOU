@@ -43,14 +43,16 @@ export function drawPatternPreview(params: {
   pattern: PatternResult;
   activeColorKey?: string | null;
   activeBlockCellKeys?: string[];
+  completedCellKeys?: string[];
   activeOpacity?: number;
+  completedOverlayColor?: string;
   separator?: {
     visible: boolean;
     interval: number;
     color: string;
   };
 }) {
-  const { canvas, pattern, activeColorKey = null, activeBlockCellKeys = [], activeOpacity = 1, separator } = params;
+  const { canvas, pattern, activeColorKey = null, activeBlockCellKeys = [], completedCellKeys = [], activeOpacity = 1, completedOverlayColor = '#86EFAC', separator } = params;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
@@ -58,6 +60,7 @@ export function drawPatternPreview(params: {
   const cellHeight = canvas.height / pattern.height;
   const hasActiveColor = Boolean(activeColorKey);
   const activeBlockCellKeySet = new Set(activeBlockCellKeys);
+  const completedCellKeySet = new Set(completedCellKeys);
   const separatorVisible = separator?.visible ?? false;
   const separatorInterval = Math.max(1, Math.floor(separator?.interval ?? 1));
   const separatorColor = separator?.color ?? 'rgba(93,83,74,0.2)';
@@ -69,9 +72,12 @@ export function drawPatternPreview(params: {
     const drawX = cell.x * cellWidth;
     const drawY = cell.y * cellHeight;
     const cellKey = `${cell.colorId}-${cell.vendorCode}-${cell.hex}`;
-    const isActiveColor = hasActiveColor ? cellKey.startsWith(activeColorKey ?? '') : true;
-    const isActiveCell = activeBlockCellKeySet.has(`${cell.x},${cell.y}`) && isActiveColor;
-    const alpha = hasActiveColor ? (isActiveCell ? 1 : isActiveColor ? activeOpacity : 0.1) : 1;
+    const isActiveColor = hasActiveColor ? cellKey === activeColorKey : true;
+    const cellCoordinateKey = `${cell.x},${cell.y}`;
+    const isActiveCell = activeBlockCellKeySet.has(cellCoordinateKey) && isActiveColor;
+    const isCompletedCell = completedCellKeySet.has(cellCoordinateKey);
+    const isCompletedAndActiveColorCell = isActiveColor && isCompletedCell;
+    const alpha = hasActiveColor ? (isActiveCell || isCompletedAndActiveColorCell ? 1 : isActiveColor ? activeOpacity : 0.1) : 1;
 
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -79,12 +85,20 @@ export function drawPatternPreview(params: {
     if (cell.hex === 'transparent' || cell.isExternal) {
       drawTransparentCellBackground(ctx, drawX, drawY, cellWidth, cellHeight);
     } else {
-      ctx.fillStyle = cell.hex;
+      ctx.fillStyle = isCompletedAndActiveColorCell ? completedOverlayColor : cell.hex;
       ctx.fillRect(drawX, drawY, cellWidth, cellHeight);
     }
 
     ctx.strokeStyle = isActiveColor ? 'rgba(93,83,74,0.3)' : 'rgba(93,83,74,0.12)';
     ctx.strokeRect(drawX, drawY, cellWidth, cellHeight);
+
+    if (isCompletedAndActiveColorCell && !(cell.hex === 'transparent' || cell.isExternal)) {
+      ctx.save();
+      ctx.globalAlpha = 0.16;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(drawX, drawY, cellWidth, cellHeight);
+      ctx.restore();
+    }
 
     if (separatorVisible) {
       const isSeparatorX = cell.x > 0 && cell.x % separatorInterval === 0;
