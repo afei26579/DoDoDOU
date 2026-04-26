@@ -57,7 +57,7 @@
 .loadingBadge { margin-left: 8px; padding: 8px 12px; background: rgba(93, 83, 74, 0.88); color: #fff; }
 
 .canvasSection { flex: 1; min-height: 0; padding: 10px 16px 12px; display: grid; place-items: start center; }
-.canvasPlaceholder { width: 100%; aspect-ratio: 1 / 1; max-width: min(100%, 420px); margin: 0 auto; align-self: start; border-radius: 26px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 248, 242, 0.95)); border: 1px solid rgba(176, 143, 191, 0.24); box-shadow: 0 18px 50px rgba(93, 83, 74, 0.08); display: grid; place-items: center; padding: 0; overflow: hidden; }
+.canvasPlaceholder { width: 100%; aspect-ratio: 1 / 1; max-width: min(100%, 420px); margin: 0 auto; align-self: start; border-radius: 0; background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 248, 242, 0.95)); border: 1px solid rgba(176, 143, 191, 0.24); box-shadow: 0 18px 50px rgba(93, 83, 74, 0.08); display: grid; place-items: center; padding: 0; overflow: hidden; }
 .placeholderCard { max-width: 420px; text-align: center; }
 .placeholderCard h2 { font-size: 22px; margin-bottom: 10px; }
 .placeholderHint { margin: 0; line-height: 1.75; color: #8e7f75; }
@@ -67,7 +67,8 @@
 .paletteSection { flex-shrink: 0; padding: 10px 16px; margin: 0 16px; border-radius: 22px; border: 1px solid rgba(216, 180, 226, 0.24); background: rgba(255, 255, 255, 0.88); box-shadow: 0 10px 28px rgba(93, 83, 74, 0.06); }
 .paletteStrip { display: flex; align-items: center; gap: 12px; overflow-x: auto; min-height: 66px; scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
 .paletteStrip::-webkit-scrollbar { display: none; }
-.paletteDotButton { flex: 0 0 auto; width: 46px; height: 46px; border: 0; background: transparent; padding: 0; display: grid; place-items: center; scroll-snap-align: center; }
+.paletteDotButton { flex: 0 0 auto; width: 46px; height: 46px; border: 0; background: transparent; padding: 0; display: grid; place-items: center; scroll-snap-align: center; opacity: 0.4; transition: opacity 0.2s ease, transform 0.2s ease; }
+.paletteDotButtonActive { opacity: 1; transform: translateY(-1px) scale(1.02); }
 .paletteDot { position: relative; width: 46px; height: 46px; border-radius: 999px; display: grid; place-items: center; border: 2px solid rgba(255, 255, 255, 0.95); box-shadow: 0 4px 12px rgba(0,0,0,0.15), 0 0 0 1px rgba(93,83,74,0.08); overflow: hidden; }
 .paletteDotLabel { position: absolute; inset: 0; display: grid; place-items: center; font-size: 10px; line-height: 1; font-weight: 800; color: #ffffff; background: transparent; border-radius: 999px; padding: 0 4px; text-align: center; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.55), 0 0 6px rgba(0, 0, 0, 0.25); pointer-events: none; }
 .paletteEmpty { width: 100%; padding: 14px; border-radius: 16px; border: 1px dashed rgba(216, 180, 226, 0.38); color: #9b8e84; background: rgba(255, 255, 255, 0.7); }
@@ -119,6 +120,15 @@
 .toggleSwitch::after { content: ''; position: absolute; top: 50%; left: 3px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.16); transform: translateY(-50%); transition: transform 160ms ease, background-color 160ms ease; }
 .isOn { background: #d8b4e2; }
 .isOn::after { transform: translate(18px, -50%); }
+
+.sliderCard, .colorCard { margin-top: 10px; padding: 12px; border-radius: 16px; background: #fdfbf7; }
+.sliderHeader { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.sliderValueChip { min-width: 30px; padding: 3px 8px; border-radius: 999px; background: #fff; color: #c49bd4; font-size: 12px; font-weight: 800; text-align: center; box-shadow: 0 2px 6px rgba(216,180,226,0.22); }
+.sliderInput { width: 100%; }
+.colorRow { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.colorPreset { width: 30px; height: 30px; border: 2px solid rgba(255,255,255,0.95); border-radius: 999px; box-shadow: 0 3px 10px rgba(0,0,0,0.12), 0 0 0 1px rgba(93,83,74,0.08); padding: 0; }
+.colorPresetActive { transform: scale(1.08); outline: 2px solid #c49bd4; outline-offset: 2px; }
+.colorPreset:disabled, .toggleSwitch:disabled, .sliderInput:disabled { opacity: 0.45; cursor: not-allowed; }
 
 @media (max-width: 420px) {
   .titlebar { padding-inline: 12px; }

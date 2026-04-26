@@ -16,16 +16,51 @@ function drawTransparentCellBackground(ctx: CanvasRenderingContext2D, x: number,
   }
 }
 
+function parseHexColor(hex: string) {
+  const normalized = hex.startsWith('#') ? hex.slice(1) : hex;
+  if (normalized.length !== 6) return null;
+  const value = Number.parseInt(normalized, 16);
+  if (Number.isNaN(value)) return null;
+  return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+}
+
+function getPerceivedBrightness(hex: string) {
+  const rgb = parseHexColor(hex);
+  if (!rgb) return 255;
+  return rgb.r * 0.299 + rgb.g * 0.587 + rgb.b * 0.114;
+}
+
+function getAccentStrokeStyle(hex: string) {
+  return getPerceivedBrightness(hex) >= 150 ? 'rgba(34, 34, 34, 0.92)' : 'rgba(255, 255, 255, 0.92)';
+}
+
+function getAccentShadowColor(hex: string) {
+  return getPerceivedBrightness(hex) >= 150 ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.34)';
+}
+
 export function drawPatternPreview(params: {
   canvas: HTMLCanvasElement;
   pattern: PatternResult;
+  activeColorKey?: string | null;
+  activeBlockCellKeys?: string[];
+  activeOpacity?: number;
+  separator?: {
+    visible: boolean;
+    interval: number;
+    color: string;
+  };
 }) {
-  const { canvas, pattern } = params;
+  const { canvas, pattern, activeColorKey = null, activeBlockCellKeys = [], activeOpacity = 1, separator } = params;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
   const cellWidth = canvas.width / pattern.width;
   const cellHeight = canvas.height / pattern.height;
+  const hasActiveColor = Boolean(activeColorKey);
+  const activeBlockCellKeySet = new Set(activeBlockCellKeys);
+  const separatorVisible = separator?.visible ?? false;
+  const separatorInterval = Math.max(1, Math.floor(separator?.interval ?? 1));
+  const separatorColor = separator?.color ?? 'rgba(93,83,74,0.2)';
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.lineWidth = 0.6;
@@ -33,13 +68,57 @@ export function drawPatternPreview(params: {
   for (const cell of pattern.cells) {
     const drawX = cell.x * cellWidth;
     const drawY = cell.y * cellHeight;
+    const cellKey = `${cell.colorId}-${cell.vendorCode}-${cell.hex}`;
+    const isActiveColor = hasActiveColor ? cellKey.startsWith(activeColorKey ?? '') : true;
+    const isActiveCell = activeBlockCellKeySet.has(`${cell.x},${cell.y}`) && isActiveColor;
+    const alpha = hasActiveColor ? (isActiveCell ? 1 : isActiveColor ? activeOpacity : 0.1) : 1;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
     if (cell.hex === 'transparent' || cell.isExternal) {
       drawTransparentCellBackground(ctx, drawX, drawY, cellWidth, cellHeight);
     } else {
       ctx.fillStyle = cell.hex;
       ctx.fillRect(drawX, drawY, cellWidth, cellHeight);
     }
-    ctx.strokeStyle = 'rgba(93,83,74,0.18)';
+
+    ctx.strokeStyle = isActiveColor ? 'rgba(93,83,74,0.3)' : 'rgba(93,83,74,0.12)';
     ctx.strokeRect(drawX, drawY, cellWidth, cellHeight);
+
+    if (separatorVisible) {
+      const isSeparatorX = cell.x > 0 && cell.x % separatorInterval === 0;
+      const isSeparatorY = cell.y > 0 && cell.y % separatorInterval === 0;
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = separatorColor;
+      ctx.lineWidth = Math.max(1.8, Math.min(cellWidth, cellHeight) * 0.2);
+      if (isSeparatorX) {
+        const x = drawX;
+        ctx.beginPath();
+        ctx.moveTo(x, drawY);
+        ctx.lineTo(x, drawY + cellHeight);
+        ctx.stroke();
+      }
+      if (isSeparatorY) {
+        const y = drawY;
+        ctx.beginPath();
+        ctx.moveTo(drawX, y);
+        ctx.lineTo(drawX + cellWidth, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    if (isActiveCell && hasActiveColor) {
+      const inset = Math.max(0.5, Math.min(cellWidth, cellHeight) * 0.08);
+      ctx.shadowColor = getAccentShadowColor(cell.hex);
+      ctx.shadowBlur = Math.max(2, Math.min(cellWidth, cellHeight) * 0.18);
+      ctx.lineWidth = Math.max(1.2, Math.min(cellWidth, cellHeight) * 0.12);
+      ctx.strokeStyle = getAccentStrokeStyle(cell.hex);
+      ctx.strokeRect(drawX + inset, drawY + inset, cellWidth - inset * 2, cellHeight - inset * 2);
+    }
+
+    ctx.restore();
   }
 }

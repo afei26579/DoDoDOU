@@ -6,7 +6,124 @@ import styles from './FocusModePage.module.css';
 
 type PatternMode = 'smart' | 'color-block' | 'edge-first' | 'region-first' | 'row-by-row';
 
-type ToggleKey = 'label';
+type ToggleKey = 'label' | 'separator';
+
+type SeparatorColorOption = {
+  label: string;
+  value: string;
+};
+
+type PaletteItem = {
+  colorId: string;
+  vendorCode: string;
+  hex: string;
+  count: number;
+};
+
+type PatternCell = {
+  x: number;
+  y: number;
+  colorId: string;
+  vendorCode: string;
+  hex: string;
+  isExternal?: boolean;
+};
+
+type OrderedBlock = {
+  key: string;
+  cells: PatternCell[];
+  anchorX: number;
+  anchorY: number;
+};
+
+const separatorColorOptions: SeparatorColorOption[] = [
+  { label: '黑色', value: '#2D2A2F' },
+  { label: '深灰', value: '#5D534A' },
+  { label: '玫红', value: '#F46D7A' },
+  { label: '蓝色', value: '#5FA5F7' },
+  { label: '绿色', value: '#39C8A3' },
+  { label: '紫色', value: '#B081F7' },
+  { label: '黄色', value: '#FDBA28' },
+];
+
+function getCellKey(cell: { colorId: string; vendorCode: string; hex: string }) {
+  return `${cell.colorId}-${cell.vendorCode}-${cell.hex}`;
+}
+
+function isTransparentCellHex(hex: string) {
+  return hex === 'transparent';
+}
+
+function sortCellsByHandedness(cells: Array<{ x: number; y: number }>, handedness: 'left' | 'right') {
+  return [...cells].sort((a, b) => {
+    if (a.y !== b.y) {
+      return a.y - b.y;
+    }
+    if (a.x !== b.x) {
+      return handedness === 'left' ? b.x - a.x : a.x - b.x;
+    }
+    return 0;
+  });
+}
+
+function getNeighborKey(x: number, y: number, dx: number, dy: number) {
+  return `${x + dx},${y + dy}`;
+}
+
+function buildConnectedBlocks(cells: PatternCell[], handedness: 'left' | 'right') {
+  const cellMap = new Map<string, PatternCell>();
+  for (const cell of cells) {
+    cellMap.set(`${cell.x},${cell.y}`, cell);
+  }
+
+  const visited = new Set<string>();
+  const blocks: OrderedBlock[] = [];
+
+  for (const cell of cells) {
+    const seedKey = `${cell.x},${cell.y}`;
+    if (visited.has(seedKey)) continue;
+
+    const queue: PatternCell[] = [cell];
+    const connected: PatternCell[] = [];
+    visited.add(seedKey);
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current) continue;
+      connected.push(current);
+
+      const neighbors = [
+        cellMap.get(getNeighborKey(current.x, current.y, 0, -1)),
+        cellMap.get(getNeighborKey(current.x, current.y, 1, 0)),
+        cellMap.get(getNeighborKey(current.x, current.y, 0, 1)),
+        cellMap.get(getNeighborKey(current.x, current.y, -1, 0)),
+      ];
+
+      for (const neighbor of neighbors) {
+        if (!neighbor) continue;
+        const neighborKey = `${neighbor.x},${neighbor.y}`;
+        if (visited.has(neighborKey)) continue;
+        visited.add(neighborKey);
+        queue.push(neighbor);
+      }
+    }
+
+    const orderedConnected = sortCellsByHandedness(connected, handedness);
+    const anchor = orderedConnected[0] ?? cell;
+    blocks.push({
+      key: `${cell.colorId}-${cell.vendorCode}-${cell.hex}-${anchor.x},${anchor.y}`,
+      cells: orderedConnected,
+      anchorX: anchor.x,
+      anchorY: anchor.y,
+    });
+  }
+
+  return blocks.sort((a, b) => {
+    if (a.anchorX !== b.anchorX) return handedness === 'left' ? b.anchorX - a.anchorX : a.anchorX - b.anchorX;
+    if (a.anchorY !== b.anchorY) return a.anchorY - b.anchorY;
+    return 0;
+  });
+}
 
 export function FocusModePage() {
   const navigate = useNavigate();
@@ -17,8 +134,13 @@ export function FocusModePage() {
   const [patternMode, setPatternMode] = useState<PatternMode>('smart');
   const [toggles, setToggles] = useState<Record<ToggleKey, boolean>>({
     label: false,
+    separator: true,
   });
+  const [separatorInterval, setSeparatorInterval] = useState(10);
+  const [separatorColor, setSeparatorColor] = useState(separatorColorOptions[0].value);
   const [handedness, setHandedness] = useState<'left' | 'right'>('left');
+  const [activeColorKey, setActiveColorKey] = useState<string | null>(null);
+  const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [floatPreviewDataUrl, setFloatPreviewDataUrl] = useState<string | null>(null);
@@ -28,18 +150,10 @@ export function FocusModePage() {
   const palette = useMemo(() => {
     if (!patternResult) return [];
 
-    const paletteByKey = new Map<
-      string,
-      {
-        colorId: string;
-        vendorCode: string;
-        hex: string;
-        count: number;
-      }
-    >();
+    const paletteByKey = new Map<string, PaletteItem>();
 
     for (const cell of patternResult.cells) {
-      if (cell.isExternal || !cell.vendorCode || !cell.hex || cell.hex === 'transparent') continue;
+      if (cell.isExternal || !cell.vendorCode || !cell.hex || isTransparentCellHex(cell.hex)) continue;
       const normalizedHex = cell.hex.startsWith('#') ? cell.hex : `#${cell.hex}`;
       const key = `${cell.colorId}-${cell.vendorCode}-${normalizedHex}`;
       const next = paletteByKey.get(key) ?? {
@@ -54,7 +168,105 @@ export function FocusModePage() {
 
     return Array.from(paletteByKey.values()).sort((a, b) => b.count - a.count);
   }, [patternResult]);
-  const currentColor = palette[0] ?? null;
+
+  const orderedColorEntries = useMemo(() => {
+    if (!patternResult) return [] as { colorKey: string; blocks: OrderedBlock[]; cells: PatternCell[] }[];
+
+    const cellsByColor = new Map<string, PatternCell[]>();
+    for (const cell of patternResult.cells) {
+      if (cell.isExternal || !cell.vendorCode || !cell.hex || isTransparentCellHex(cell.hex)) continue;
+      const colorKey = getCellKey(cell);
+      const bucket = cellsByColor.get(colorKey) ?? [];
+      bucket.push(cell);
+      cellsByColor.set(colorKey, bucket);
+    }
+
+    const colorOrder = [...palette].sort((a, b) => b.count - a.count);
+    return colorOrder.map((item) => {
+      const colorKey = `${item.colorId}-${item.vendorCode}-${item.hex}`;
+      const cells = sortCellsByHandedness(cellsByColor.get(colorKey) ?? [], handedness);
+      const blocks = buildConnectedBlocks(cells, handedness);
+      return { colorKey, blocks, cells };
+    });
+  }, [handedness, palette, patternResult]);
+
+  useEffect(() => {
+    if (!patternResult || palette.length === 0) {
+      setActiveColorKey(null);
+      setActiveCellKey(null);
+      return;
+    }
+
+    if (!activeColorKey || !orderedColorEntries.some((item) => item.colorKey === activeColorKey)) {
+      setActiveColorKey(null);
+      setActiveCellKey(null);
+    }
+  }, [activeColorKey, orderedColorEntries, palette, patternResult]);
+
+  const currentColor = useMemo(
+    () => palette.find((item) => `${item.colorId}-${item.vendorCode}-${item.hex}` === activeColorKey) ?? null,
+    [activeColorKey, palette],
+  );
+
+  const activeColorEntry = useMemo(
+    () => orderedColorEntries.find((item) => item.colorKey === activeColorKey) ?? null,
+    [orderedColorEntries, activeColorKey],
+  );
+
+  const currentBlockIndex = useMemo(() => {
+    if (!activeColorEntry || !activeCellKey) return -1;
+    return activeColorEntry.blocks.findIndex((block) => block.cells.some((cell) => `${cell.x},${cell.y}` === activeCellKey));
+  }, [activeCellKey, activeColorEntry]);
+
+  const activeBlockCount = activeColorEntry?.blocks.length ?? 0;
+  const currentBlock = currentBlockIndex >= 0 ? activeColorEntry?.blocks[currentBlockIndex] ?? null : null;
+
+  const currentStepLabel = useMemo(() => {
+    if (!activeColorEntry) return '请选择一个色号';
+    if (!activeCellKey || currentBlockIndex < 0) return `当前色号，共 ${activeBlockCount} 块`;
+    return `第 ${currentBlockIndex + 1} / ${activeBlockCount} 块`;
+  }, [activeBlockCount, activeCellKey, activeColorEntry, currentBlockIndex]);
+
+  const activateColor = (colorKey: string) => {
+    const nextEntry = orderedColorEntries.find((item) => item.colorKey === colorKey) ?? null;
+    const firstBlock = nextEntry?.blocks[0] ?? null;
+    setActiveColorKey(colorKey);
+    setActiveCellKey(firstBlock ? `${firstBlock.cells[0]?.x},${firstBlock.cells[0]?.y}` : null);
+  };
+
+  const gotoBlock = (direction: 'prev' | 'next') => {
+    if (!activeColorEntry || activeColorEntry.blocks.length === 0) return;
+
+    const currentIndex = currentBlockIndex >= 0 ? currentBlockIndex : -1;
+    const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
+
+    if (nextIndex >= 0 && nextIndex < activeColorEntry.blocks.length) {
+      const nextBlock = activeColorEntry.blocks[nextIndex];
+      setActiveCellKey(`${nextBlock.cells[0]?.x},${nextBlock.cells[0]?.y}`);
+      return;
+    }
+
+    const currentColorIndex = activeColorKey
+      ? orderedColorEntries.findIndex((item) => item.colorKey === activeColorKey)
+      : -1;
+
+    if (direction === 'next') {
+      const nextColor = orderedColorEntries[currentColorIndex + 1];
+      if (nextColor) {
+        const firstBlock = nextColor.blocks[0] ?? null;
+        setActiveColorKey(nextColor.colorKey);
+        setActiveCellKey(firstBlock ? `${firstBlock.cells[0]?.x},${firstBlock.cells[0]?.y}` : null);
+      }
+      return;
+    }
+
+    const prevColor = orderedColorEntries[currentColorIndex - 1];
+    if (prevColor) {
+      const prevBlock = prevColor.blocks[prevColor.blocks.length - 1] ?? null;
+      setActiveColorKey(prevColor.colorKey);
+      setActiveCellKey(prevBlock ? `${prevBlock.cells[0]?.x},${prevBlock.cells[0]?.y}` : null);
+    }
+  };
 
   useEffect(() => {
     console.debug('[FocusModePage] patternResult', patternResult);
@@ -71,9 +283,20 @@ export function FocusModePage() {
     const height = Math.max(240, Math.min(720, patternResult.height * 18));
     canvas.width = width;
     canvas.height = height;
-    drawPatternPreview({ canvas, pattern: patternResult });
+    drawPatternPreview({
+      canvas,
+      pattern: patternResult,
+      activeColorKey,
+      activeBlockCellKeys: currentBlock?.cells.map((cell) => `${cell.x},${cell.y}`) ?? [],
+      activeOpacity: 0.5,
+      separator: {
+        visible: toggles.separator,
+        interval: separatorInterval,
+        color: separatorColor,
+      },
+    });
     setFloatPreviewDataUrl(canvas.toDataURL('image/png'));
-  }, [patternResult]);
+  }, [activeCellKey, activeColorKey, patternResult, separatorColor, separatorInterval, toggles.separator]);
 
   const handlePreviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = {
@@ -108,12 +331,7 @@ export function FocusModePage() {
     <main className={styles.page} aria-label="专注模式页面">
       <header className={styles.titlebar}>
         <div className={styles.titlebarLeft}>
-          <button
-            type="button"
-            className={styles.backButton}
-            onClick={() => navigate(`/workshop/result/${projectId ?? ''}`)}
-            aria-label="返回结果页"
-          >
+          <button type="button" className={styles.backButton} onClick={() => navigate(`/workshop/result/${projectId ?? ''}`)} aria-label="返回结果页">
             ←
           </button>
           <div className={styles.titlebarText}>
@@ -134,15 +352,14 @@ export function FocusModePage() {
         <div className={styles.currentColorCard}>
           <div className={styles.currentColorBadge}>当前</div>
           <div className={styles.currentColorDotWrap}>
-            <div
-              className={`${styles.currentColorDot} ${currentColor ? styles.currentColorDotPulse : ''}`}
-              style={{ background: currentColor?.hex ?? '#D8B4E2' }}
-            />
+            <div className={`${styles.currentColorDot} ${currentColor ? styles.currentColorDotPulse : ''}`} style={{ background: currentColor?.hex ?? '#D8B4E2' }} />
           </div>
           <div className={styles.currentColorInfo}>
             <div className={styles.currentColorCode}>{currentColor?.vendorCode ?? '等待图纸'}</div>
             <div className={styles.currentColorName}>{currentColor ? `#${currentColor.hex.replace('#', '')}` : '图纸加载后显示当前颜色'}</div>
             <div className={styles.currentColorCount}>{currentColor ? `${currentColor.count} 粒` : '—'}</div>
+            <div className={styles.currentColorCount}>{currentStepLabel}</div>
+            {activeColorEntry ? <div className={styles.currentColorCount}>当前色号剩余 {Math.max(activeBlockCount - Math.max(currentBlockIndex + 1, 0), 0)} 块</div> : null}
           </div>
           <div className={styles.currentColorArrow}>→</div>
           <div className={styles.nextColorCard}>
@@ -163,11 +380,7 @@ export function FocusModePage() {
             <div className={styles.placeholderCard}>
               <p className={styles.placeholderLabel}>{isHydrating ? '正在加载' : '图纸区域'}</p>
               <h2>{isHydrating ? '正在载入图纸数据…' : '还没有可显示的图纸'}</h2>
-              <p className={styles.placeholderHint}>
-                {isHydrating
-                  ? '系统正在从当前拼豆项目中读取图纸数据。'
-                  : '请先在工坊中生成图纸结果，再进入专注模式。'}
-              </p>
+              <p className={styles.placeholderHint}>{isHydrating ? '系统正在从当前拼豆项目中读取图纸数据。' : '请先在工坊中生成图纸结果，再进入专注模式。'}</p>
             </div>
           )}
         </div>
@@ -176,42 +389,33 @@ export function FocusModePage() {
       <section className={styles.paletteSection} aria-label="色块区域">
         <div className={styles.paletteStrip}>
           {palette.length > 0 ? (
-            palette.map((item) => (
-              <button
-                key={`${item.vendorCode}-${item.hex}`}
-                type="button"
-                className={styles.paletteDotButton}
-                aria-label={item.vendorCode}
-                title={item.vendorCode}
-              >
-                <span className={styles.paletteDot} style={{ background: item.hex }}>
-                  {toggles.label ? <span className={styles.paletteDotLabel}>{item.vendorCode}</span> : null}
-                </span>
-              </button>
-            ))
+            palette.map((item) => {
+              const colorKey = `${item.colorId}-${item.vendorCode}-${item.hex}`;
+              return (
+                <button
+                  key={`${item.vendorCode}-${item.hex}`}
+                  type="button"
+                  className={`${styles.paletteDotButton} ${activeColorKey === colorKey ? styles.paletteDotButtonActive : ''}`}
+                  aria-label={item.vendorCode}
+                  aria-pressed={activeColorKey === colorKey}
+                  title={item.vendorCode}
+                  onClick={() => activateColor(colorKey)}
+                >
+                  <span className={styles.paletteDot} style={{ background: item.hex }}>
+                    {toggles.label ? <span className={styles.paletteDotLabel}>{item.vendorCode}</span> : null}
+                  </span>
+                </button>
+              );
+            })
           ) : (
             <div className={styles.paletteEmpty}>图纸加载后，这里会展示当前图纸使用的全部颜色。</div>
           )}
         </div>
       </section>
 
-      <div
-        className={styles.previewFloat}
-        aria-label="图纸预览浮层"
-        style={{ transform: `translate(${previewPos.x}px, ${previewPos.y}px)` }}
-      >
-        <div
-          className={styles.previewFrame}
-          onPointerDown={handlePreviewPointerDown}
-          onPointerMove={handlePreviewPointerMove}
-          onPointerUp={handlePreviewPointerUp}
-          onPointerCancel={handlePreviewPointerUp}
-        >
-          <div className={styles.previewFrame__canvas}>
-            {floatPreviewDataUrl ? (
-              <img className={styles.previewFrame__canvasImg} src={floatPreviewDataUrl} alt="图纸预览" />
-            ) : null}
-          </div>
+      <div className={styles.previewFloat} aria-label="图纸预览浮层" style={{ transform: `translate(${previewPos.x}px, ${previewPos.y}px)` }}>
+        <div className={styles.previewFrame} onPointerDown={handlePreviewPointerDown} onPointerMove={handlePreviewPointerMove} onPointerUp={handlePreviewPointerUp} onPointerCancel={handlePreviewPointerUp}>
+          <div className={styles.previewFrame__canvas}>{floatPreviewDataUrl ? <img className={styles.previewFrame__canvasImg} src={floatPreviewDataUrl} alt="图纸预览" /> : null}</div>
         </div>
       </div>
 
@@ -227,101 +431,120 @@ export function FocusModePage() {
           </div>
 
           <div className={styles.gamepadPanel__mainGroup}>
-            <button type="button" className={styles.gamepadPanel__secondaryButton}>
-              次按钮
+            <button type="button" className={styles.gamepadPanel__secondaryButton} onClick={() => gotoBlock('prev')}>
+              上一块
             </button>
-            <button type="button" className={styles.gamepadPanel__primaryButton}>
-              主按钮
+            <button type="button" className={styles.gamepadPanel__primaryButton} onClick={() => gotoBlock('next')}>
+              下一块
             </button>
           </div>
         </div>
       </footer>
 
-      <div
-        className={`${styles.settingsOverlay} ${settingsOpen ? styles.settingsOverlayOpen : ''}`}
-        role="presentation"
-        onClick={() => setSettingsOpen(false)}
-      >
-        <aside
-          className={`${styles.settingsPanel} ${settingsOpen ? styles.settingsPanelOpen : ''}`}
-          role="dialog"
-          aria-modal="true"
-          aria-label="设置"
-          onClick={(event) => event.stopPropagation()}
-        >
+      <div className={`${styles.settingsOverlay} ${settingsOpen ? styles.settingsOverlayOpen : ''}`} role="presentation" onClick={() => setSettingsOpen(false)}>
+        <aside className={`${styles.settingsPanel} ${settingsOpen ? styles.settingsPanelOpen : ''}`} role="dialog" aria-modal="true" aria-label="设置" onClick={(event) => event.stopPropagation()}>
           <div className={styles.settingsHeader}>
-              <div className={styles.settingsTitle}>
-                <div className={styles.settingsTitleIcon} aria-hidden="true">⚙</div>
-                拼豆设置
+            <div className={styles.settingsTitle}>
+              <div className={styles.settingsTitleIcon} aria-hidden="true">
+                ⚙
               </div>
-              <button type="button" className={styles.settingsCloseButton} onClick={() => setSettingsOpen(false)} aria-label="关闭设置">
-                ×
-              </button>
+              拼豆设置
             </div>
+            <button type="button" className={styles.settingsCloseButton} onClick={() => setSettingsOpen(false)} aria-label="关闭设置">
+              ×
+            </button>
+          </div>
 
-            <div className={styles.settingsBody}>
-              <section>
-                <div className={styles.settingsSectionTitle}>📋 拼豆方案</div>
-                <div className={styles.modeOptions}>
-                  {[
-                    { id: 'smart', icon: '✨', name: '智能模式', desc: '根据图纸自动推荐拼豆方案', color: '#EEF0FF' },
-                    { id: 'color-block', icon: '🎨', name: '色块优先', desc: '按颜色分组，一次拼完一种颜色', color: '#F5E6FA' },
-                    { id: 'edge-first', icon: '🔲', name: '边缘优先', desc: '先完成图案边缘，再填充内部', color: '#E8F8F3' },
-                    { id: 'region-first', icon: '📍', name: '区域优先', desc: '按区块划分，逐区域完成', color: '#FFF3EC' },
-                    { id: 'row-by-row', icon: '↕', name: '逐行、逐列模式', desc: '按行或按列顺序进行拼豆', color: '#F2F7EA' },
-                  ].map((item) => (
+          <div className={styles.settingsBody}>
+            <section>
+              <div className={styles.settingsSectionTitle}>📋 拼豆方案</div>
+              <div className={styles.modeOptions}>
+                {[
+                  { id: 'smart', icon: '✨', name: '智能模式', desc: '根据图纸自动推荐拼豆方案', color: '#EEF0FF' },
+                  { id: 'color-block', icon: '🎨', name: '色块优先', desc: '按颜色分组，一次拼完一种颜色', color: '#F5E6FA' },
+                  { id: 'edge-first', icon: '🔲', name: '边缘优先', desc: '先完成图案边缘，再填充内部', color: '#E8F8F3' },
+                  { id: 'region-first', icon: '📍', name: '区域优先', desc: '按区块划分，逐区域完成', color: '#FFF3EC' },
+                  { id: 'row-by-row', icon: '↕', name: '逐行、逐列模式', desc: '按行或按列顺序进行拼豆', color: '#F2F7EA' },
+                ].map((item) => (
+                  <button key={item.id} type="button" className={`${styles.modeOption} ${patternMode === item.id ? styles.modeOptionActive : ''}`} onClick={() => setPatternMode(item.id as PatternMode)}>
+                    <div className={styles.modeOptionIcon} style={{ background: item.color }}>
+                      {item.icon}
+                    </div>
+                    <div className={styles.modeOptionText}>
+                      <div className={styles.modeOptionName}>{item.name}</div>
+                      <div className={styles.modeOptionDesc}>{item.desc}</div>
+                    </div>
+                    <div className={styles.modeRadio} />
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section>
+              <div className={styles.settingsSectionTitle}>🎮 操作模式</div>
+              <div className={styles.handednessRow}>
+                <div className={styles.toggleInfo}>
+                  <div className={styles.toggleName}>操作习惯</div>
+                  <div className={styles.toggleDesc}>根据你的握持习惯切换面板布局</div>
+                </div>
+                <div className={styles.handednessSwitch} role="group" aria-label="操作习惯">
+                  <button type="button" className={`${styles.handednessOption} ${handedness === 'left' ? styles.isOn : ''}`} onClick={() => setHandedness('left')} aria-label="左手模式">
+                    左手
+                  </button>
+                  <button type="button" className={`${styles.handednessOption} ${handedness === 'right' ? styles.isOn : ''}`} onClick={() => setHandedness('right')} aria-label="右手模式">
+                    右手
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <div className={styles.settingsSectionTitle}>🖼️ 显示设置</div>
+              <div className={styles.toggleRow}>
+                <div className={styles.toggleInfo}>
+                  <div className={styles.toggleName}>显示色号标记</div>
+                  <div className={styles.toggleDesc}>在豆粒上显示色号文字</div>
+                </div>
+                <button className={`${styles.toggleSwitch} ${toggles.label ? styles.isOn : ''}`} type="button" aria-label="显示色号标记" aria-pressed={toggles.label} onClick={() => setToggles((current) => ({ ...current, label: !current.label }))} />
+              </div>
+            </section>
+
+            <section>
+              <div className={styles.settingsSectionTitle}>▦ 分割线设置</div>
+              <div className={styles.toggleRow}>
+                <div className={styles.toggleInfo}>
+                  <div className={styles.toggleName}>显示分割线</div>
+                  <div className={styles.toggleDesc}>按固定网格间隔显示辅助分割线</div>
+                </div>
+                <button className={`${styles.toggleSwitch} ${toggles.separator ? styles.isOn : ''}`} type="button" aria-label="显示分割线" aria-pressed={toggles.separator} onClick={() => setToggles((current) => ({ ...current, separator: !current.separator }))} />
+              </div>
+
+              <div className={styles.sliderCard}>
+                <div className={styles.sliderHeader}>
+                  <div className={styles.toggleName}>每隔几个网格画一条</div>
+                  <span className={styles.sliderValueChip}>{separatorInterval}</span>
+                </div>
+                <input className={styles.sliderInput} type="range" min={2} max={24} step={1} value={separatorInterval} onChange={(event) => setSeparatorInterval(Number(event.target.value))} aria-label="每隔几个网格画一条" disabled={!toggles.separator} />
+              </div>
+
+              <div className={styles.colorCard}>
+                <div className={styles.toggleName}>分割线颜色</div>
+                <div className={styles.colorRow} role="list" aria-label="分割线颜色预设">
+                  {separatorColorOptions.map((option) => (
                     <button
-                      key={item.id}
+                      key={option.value}
                       type="button"
-                      className={`${styles.modeOption} ${patternMode === item.id ? styles.modeOptionActive : ''}`}
-                      onClick={() => setPatternMode(item.id as PatternMode)}
-                    >
-                      <div className={styles.modeOptionIcon} style={{ background: item.color }}>{item.icon}</div>
-                      <div className={styles.modeOptionText}>
-                        <div className={styles.modeOptionName}>{item.name}</div>
-                        <div className={styles.modeOptionDesc}>{item.desc}</div>
-                      </div>
-                      <div className={styles.modeRadio} />
-                    </button>
+                      className={`${styles.colorPreset} ${separatorColor === option.value ? styles.colorPresetActive : ''}`}
+                      style={{ backgroundColor: option.value }}
+                      aria-label={option.label}
+                      aria-pressed={separatorColor === option.value}
+                      onClick={() => setSeparatorColor(option.value)}
+                      disabled={!toggles.separator}
+                    />
                   ))}
                 </div>
-              </section>
-
-              <section>
-                <div className={styles.settingsSectionTitle}>🎮 操作模式</div>
-                <div className={styles.handednessRow}>
-                  <div className={styles.toggleInfo}>
-                    <div className={styles.toggleName}>操作习惯</div>
-                    <div className={styles.toggleDesc}>根据你的握持习惯切换面板布局</div>
-                  </div>
-                  <div className={styles.handednessSwitch} role="group" aria-label="操作习惯">
-                    <button type="button" className={`${styles.handednessOption} ${handedness === 'left' ? styles.isOn : ''}`} onClick={() => setHandedness('left')} aria-label="左手模式">
-                      左手
-                    </button>
-                    <button type="button" className={`${styles.handednessOption} ${handedness === 'right' ? styles.isOn : ''}`} onClick={() => setHandedness('right')} aria-label="右手模式">
-                      右手
-                    </button>
-                  </div>
-                </div>
-              </section>
-
-              <section>
-                <div className={styles.settingsSectionTitle}>🖼️ 显示设置</div>
-                <div className={styles.toggleRow}>
-                  <div className={styles.toggleInfo}>
-                    <div className={styles.toggleName}>显示色号标记</div>
-                    <div className={styles.toggleDesc}>在豆粒上显示色号文字</div>
-                  </div>
-                  <button
-                    className={`${styles.toggleSwitch} ${toggles.label ? styles.isOn : ''}`}
-                    type="button"
-                    aria-label="显示色号标记"
-                    aria-pressed={toggles.label}
-                    onClick={() => setToggles((current) => ({ ...current, label: !current.label }))}
-                  />
-                </div>
-              </section>
-
+              </div>
+            </section>
           </div>
         </aside>
       </div>
