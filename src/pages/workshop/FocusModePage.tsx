@@ -1,11 +1,12 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
+import { drawPatternPreview } from '../../lib/pattern/preview';
 import styles from './FocusModePage.module.css';
 
 type PatternMode = 'smart' | 'color-block' | 'edge-first' | 'region-first' | 'row-by-row';
 
-type ToggleKey = 'highlight' | 'grid' | 'dim' | 'label';
+type ToggleKey = 'label';
 
 export function FocusModePage() {
   const navigate = useNavigate();
@@ -15,16 +16,64 @@ export function FocusModePage() {
   const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
   const [patternMode, setPatternMode] = useState<PatternMode>('smart');
   const [toggles, setToggles] = useState<Record<ToggleKey, boolean>>({
-    highlight: true,
-    grid: true,
-    dim: true,
     label: false,
   });
   const [handedness, setHandedness] = useState<'left' | 'right'>('left');
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [floatPreviewDataUrl, setFloatPreviewDataUrl] = useState<string | null>(null);
 
-  const currentColor = useMemo(() => state.patternResult?.palette[0] ?? null, [state.patternResult]);
-  const palette = state.patternResult?.palette ?? [];
+  const patternResult = state.patternResult;
+  const hasPattern = Boolean(patternResult && patternResult.cells.length > 0);
+  const palette = useMemo(() => {
+    if (!patternResult) return [];
+
+    const paletteByKey = new Map<
+      string,
+      {
+        colorId: string;
+        vendorCode: string;
+        hex: string;
+        count: number;
+      }
+    >();
+
+    for (const cell of patternResult.cells) {
+      if (cell.isExternal || !cell.vendorCode || !cell.hex || cell.hex === 'transparent') continue;
+      const normalizedHex = cell.hex.startsWith('#') ? cell.hex : `#${cell.hex}`;
+      const key = `${cell.colorId}-${cell.vendorCode}-${normalizedHex}`;
+      const next = paletteByKey.get(key) ?? {
+        colorId: cell.colorId,
+        vendorCode: cell.vendorCode,
+        hex: normalizedHex,
+        count: 0,
+      };
+      next.count += 1;
+      paletteByKey.set(key, next);
+    }
+
+    return Array.from(paletteByKey.values()).sort((a, b) => b.count - a.count);
+  }, [patternResult]);
+  const currentColor = palette[0] ?? null;
+
+  useEffect(() => {
+    console.debug('[FocusModePage] patternResult', patternResult);
+  }, [patternResult]);
+
+  useEffect(() => {
+    const canvas = previewCanvasRef.current;
+    if (!patternResult || !canvas) {
+      setFloatPreviewDataUrl(null);
+      return;
+    }
+
+    const width = Math.max(240, Math.min(720, patternResult.width * 18));
+    const height = Math.max(240, Math.min(720, patternResult.height * 18));
+    canvas.width = width;
+    canvas.height = height;
+    drawPatternPreview({ canvas, pattern: patternResult });
+    setFloatPreviewDataUrl(canvas.toDataURL('image/png'));
+  }, [patternResult]);
 
   const handlePreviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = {
@@ -69,6 +118,7 @@ export function FocusModePage() {
           </button>
           <div className={styles.titlebarText}>
             <h1>专注模式</h1>
+            <p className={styles.titlebarSubtitle}>{hasPattern ? `图纸已载入 · ${patternResult?.stats.colorCount ?? 0} 种颜色` : '等待当前项目图纸数据'}</p>
           </div>
         </div>
 
@@ -105,13 +155,21 @@ export function FocusModePage() {
 
       <section className={styles.canvasSection} aria-label="图纸区域">
         <div className={styles.canvasPlaceholder}>
-          <div className={styles.placeholderCard}>
-            <p className={styles.placeholderLabel}>图纸区域</p>
-            <h2>这里先作为中间图纸占位区</h2>
-            <p className={styles.placeholderHint}>
-              后续会基于当前项目的图纸内容，放置专注编辑所需的画布与操作反馈。
-            </p>
-          </div>
+          {hasPattern ? (
+            <div className={styles.canvasPreviewWrap}>
+              <canvas ref={previewCanvasRef} className={styles.canvasPreview} aria-label="图纸预览画布" />
+            </div>
+          ) : (
+            <div className={styles.placeholderCard}>
+              <p className={styles.placeholderLabel}>{isHydrating ? '正在加载' : '图纸区域'}</p>
+              <h2>{isHydrating ? '正在载入图纸数据…' : '还没有可显示的图纸'}</h2>
+              <p className={styles.placeholderHint}>
+                {isHydrating
+                  ? '系统正在从当前拼豆项目中读取图纸数据。'
+                  : '请先在工坊中生成图纸结果，再进入专注模式。'}
+              </p>
+            </div>
+          )}
         </div>
       </section>
 
@@ -127,7 +185,7 @@ export function FocusModePage() {
                 title={item.vendorCode}
               >
                 <span className={styles.paletteDot} style={{ background: item.hex }}>
-                  <span className={styles.paletteDotLabel}>{item.vendorCode}</span>
+                  {toggles.label ? <span className={styles.paletteDotLabel}>{item.vendorCode}</span> : null}
                 </span>
               </button>
             ))
@@ -149,30 +207,10 @@ export function FocusModePage() {
           onPointerUp={handlePreviewPointerUp}
           onPointerCancel={handlePreviewPointerUp}
         >
-          <div className={styles.previewFrame__header}>
-            <div>
-              <p className={styles.placeholderLabel}>图纸预览</p>
-              <h2>专注拼豆预览框</h2>
-            </div>
-            <div className={styles.previewFrame__badge}>{state.patternResult ? '已载入' : '等待图纸'}</div>
-          </div>
-
           <div className={styles.previewFrame__canvas}>
-            <div className={styles.previewFrame__grid} />
-            <div className={styles.previewFrame__art} aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </div>
-            <div className={`${styles.previewFrame__corner} ${styles['previewFrame__corner--tl']}`} />
-            <div className={`${styles.previewFrame__corner} ${styles['previewFrame__corner--tr']}`} />
-            <div className={`${styles.previewFrame__corner} ${styles['previewFrame__corner--bl']}`} />
-            <div className={`${styles.previewFrame__corner} ${styles['previewFrame__corner--br']}`} />
-          </div>
-
-          <div className={styles.previewFrame__footer}>
-            <span>预览框</span>
-            <span>当前图纸内容将显示在这里</span>
+            {floatPreviewDataUrl ? (
+              <img className={styles.previewFrame__canvasImg} src={floatPreviewDataUrl} alt="图纸预览" />
+            ) : null}
           </div>
         </div>
       </div>
@@ -269,26 +307,19 @@ export function FocusModePage() {
 
               <section>
                 <div className={styles.settingsSectionTitle}>🖼️ 显示设置</div>
-                {([
-                  ['highlight', '高亮当前色块', '当前颜色的豆粒闪烁高亮'],
-                  ['grid', '显示格线', '在豆豆之间显示网格线'],
-                  ['dim', '暗化已完成色块', '已拼完的颜色半透明显示'],
-                  ['label', '显示色号标记', '在豆粒上显示色号文字'],
-                ] as Array<[ToggleKey, string, string]>).map(([key, name, desc]) => (
-                  <div key={key} className={styles.toggleRow}>
-                    <div className={styles.toggleInfo}>
-                      <div className={styles.toggleName}>{name}</div>
-                      <div className={styles.toggleDesc}>{desc}</div>
-                    </div>
-                    <button
-                      className={`${styles.toggleSwitch} ${toggles[key] ? styles.isOn : ''}`}
-                      type="button"
-                      aria-label={name}
-                      aria-pressed={toggles[key]}
-                      onClick={() => setToggles((current) => ({ ...current, [key]: !current[key] }))}
-                    />
+                <div className={styles.toggleRow}>
+                  <div className={styles.toggleInfo}>
+                    <div className={styles.toggleName}>显示色号标记</div>
+                    <div className={styles.toggleDesc}>在豆粒上显示色号文字</div>
                   </div>
-                ))}
+                  <button
+                    className={`${styles.toggleSwitch} ${toggles.label ? styles.isOn : ''}`}
+                    type="button"
+                    aria-label="显示色号标记"
+                    aria-pressed={toggles.label}
+                    onClick={() => setToggles((current) => ({ ...current, label: !current.label }))}
+                  />
+                </div>
               </section>
 
           </div>
