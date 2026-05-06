@@ -76,8 +76,7 @@ export function drawPatternPreview(params: {
     const cellCoordinateKey = `${cell.x},${cell.y}`;
     const isActiveCell = activeBlockCellKeySet.has(cellCoordinateKey) && isActiveColor;
     const isCompletedCell = completedCellKeySet.has(cellCoordinateKey);
-    const isCompletedAndActiveColorCell = isActiveColor && isCompletedCell;
-    const alpha = hasActiveColor ? (isActiveCell || isCompletedAndActiveColorCell ? 1 : isActiveColor ? activeOpacity : 0.1) : 1;
+    const alpha = hasActiveColor ? (isActiveColor ? activeOpacity : 0.1) : 1;
 
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -85,20 +84,23 @@ export function drawPatternPreview(params: {
     if (cell.hex === 'transparent' || cell.isExternal) {
       drawTransparentCellBackground(ctx, drawX, drawY, cellWidth, cellHeight);
     } else {
-      ctx.fillStyle = isCompletedAndActiveColorCell ? completedOverlayColor : cell.hex;
+      ctx.fillStyle = cell.hex;
       ctx.fillRect(drawX, drawY, cellWidth, cellHeight);
     }
 
-    ctx.strokeStyle = isActiveColor ? 'rgba(93,83,74,0.3)' : 'rgba(93,83,74,0.12)';
-    ctx.strokeRect(drawX, drawY, cellWidth, cellHeight);
-
-    if (isCompletedAndActiveColorCell && !(cell.hex === 'transparent' || cell.isExternal)) {
+    if (isCompletedCell && isActiveColor && !(cell.hex === 'transparent' || cell.isExternal)) {
       ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = completedOverlayColor;
+      ctx.fillRect(drawX, drawY, cellWidth, cellHeight);
       ctx.globalAlpha = 0.16;
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(drawX, drawY, cellWidth, cellHeight);
       ctx.restore();
     }
+
+    ctx.strokeStyle = isActiveColor ? 'rgba(93,83,74,0.3)' : 'rgba(93,83,74,0.12)';
+    ctx.strokeRect(drawX, drawY, cellWidth, cellHeight);
 
     if (separatorVisible) {
       const isSeparatorX = cell.x > 0 && cell.x % separatorInterval === 0;

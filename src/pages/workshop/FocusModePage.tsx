@@ -54,7 +54,12 @@ function isTransparentCellHex(hex: string) {
   return hex === 'transparent';
 }
 
-function sortCellsByHandedness(cells: Array<{ x: number; y: number }>, handedness: 'left' | 'right') {
+type CellCoordinate = {
+  x: number;
+  y: number;
+};
+
+function sortCellsByHandedness<T extends CellCoordinate>(cells: T[], handedness: 'left' | 'right') {
   return [...cells].sort((a, b) => {
     if (a.y !== b.y) {
       return a.y - b.y;
@@ -171,6 +176,17 @@ export function FocusModePage() {
     return Array.from(paletteByKey.values()).sort((a, b) => b.count - a.count);
   }, [patternResult]);
 
+  const totalPatternCells = useMemo(() => {
+    if (!patternResult) return 0;
+    return patternResult.cells.filter((cell) => !cell.isExternal && cell.vendorCode && cell.hex && !isTransparentCellHex(cell.hex)).length;
+  }, [patternResult]);
+
+  const completedPatternCells = useMemo(() => new Set(completedCellKeys).size, [completedCellKeys]);
+  const overallProgress = totalPatternCells > 0 ? completedPatternCells / totalPatternCells : 0;
+  const overallProgressPercent = Math.round(overallProgress * 100);
+  const completedColorCount = completedColorKeys.length;
+  const totalColorCount = palette.length;
+
   const orderedColorEntries = useMemo(() => {
     if (!patternResult) return [] as { colorKey: string; blocks: OrderedBlock[]; cells: PatternCell[] }[];
 
@@ -187,8 +203,8 @@ export function FocusModePage() {
     return colorOrder.map((item) => {
       const colorKey = `${item.colorId}-${item.vendorCode}-${item.hex}`;
       const cells = sortCellsByHandedness(cellsByColor.get(colorKey) ?? [], handedness);
-      const blocks = buildConnectedBlocks(cells, handedness);
-      return { colorKey, blocks, cells };
+      const blocks = buildConnectedBlocks(cells as PatternCell[], handedness);
+      return { colorKey, blocks, cells: cells as PatternCell[] };
     });
   }, [handedness, palette, patternResult]);
 
@@ -331,6 +347,7 @@ export function FocusModePage() {
       activeBlockCellKeys: currentBlock?.cells.map((cell) => `${cell.x},${cell.y}`) ?? [],
       completedCellKeys,
       activeOpacity: 0.5,
+      completedOverlayColor: '#86EFAC',
       separator: {
         visible: toggles.separator,
         interval: separatorInterval,
@@ -378,11 +395,26 @@ export function FocusModePage() {
           </button>
           <div className={styles.titlebarText}>
             <h1>专注模式</h1>
-            <p className={styles.titlebarSubtitle}>{hasPattern ? `图纸已载入 · ${patternResult?.stats.colorCount ?? 0} 种颜色` : '等待当前项目图纸数据'}</p>
+          </div>
+        </div>
+
+        <div className={styles.titlebarCenter} aria-label="图纸完成度">
+          <div className={styles.progressMeta}>
+            <span className={styles.progressPercent}>{overallProgressPercent}%</span>
+            <span className={styles.progressLabel}>{hasPattern ? `总进度 ${completedPatternCells}/${totalPatternCells}` : '等待图纸载入'}</span>
+          </div>
+          <div className={styles.progressBarTrack} role="progressbar" aria-label="图纸完成度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={overallProgressPercent}>
+            <div className={styles.progressBarFill} style={{ width: `${overallProgressPercent}%` }} />
           </div>
         </div>
 
         <div className={styles.titlebarRight}>
+          <div className={styles.colorProgressChip} aria-label="颜色完成进度">
+            <span>{completedColorCount}</span>
+            <span>/</span>
+            <span>{totalColorCount}</span>
+            <span>色</span>
+          </div>
           <button type="button" className={styles.settingsButton} onClick={() => setSettingsOpen(true)} aria-label="打开设置">
             ⚙
           </button>
@@ -434,7 +466,6 @@ export function FocusModePage() {
             palette.map((item) => {
               const colorKey = `${item.colorId}-${item.vendorCode}-${item.hex}`;
               const isActive = activeColorKey === colorKey;
-              const colorIndex = palette.findIndex((entry) => `${entry.colorId}-${entry.vendorCode}-${entry.hex}` === colorKey);
               const isCompleted = activeColorKey === colorKey ? isCurrentColorCompleted : completedColorKeys.includes(colorKey);
               const ringProgress = isCompleted ? 1 : isActive ? Math.max(0, Math.min(1, activeBlockProgress)) : 0;
               return (
