@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
+import { drawPatternFocusZoomView, getFocusWindowBounds, getQuadrant, getRulerPosition } from '../../lib/pattern/focusZoom';
 import { drawPatternPreview } from '../../lib/pattern/preview';
 import styles from './FocusModePage.module.css';
 
@@ -34,6 +35,14 @@ type OrderedBlock = {
   cells: PatternCell[];
   anchorX: number;
   anchorY: number;
+};
+
+type FocusPanState = {
+  isDragging: boolean;
+  startClientX: number;
+  startClientY: number;
+  originX: number;
+  originY: number;
 };
 
 const separatorColorOptions: SeparatorColorOption[] = [
@@ -150,7 +159,11 @@ export function FocusModePage() {
   const [completedCellKeys, setCompletedCellKeys] = useState<string[]>([]);
   const dragRef = useRef<{ startX: number; startY: number; originX: number; originY: number } | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mainCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [floatPreviewDataUrl, setFloatPreviewDataUrl] = useState<string | null>(null);
+  const previewImageDataUrlRef = useRef<string | null>(null);
+  const [focusPan, setFocusPan] = useState<FocusPanState | null>(null);
+  const [focusWindowOverride, setFocusWindowOverride] = useState<{ startX: number; startY: number } | null>(null);
 
   const patternResult = state.patternResult;
   const hasPattern = Boolean(patternResult && patternResult.cells.length > 0);
@@ -242,6 +255,85 @@ export function FocusModePage() {
 
   const activeBlockCount = activeColorEntry?.blocks.length ?? 0;
   const currentBlock = currentBlockIndex >= 0 ? activeColorEntry?.blocks[currentBlockIndex] ?? null : null;
+  const activeBlockCells = currentBlock?.cells ?? [];
+  const focusWindowBounds = useMemo(() => {
+    if (!patternResult || activeBlockCells.length === 0) return null;
+    return getFocusWindowBounds(patternResult, activeBlockCells, 10);
+  }, [activeBlockCells, patternResult]);
+  const focusQuadrant = useMemo(() => {
+    if (!patternResult || activeBlockCells.length === 0) return null;
+    return getQuadrant(patternResult, activeBlockCells);
+  }, [activeBlockCells, patternResult]);
+  const focusRulerPosition = useMemo(() => {
+    if (!focusQuadrant) return null;
+    return getRulerPosition(focusQuadrant);
+  }, [focusQuadrant]);
+
+  const panBounds = useMemo(() => {
+    if (!patternResult || !focusWindowBounds) return null;
+    return {
+      minX: 0,
+      maxX: Math.max(0, patternResult.width - focusWindowBounds.size),
+      minY: 0,
+      maxY: Math.max(0, patternResult.height - focusWindowBounds.size),
+    };
+  }, [focusWindowBounds, patternResult]);
+
+  const effectiveFocusWindowBounds = useMemo(() => {
+    if (!focusWindowBounds) return null;
+    const base = focusWindowOverride ?? { startX: focusWindowBounds.startX, startY: focusWindowBounds.startY };
+    if (!panBounds) return { ...base, size: focusWindowBounds.size };
+    return {
+      startX: Math.max(panBounds.minX, Math.min(panBounds.maxX, base.startX)),
+      startY: Math.max(panBounds.minY, Math.min(panBounds.maxY, base.startY)),
+      size: focusWindowBounds.size,
+    };
+  }, [focusWindowBounds, focusWindowOverride, panBounds]);
+
+  useEffect(() => {
+    const canvas = mainCanvasRef.current;
+    if (!patternResult || !canvas || !activeBlockCells.length || !effectiveFocusWindowBounds || !focusRulerPosition) return;
+
+    drawPatternFocusZoomView({
+      canvas,
+      pattern: patternResult,
+      blockCells: activeBlockCells,
+      activeColorKey,
+      windowBounds: effectiveFocusWindowBounds,
+      rulerPosition: focusRulerPosition,
+      completedCellKeys,
+      tileSize: 28,
+      rulerThickness: 36,
+    });
+  }, [activeBlockCells, activeColorKey, completedCellKeys, effectiveFocusWindowBounds, focusRulerPosition, patternResult]);
+
+  useEffect(() => {
+    const canvas = previewCanvasRef.current;
+    if (!patternResult || !canvas) return;
+
+    const width = Math.max(240, Math.min(720, patternResult.width * 18));
+    const height = Math.max(240, Math.min(720, patternResult.height * 18));
+    canvas.width = width;
+    canvas.height = height;
+    drawPatternPreview({
+      canvas,
+      pattern: patternResult,
+      activeColorKey,
+      activeBlockCellKeys: currentBlock?.cells.map((cell) => `${cell.x},${cell.y}`) ?? [],
+      completedCellKeys,
+      activeOpacity: 0.5,
+      completedOverlayColor: '#86EFAC',
+      separator: {
+        visible: toggles.separator,
+        interval: separatorInterval,
+        color: separatorColor,
+      },
+    });
+    const dataUrl = canvas.toDataURL('image/png');
+    previewImageDataUrlRef.current = dataUrl;
+    setFloatPreviewDataUrl(dataUrl);
+  }, [activeCellKey, activeColorEntry, activeColorKey, completedCellKeys, currentBlock, patternResult, separatorColor, separatorInterval, toggles.separator]);
+
   const completedCellsBeforeCurrentBlock = useMemo(() => {
     if (!activeColorEntry || currentBlockIndex < 0) return 0;
     if (activeCellKey && currentBlock) {
@@ -267,6 +359,7 @@ export function FocusModePage() {
   const activateColor = (colorKey: string) => {
     const nextEntry = orderedColorEntries.find((item) => item.colorKey === colorKey) ?? null;
     const firstBlock = nextEntry?.blocks[0] ?? null;
+    setFocusWindowOverride(null);
     setActiveColorKey(colorKey);
     setActiveCellKey(firstBlock ? `${firstBlock.cells[0]?.x},${firstBlock.cells[0]?.y}` : null);
   };
@@ -293,6 +386,7 @@ export function FocusModePage() {
 
     if (nextIndex >= 0 && nextIndex < activeColorEntry.blocks.length) {
       const nextBlock = activeColorEntry.blocks[nextIndex];
+      setFocusWindowOverride(null);
       setActiveCellKey(`${nextBlock.cells[0]?.x},${nextBlock.cells[0]?.y}`);
       return;
     }
@@ -311,6 +405,7 @@ export function FocusModePage() {
       const nextColor = orderedColorEntries[currentColorIndex + 1];
       if (nextColor) {
         const firstBlock = nextColor.blocks[0] ?? null;
+        setFocusWindowOverride(null);
         setActiveColorKey(nextColor.colorKey);
         setActiveCellKey(firstBlock ? `${firstBlock.cells[0]?.x},${firstBlock.cells[0]?.y}` : null);
       }
@@ -320,14 +415,11 @@ export function FocusModePage() {
     const prevColor = orderedColorEntries[currentColorIndex - 1];
     if (prevColor) {
       const prevBlock = prevColor.blocks[prevColor.blocks.length - 1] ?? null;
+      setFocusWindowOverride(null);
       setActiveColorKey(prevColor.colorKey);
       setActiveCellKey(prevBlock ? `${prevBlock.cells[0]?.x},${prevBlock.cells[0]?.y}` : null);
     }
   };
-
-  useEffect(() => {
-    console.debug('[FocusModePage] patternResult', patternResult);
-  }, [patternResult]);
 
   useEffect(() => {
     const canvas = previewCanvasRef.current;
@@ -354,7 +446,9 @@ export function FocusModePage() {
         color: separatorColor,
       },
     });
-    setFloatPreviewDataUrl(canvas.toDataURL('image/png'));
+    const dataUrl = canvas.toDataURL('image/png');
+    previewImageDataUrlRef.current = dataUrl;
+    setFloatPreviewDataUrl(dataUrl);
   }, [activeCellKey, activeColorEntry, activeColorKey, completedCellKeys, currentBlock, patternResult, separatorColor, separatorInterval, toggles.separator]);
 
   const handlePreviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -379,6 +473,54 @@ export function FocusModePage() {
 
   const handlePreviewPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = null;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleFocusPanStart = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!effectiveFocusWindowBounds) return;
+    setFocusPan({
+      isDragging: true,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      originX: effectiveFocusWindowBounds.startX,
+      originY: effectiveFocusWindowBounds.startY,
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleFocusPanMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!focusPan || !effectiveFocusWindowBounds || !panBounds || !mainCanvasRef.current || !patternResult) return;
+    const canvas = mainCanvasRef.current;
+    const tileSize = 28;
+    const deltaX = Math.round((event.clientX - focusPan.startClientX) / tileSize);
+    const deltaY = Math.round((event.clientY - focusPan.startClientY) / tileSize);
+    const nextStartX = Math.max(panBounds.minX, Math.min(panBounds.maxX, focusPan.originX - deltaX));
+    const nextStartY = Math.max(panBounds.minY, Math.min(panBounds.maxY, focusPan.originY - deltaY));
+    const nextWindowBounds = {
+      startX: nextStartX,
+      startY: nextStartY,
+      size: effectiveFocusWindowBounds.size,
+    };
+    setFocusWindowOverride({ startX: nextStartX, startY: nextStartY });
+    drawPatternFocusZoomView({
+      canvas,
+      pattern: patternResult,
+      blockCells: activeBlockCells,
+      activeColorKey,
+      windowBounds: nextWindowBounds,
+      rulerPosition: focusRulerPosition ?? undefined,
+      completedCellKeys,
+      tileSize,
+      rulerThickness: 36,
+    });
+  };
+
+  const handleFocusPanEnd = (event: React.PointerEvent<HTMLCanvasElement>) => {
+    setFocusPan(null);
     try {
       event.currentTarget.releasePointerCapture(event.pointerId);
     } catch {
@@ -448,7 +590,16 @@ export function FocusModePage() {
         <div className={styles.canvasPlaceholder}>
           {hasPattern ? (
             <div className={styles.canvasPreviewWrap}>
-              <canvas ref={previewCanvasRef} className={styles.canvasPreview} aria-label="图纸预览画布" />
+              <canvas
+                ref={mainCanvasRef}
+                className={styles.canvasPreview}
+                aria-label="局部放大图纸画布"
+                onPointerDown={handleFocusPanStart}
+                onPointerMove={handleFocusPanMove}
+                onPointerUp={handleFocusPanEnd}
+                onPointerCancel={handleFocusPanEnd}
+              />
+              <canvas ref={previewCanvasRef} className={styles.previewCanvasHidden} aria-hidden="true" />
             </div>
           ) : (
             <div className={styles.placeholderCard}>
