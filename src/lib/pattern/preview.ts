@@ -51,8 +51,13 @@ export function drawPatternPreview(params: {
     interval: number;
     color: string;
   };
+  viewport?: {
+    startX: number;
+    startY: number;
+    size: number;
+  } | null;
 }) {
-  const { canvas, pattern, activeColorKey = null, activeBlockCellKeys = [], completedCellKeys = [], activeOpacity = 1, completedOverlayColor = '#86EFAC', separator } = params;
+  const { canvas, pattern, activeColorKey = null, activeBlockCellKeys = [], completedCellKeys = [], activeOpacity = 1, completedOverlayColor = '#86EFAC', separator, viewport } = params;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
@@ -135,6 +140,26 @@ export function drawPatternPreview(params: {
       ctx.strokeRect(drawX + inset, drawY + inset, cellWidth - inset * 2, cellHeight - inset * 2);
     }
 
+    ctx.restore();
+  }
+
+  if (viewport) {
+    const viewportX = viewport.startX * cellWidth;
+    const viewportY = viewport.startY * cellHeight;
+    const viewportWidth = viewport.size * cellWidth;
+    const viewportHeight = viewport.size * cellHeight;
+    const lineWidth = Math.max(2, Math.min(cellWidth, cellHeight) * 0.28);
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(244, 109, 122, 0.10)';
+    ctx.fillRect(viewportX, viewportY, viewportWidth, viewportHeight);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.96)';
+    ctx.lineWidth = lineWidth + 2;
+    ctx.strokeRect(viewportX + lineWidth / 2, viewportY + lineWidth / 2, viewportWidth - lineWidth, viewportHeight - lineWidth);
+    ctx.strokeStyle = 'rgba(244, 109, 122, 0.96)';
+    ctx.lineWidth = lineWidth;
+    ctx.setLineDash([Math.max(4, lineWidth * 2.5), Math.max(3, lineWidth * 1.5)]);
+    ctx.strokeRect(viewportX + lineWidth / 2, viewportY + lineWidth / 2, viewportWidth - lineWidth, viewportHeight - lineWidth);
     ctx.restore();
   }
 }

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { defaultCropTransform, defaultWorkshopConfig } from '../../features/workshop/model/defaults';
 import { saveWorkshopProject } from '../../features/workshop/model/projectStore';
@@ -6,6 +6,7 @@ import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
 import { generatePatternFromImage } from '../../lib/pattern/generator';
 import { removePatternBackground } from '../../lib/pattern/remove-background';
 import { WorkshopPage } from './WorkshopPage';
+import { GalleryPublishSheet } from './components/GalleryPublishSheet';
 
 type WorkshopShellProps = {
   mode: 'create' | 'result';
@@ -20,6 +21,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { state, actions, isHydrating } = useWorkshopFlow(projectId ?? null);
+  const [isPublishOpen, setIsPublishOpen] = useState(false);
 
   const persistCurrentProject = async (nextPatternResult = state.patternResult) => {
     if (!projectId) return;
@@ -142,6 +144,17 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         onViewPattern={() => navigate(`/workshop/result/${projectId ?? createProjectId()}`)}
         onOpenEditor={() => navigate(`/workshop/editor/${projectId ?? createProjectId()}`)}
         onOpenFocusMode={() => navigate(`/workshop/focus/${projectId ?? createProjectId()}`)}
+        onUploadToGallery={() => setIsPublishOpen(true)}
+      />
+      <GalleryPublishSheet
+        open={isPublishOpen && mode === 'result'}
+        titleSeed={state.uploadedImage?.name?.replace(/\.[^.]+$/, '')}
+        uploadedImage={state.uploadedImage}
+        patternResult={state.patternResult}
+        config={state.config}
+        projectId={projectId ?? null}
+        onClose={() => setIsPublishOpen(false)}
+        onPublished={() => setIsPublishOpen(false)}
       />
     </>
   );

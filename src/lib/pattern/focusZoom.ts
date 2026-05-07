@@ -13,6 +13,8 @@ export type FocusZoomRulerPosition = {
   vertical: 'left' | 'right';
 };
 
+export type FocusWindowAnchor = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
 export type FocusBlockCell = {
   x: number;
   y: number;
@@ -28,6 +30,7 @@ const DEFAULT_RULER_BG = '#e8e2d4';
 const DEFAULT_RULER_TEXT = '#4a4030';
 const DEFAULT_RULER_LINE = '#b0a090';
 const DEFAULT_FOCUS_OVERLAY = 'rgba(216, 180, 226, 0.18)';
+const DEFAULT_PAGE_SEPARATOR_COLOR = 'rgba(244, 109, 122, 0.92)';
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -90,26 +93,32 @@ export function getRulerPosition(quadrant: FocusQuadrant): FocusZoomRulerPositio
   }
 }
 
-export function getFocusWindowBounds(pattern: PatternResult, blockCells: FocusBlockCell[], minSize = 10): FocusWindowBounds {
+function getBlockBounds(blockCells: FocusBlockCell[]) {
+  const xs = blockCells.map((cell) => cell.x);
+  const ys = blockCells.map((cell) => cell.y);
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+  };
+}
+
+export function getFocusWindowBounds(pattern: PatternResult, blockCells: FocusBlockCell[], minSize = 10, anchor?: FocusWindowAnchor): FocusWindowBounds {
   const size = Math.max(1, minSize);
   if (blockCells.length === 0) {
     return { startX: 0, startY: 0, size };
   }
 
-  const xs = blockCells.map((cell) => cell.x);
-  const ys = blockCells.map((cell) => cell.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const quadrant = getQuadrant(pattern, blockCells);
+  const { minX, maxX, minY, maxY } = getBlockBounds(blockCells);
+  const windowAnchor = anchor ?? getQuadrant(pattern, blockCells);
 
   let startX = minX;
   let startY = minY;
-  if (quadrant === 'top-right' || quadrant === 'bottom-right') {
+  if (windowAnchor === 'top-right' || windowAnchor === 'bottom-right') {
     startX = maxX - size + 1;
   }
-  if (quadrant === 'bottom-left' || quadrant === 'bottom-right') {
+  if (windowAnchor === 'bottom-left' || windowAnchor === 'bottom-right') {
     startY = maxY - size + 1;
   }
 
@@ -117,6 +126,66 @@ export function getFocusWindowBounds(pattern: PatternResult, blockCells: FocusBl
   startY = clamp(startY, 0, Math.max(0, pattern.height - size));
 
   return { startX, startY, size };
+}
+
+export function getFocusPanBounds(pattern: PatternResult, blockCells: FocusBlockCell[], windowBounds: FocusWindowBounds, anchor: FocusWindowAnchor): FocusWindowBounds & {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+} {
+  const size = Math.max(1, windowBounds.size);
+  const globalMinX = 0;
+  const globalMaxX = Math.max(0, pattern.width - size);
+  const globalMinY = 0;
+  const globalMaxY = Math.max(0, pattern.height - size);
+
+  if (blockCells.length === 0) {
+    const startX = clamp(windowBounds.startX, globalMinX, globalMaxX);
+    const startY = clamp(windowBounds.startY, globalMinY, globalMaxY);
+    return { startX, startY, size, minX: startX, maxX: startX, minY: startY, maxY: startY };
+  }
+
+  const { minX, maxX, minY, maxY } = getBlockBounds(blockCells);
+  const spanX = maxX - minX + 1;
+  const spanY = maxY - minY + 1;
+  const overflowX = Math.max(0, spanX - size);
+  const overflowY = Math.max(0, spanY - size);
+  const initialStartX = clamp(windowBounds.startX, globalMinX, globalMaxX);
+  const initialStartY = clamp(windowBounds.startY, globalMinY, globalMaxY);
+
+  let localMinX = initialStartX;
+  let localMaxX = initialStartX;
+  if (overflowX > 0) {
+    if (anchor === 'top-right' || anchor === 'bottom-right') {
+      localMinX = initialStartX - overflowX;
+      localMaxX = initialStartX;
+    } else {
+      localMinX = initialStartX;
+      localMaxX = initialStartX + overflowX;
+    }
+  }
+
+  let localMinY = initialStartY;
+  let localMaxY = initialStartY;
+  if (overflowY > 0) {
+    if (anchor === 'bottom-left' || anchor === 'bottom-right') {
+      localMinY = initialStartY - overflowY;
+      localMaxY = initialStartY;
+    } else {
+      localMinY = initialStartY;
+      localMaxY = initialStartY + overflowY;
+    }
+  }
+
+  const minPanX = clamp(Math.min(localMinX, localMaxX), globalMinX, globalMaxX);
+  const maxPanX = clamp(Math.max(localMinX, localMaxX), globalMinX, globalMaxX);
+  const minPanY = clamp(Math.min(localMinY, localMaxY), globalMinY, globalMaxY);
+  const maxPanY = clamp(Math.max(localMinY, localMaxY), globalMinY, globalMaxY);
+  const startX = clamp(initialStartX, minPanX, maxPanX);
+  const startY = clamp(initialStartY, minPanY, maxPanY);
+
+  return { startX, startY, size, minX: minPanX, maxX: maxPanX, minY: minPanY, maxY: maxPanY };
 }
 
 function drawCellBackground(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, fill: string) {
@@ -214,7 +283,7 @@ export function drawPatternFocusZoomView(params: {
       const isCompleted = completedSet.has(cellKey);
       const isActiveColor = activeColorSet ? Boolean(cell && activeColorSet.has(`${cell.colorId}-${cell.vendorCode}-${cell.hex}`)) : true;
 
-      if (!cell || cell.isExternal || cell.hex === 'transparent') {
+      if (!cell || cell.isExternal || cell.hex === 'transparent' || !isBlockCell) {
         drawTransparentCellBackground(ctx, drawX, drawY, tileSize, tileSize);
       } else {
         drawCellBackground(ctx, drawX, drawY, tileSize, tileSize, cell.hex);
@@ -347,6 +416,41 @@ export function drawPatternFocusZoomView(params: {
     }
   }
   ctx.restore();
+
+  if (blockCells.length > 0) {
+    const { minX, maxX, minY, maxY } = getBlockBounds(blockCells);
+    const spanX = maxX - minX + 1;
+    const spanY = maxY - minY + 1;
+    ctx.save();
+    ctx.strokeStyle = DEFAULT_PAGE_SEPARATOR_COLOR;
+    ctx.lineWidth = Math.max(2, tileSize * 0.1);
+    ctx.setLineDash([Math.max(5, tileSize * 0.28), Math.max(3, tileSize * 0.16)]);
+    ctx.lineCap = 'round';
+
+    if (spanX > size) {
+      for (let splitX = minX + size; splitX <= maxX; splitX += size) {
+        if (splitX <= bounds.startX || splitX >= bounds.startX + size) continue;
+        const drawX = xOffset + (splitX - bounds.startX) * tileSize;
+        ctx.beginPath();
+        ctx.moveTo(drawX, yOffset);
+        ctx.lineTo(drawX, yOffset + contentHeight);
+        ctx.stroke();
+      }
+    }
+
+    if (spanY > size) {
+      for (let splitY = minY + size; splitY <= maxY; splitY += size) {
+        if (splitY <= bounds.startY || splitY >= bounds.startY + size) continue;
+        const drawY = yOffset + (splitY - bounds.startY) * tileSize;
+        ctx.beginPath();
+        ctx.moveTo(xOffset, drawY);
+        ctx.lineTo(xOffset + contentWidth, drawY);
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+  }
 
   ctx.save();
   ctx.fillStyle = DEFAULT_FOCUS_OVERLAY;

@@ -1,0 +1,50 @@
+{
+  "id": "forest-house",
+  "title": "森林小屋",
+  "description": "温暖安静的森林主题图纸，适合做成桌面摆件。",
+  "sourceType": "official",
+  "visibility": "public",
+  "status": "published",
+  "author": {
+    "id": "official",
+    "name": "官方推荐"
+  },
+  "brand": "MARD",
+  "style": "写实",
+  "config": {
+    "canvasSize": 24,
+    "colorMergeThreshold": 30
+  },
+  "pattern": {
+    "width": 24,
+    "height": 24,
+    "beadCount": 576,
+    "paletteCount": 8,
+    "colorStats": [
+      { "colorId": "mard-brown", "vendorCode": "M01", "hex": "#8b5a2b", "count": 132 },
+      { "colorId": "mard-green", "vendorCode": "M02", "hex": "#5a8b4a", "count": 88 }
+    ],
+    "cells": [],
+    "palette": [],
+    "stats": {
+      "totalCells": 576,
+      "colorCount": 8
+    }
+  },
+  "assets": {
+    "coverUrl": "/data/gallery/images/forest-house-cover.png",
+    "previewUrl": "/data/gallery/images/forest-house-preview.png"
+  },
+  "stats": {
+    "viewCount": 1200,
+    "likeCount": 340,
+    "favoriteCount": 211,
+    "downloadCount": 76,
+    "shareCount": 24,
+    "hotScore": 92,
+    "updatedAt": "2026-05-07T00:00:00.000Z"
+  },
+  "createdAt": "2026-05-07T00:00:00.000Z",
+  "updatedAt": "2026-05-07T00:00:00.000Z",
+  "publishedAt": "2026-05-07T00:00:00.000Z"
+}

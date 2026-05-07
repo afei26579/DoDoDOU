@@ -12,6 +12,7 @@ type WorkshopToolbarProps = {
   onRegenerate: () => void;
   onRemoveBackground: () => void;
   onReuploadImage: () => void;
+  onUploadToGallery?: () => void;
 };
 
 export function WorkshopToolbar({
@@ -28,6 +29,7 @@ export function WorkshopToolbar({
   onRegenerate,
   onRemoveBackground,
   onReuploadImage,
+  onUploadToGallery,
 }: WorkshopToolbarProps) {
   if (!hasImage) return null;
 
@@ -47,6 +49,7 @@ export function WorkshopToolbar({
           <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="返回原图" onClick={onBackToOriginal} disabled={isGenerating}>◀</button>
           <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="重新生成" onClick={onRegenerate} disabled={isGenerating}>↻</button>
           <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="去背景" onClick={onRemoveBackground} disabled={isGenerating}>⌗</button>
+          {onUploadToGallery ? <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="上传图纸" onClick={onUploadToGallery} disabled={isGenerating}>↑</button> : null}
         </>
       )}
     </div>

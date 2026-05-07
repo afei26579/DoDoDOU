@@ -31,6 +31,7 @@
 - 图纸统计信息展示
 - 去背景处理
 - 下载设置弹窗
+- 结果页上传到画册
 
 ### 3. 图纸生成与导出
 - 图片裁剪画布生成
@@ -40,13 +41,20 @@
 - 图纸 PNG 导出
 - 导出时支持网格、色号、水印、物料清单等配置
 
-### 4. 手动编辑与专注模式
+### 4. 画册数据与后端存储
+- 公共画册图纸列表
+- 图纸详情展示
+- 画册上传表单
+- Node.js + Express + Prisma + SQLite 后端
+- 发布后自动写入 SQLite，并生成 `public/data/gallery/` JSON 文件
+
+### 5. 手动编辑与专注模式
 - 手动编辑图纸页面
 - 工具切换：铅笔、橡皮、填充、取色
 - 颜色板选择
 - 拼豆专注模式页面
 
-### 5. 作品集
+### 6. 作品集
 - 作品集页面
 - 状态筛选
 - 卡片式作品展示
@@ -57,14 +65,39 @@
 - React Router DOM 7
 - TypeScript 5
 - Vite 7
+- Node.js + Express
+- Prisma 7
+- SQLite
 - 浏览器原生 `IndexedDB` 用于保存项目数据
 - Canvas / Image API 用于裁剪、生成和导出图纸
 
 ## 项目运行
 
+### 1. 安装依赖
+
 ```bash
 npm install
+```
+
+### 2. 初始化数据库
+
+```bash
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:seed
+```
+
+### 3. 启动前后端
+
+```bash
+npm run dev:all
+```
+
+如果你只想单独启动：
+
+```bash
 npm run dev
+npm run gallery:server
 ```
 
 ## 常用命令
@@ -73,6 +106,29 @@ npm run dev
 npm run build
 npm run check
 npm run preview
+npm run prisma:studio
+npm run prisma:generate
+npm run prisma:migrate
+npm run prisma:seed
+npm run gallery:server
+npm run dev:all
+```
+
+## 环境变量
+
+复制 `.env.example` 为 `.env` 后配置：
+
+```bash
+DATABASE_URL="file:./dev.db"
+GALLERY_SERVER_HOST="127.0.0.1"
+GALLERY_SERVER_PORT="3001"
+```
+
+前端如果要直连后端，再补充：
+
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:3001
+VITE_USE_MOCK_GALLERY=false
 ```
 
 ## 路由概览
@@ -101,6 +157,9 @@ npm run preview
 
 ### 导出逻辑
 图纸导出位于 `src/lib/pattern/download.ts`，会根据用户配置绘制完整 PNG 图纸。
+
+### 公共画册存储
+公共画册数据使用 `Prisma + SQLite` 存储，发布时同步生成静态 JSON 到 `public/data/gallery/`，方便前端读取与调试。
 
 ## 当前项目定位
 

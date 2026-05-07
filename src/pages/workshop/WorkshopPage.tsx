@@ -25,6 +25,7 @@ type WorkshopPageProps = {
   onRemoveBackground: () => void;
   onUploadImage: () => void;
   onReuploadImage: () => void;
+  onUploadToGallery?: () => void;
   isHydrating: boolean;
   onViewPattern: () => void;
   onOpenDownloadSettings?: () => void;
@@ -46,6 +47,7 @@ export function WorkshopPage({
   onRemoveBackground,
   onUploadImage,
   onReuploadImage,
+  onUploadToGallery,
   isHydrating,
   onViewPattern,
   onOpenDownloadSettings,
@@ -182,7 +184,8 @@ export function WorkshopPage({
       frameSize: 1200,
       outputSize: 1200,
     });
-    setCropPreviewDataUrl(previewCanvas.toDataURL('image/png'));
+    const dataUrl = previewCanvas.toDataURL('image/png');
+    setCropPreviewDataUrl(dataUrl);
     setCropPreviewSize({ width: 420, height: 300 });
     setCropPreviewPosition({ x: 0, y: 0 });
     setIsCropPreviewOpen(true);
@@ -269,6 +272,7 @@ export function WorkshopPage({
             onRegenerate={onRegenerate}
             onRemoveBackground={onRemoveBackground}
             onReuploadImage={onReuploadImage}
+            onUploadToGallery={onUploadToGallery}
           />
         )}
       </section>
@@ -319,6 +323,7 @@ export function WorkshopPage({
       {mode === 'result' && patternResult && isStatsSheetOpen ? (
         <WorkshopResultStatsSheet patternResult={patternResult} onClose={() => setIsStatsSheetOpen(false)} />
       ) : null}
+
 
       {isCropPreviewOpen ? (
         <div className="crop-preview-modal__backdrop" role="presentation" onClick={() => setIsCropPreviewOpen(false)}>
