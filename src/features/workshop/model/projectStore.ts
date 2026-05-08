@@ -7,6 +7,8 @@ const MEMORY_CACHE = new Map<string, WorkshopProjectRecord>();
 
 export type WorkshopProjectKind = 'upload' | 'draft' | 'pattern' | 'progress';
 export type WorkshopProjectStatus = 'editing' | 'ready' | 'paused' | 'completed';
+export type WorkshopPaperState = 'draft' | 'completed';
+export type WorkshopBeadingState = 'idle' | 'progressing' | 'completed';
 
 export type WorkshopProjectProgress = {
   percent: number;
@@ -19,6 +21,8 @@ export type WorkshopProjectRecord = {
   title: string;
   kind: WorkshopProjectKind;
   status: WorkshopProjectStatus;
+  paperState: WorkshopPaperState | null;
+  beadingState: WorkshopBeadingState | null;
   uploadedImage: UploadedImage | null;
   cropTransform: CropTransform;
   config: WorkshopConfig;
@@ -50,6 +54,8 @@ function createDefaultRecord(projectId: string): WorkshopProjectRecord {
     title: '未命名作品',
     kind: 'upload',
     status: 'editing',
+    paperState: null,
+    beadingState: null,
     uploadedImage: null,
     cropTransform: { scale: 1, x: 0, y: 0 },
     config: getDefaultConfig(),
@@ -68,6 +74,8 @@ function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
   return {
     ...createDefaultRecord(record.projectId),
     ...record,
+    paperState: record.paperState ?? null,
+    beadingState: record.beadingState ?? null,
     uploadedImage: record.uploadedImage ?? null,
     patternResult: record.patternResult ?? null,
     editorState: record.editorState ?? null,

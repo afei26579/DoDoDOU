@@ -53,6 +53,8 @@ export type PatternResult = {
 };
 
 export type WorkshopViewMode = 'image' | 'pattern';
+export type WorkshopPaperState = 'draft' | 'completed';
+export type WorkshopBeadingState = 'idle' | 'progressing' | 'completed';
 
 export type WorkshopEditorState = {
   grid: string[][];
@@ -66,5 +68,7 @@ export type WorkshopFlowState = {
   config: WorkshopConfig;
   patternResult: PatternResult | null;
   viewMode: WorkshopViewMode;
+  paperState: WorkshopPaperState | null;
+  beadingState: WorkshopBeadingState | null;
   isGenerating: boolean;
 };

@@ -18,6 +18,8 @@ function toFlowState(record: WorkshopProjectRecord | null): WorkshopFlowState {
     config: record.config,
     patternResult: record.patternResult,
     viewMode: record.viewMode,
+    paperState: record.paperState,
+    beadingState: record.beadingState,
     isGenerating: false,
   };
 }
@@ -48,6 +50,8 @@ export function useWorkshopFlow(projectId: string | null) {
           title: record.title,
           kind: record.kind,
           status: record.status,
+          paperState: record.paperState,
+          beadingState: record.beadingState,
           coverUrl: record.coverUrl ?? record.uploadedImage?.dataUrl ?? null,
           previewUrl: record.previewUrl ?? null,
           sourceImage: record.uploadedImage,
@@ -77,6 +81,8 @@ export function useWorkshopFlow(projectId: string | null) {
     const lastOpenedAt = new Date().toISOString();
     const nextKind = patch.patternResult ? 'pattern' : patch.uploadedImage ? 'draft' : undefined;
     const nextStatus = patch.patternResult ? 'ready' : patch.uploadedImage ? 'editing' : undefined;
+    const nextPaperState = patch.paperState ?? (patch.patternResult ? 'completed' : undefined);
+    const nextBeadingState = patch.beadingState ?? (patch.patternResult ? 'idle' : undefined);
     void Promise.all([
       saveWorkshopProject(projectId, {
         uploadedImage: patch.uploadedImage,
@@ -86,6 +92,8 @@ export function useWorkshopFlow(projectId: string | null) {
         viewMode: patch.viewMode,
         kind: nextKind,
         status: nextStatus,
+        paperState: nextPaperState ?? null,
+        beadingState: nextBeadingState ?? null,
         lastOpenedAt,
       }),
       ensureLocalProject({
@@ -93,6 +101,8 @@ export function useWorkshopFlow(projectId: string | null) {
         title: patch.uploadedImage?.name?.replace(/\.[^.]+$/, '') || '未命名作品',
         kind: nextKind ?? 'upload',
         status: nextStatus ?? 'editing',
+        paperState: nextPaperState ?? null,
+        beadingState: nextBeadingState ?? null,
         coverUrl: patch.uploadedImage?.dataUrl ?? null,
         previewUrl: patch.patternResult ? null : patch.uploadedImage?.dataUrl ?? null,
         sourceImage: patch.uploadedImage
@@ -117,6 +127,8 @@ export function useWorkshopFlow(projectId: string | null) {
         title: patch.uploadedImage?.name?.replace(/\.[^.]+$/, '') || undefined,
         kind: nextKind,
         status: nextStatus,
+        paperState: nextPaperState,
+        beadingState: nextBeadingState,
         coverUrl: patch.uploadedImage?.dataUrl ?? undefined,
         previewUrl: patch.patternResult ? null : patch.uploadedImage?.dataUrl ?? undefined,
         pattern: patch.patternResult
@@ -146,6 +158,8 @@ export function useWorkshopFlow(projectId: string | null) {
             cropTransform: defaultCropTransform,
             patternResult: null,
             viewMode: 'image' as const,
+            paperState: null,
+            beadingState: null,
           };
           persist(nextState);
           return nextState;
@@ -190,6 +204,8 @@ export function useWorkshopFlow(projectId: string | null) {
             ...current,
             patternResult: result,
             viewMode: result ? ('pattern' as const) : current.viewMode,
+            paperState: result ? ('completed' as const) : current.paperState,
+            beadingState: 'idle' as const,
           };
           persist(nextState);
           return nextState;

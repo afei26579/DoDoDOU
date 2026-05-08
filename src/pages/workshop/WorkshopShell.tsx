@@ -26,6 +26,18 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     if (!projectId) return;
     void markWorkshopProjectOpened(projectId);
   }, [projectId]);
+
+  useEffect(() => {
+    console.debug('[WorkshopShell] current project snapshot', {
+      projectId,
+      paperState: state.paperState,
+      beadingState: state.beadingState,
+      hasPatternResult: Boolean(state.patternResult),
+      viewMode: state.viewMode,
+      mode,
+    });
+  }, [mode, projectId, state.beadingState, state.paperState, state.patternResult, state.viewMode]);
+
   const [isPublishOpen, setIsPublishOpen] = useState(false);
 
   const persistCurrentProject = async (nextPatternResult = state.patternResult) => {
@@ -38,6 +50,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       viewMode: nextPatternResult ? 'pattern' : state.viewMode,
       kind: nextPatternResult ? 'pattern' : state.uploadedImage ? 'draft' : 'upload',
       status: nextPatternResult ? 'ready' : state.uploadedImage ? 'editing' : 'editing',
+      paperState: nextPatternResult ? 'completed' : null,
+      beadingState: nextPatternResult ? 'idle' : null,
       lastOpenedAt: new Date().toISOString(),
     });
   };
@@ -60,6 +74,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         config: state.config,
         patternResult: result,
         viewMode: 'pattern',
+        paperState: 'completed',
+        beadingState: 'idle',
       });
       navigate(`/workshop/result/${projectId}`);
     } finally {
@@ -109,6 +125,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       viewMode: 'image',
       kind: 'upload',
       status: 'editing',
+      paperState: null,
+      beadingState: null,
       lastOpenedAt: new Date().toISOString(),
     });
 

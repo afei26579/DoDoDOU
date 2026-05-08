@@ -16,11 +16,13 @@ function formatPatternSummary(item: GalleryItemCard) {
 
 function formatMyProjectSummary(project: LocalProjectRecord) {
   const progressText = project.progress ? `${project.progress.percent}%` : null;
-  const detail = project.kind === 'pattern' && project.pattern
-    ? `${project.pattern.width}×${project.pattern.height} · ${project.pattern.paletteCount} 色`
-    : project.kind === 'progress'
-      ? '拼豆进度'
-      : '本地保存';
+  const detail = project.paperState === 'draft'
+    ? '草稿'
+    : project.beadingState === 'progressing'
+      ? '拼豆进行中'
+      : project.kind === 'pattern' && project.pattern
+        ? `${project.pattern.width}×${project.pattern.height} · ${project.pattern.paletteCount} 色`
+        : '图纸';
   return progressText ? `${detail} · ${progressText}` : detail;
 }
 
@@ -83,8 +85,9 @@ export function CollectionPage() {
   );
 
   const myRecentItems = myItems.slice(0, 4);
-  const myDrafts = myItems.filter((item) => item.kind === 'draft' || item.kind === 'upload').slice(0, 4);
-  const myPatterns = myItems.filter((item) => item.kind === 'pattern').slice(0, 4);
+  const myDrafts = myItems.filter((item) => item.paperState === 'draft').slice(0, 4);
+  const myPatterns = myItems.filter((item) => item.paperState === 'completed' && item.beadingState !== 'progressing').slice(0, 4);
+  const myProgressing = myItems.filter((item) => item.beadingState === 'progressing').slice(0, 4);
 
   return (
     <main className="collection-page">
@@ -202,10 +205,28 @@ export function CollectionPage() {
 
               <section>
                 <div className="collection-my-section__header">
-                  <h4>拼豆进度</h4>
-                  <span>占位</span>
+                  <h4>拼豆进行中</h4>
+                  <span>{myProgressing.length} 项</span>
                 </div>
-                <div className="collection-empty collection-empty--inline">当前版本暂不保存专注拼豆进度，后续会自动记录。</div>
+                <div className="collection-my-list">
+                  {myProgressing.length > 0 ? myProgressing.map((item) => (
+                    <article
+                      key={item.id}
+                      className="collection-my-card"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => navigate(`/workshop/focus/${encodeURIComponent(item.id)}`)}
+                    >
+                      <div className="collection-my-card__media" aria-hidden="true">
+                        {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
+                      </div>
+                      <div className="collection-my-card__body">
+                        <strong>{item.title}</strong>
+                        <p>{formatMyProjectSummary(item)}</p>
+                      </div>
+                    </article>
+                  )) : <div className="collection-empty collection-empty--inline">开始专注拼豆后，这里会显示进行中的项目。</div>}
+                </div>
               </section>
             </div>
           ) : null}

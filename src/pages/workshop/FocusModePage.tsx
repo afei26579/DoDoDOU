@@ -167,6 +167,16 @@ export function FocusModePage() {
   const [focusWindowOverride, setFocusWindowOverride] = useState<{ startX: number; startY: number } | null>(null);
 
   const patternResult = state.patternResult;
+
+  useEffect(() => {
+    console.debug('[FocusModePage] current project snapshot', {
+      projectId,
+      paperState: state.paperState,
+      beadingState: state.beadingState,
+      hasPatternResult: Boolean(patternResult),
+      viewMode: state.viewMode,
+    });
+  }, [patternResult, projectId, state.beadingState, state.paperState, state.viewMode]);
   const hasPattern = Boolean(patternResult && patternResult.cells.length > 0);
   const palette = useMemo(() => {
     if (!patternResult) return [];

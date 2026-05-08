@@ -256,6 +256,54 @@ export function WorkshopEditorPage() {
   const currentRecentColors = makeRecentColors(currentColor, recentColors);
   const downloadPatternResult = gridToPatternResult(grid, downloadBrand);
 
+  const persistEditorSnapshot = async (nextPaperState: 'draft' | 'completed') => {
+    if (!projectId) {
+      navigate(-1);
+      return;
+    }
+
+    const editorState: WorkshopEditorState = {
+      grid: cloneGrid(grid),
+      history: cloneHistory(historyRef.current),
+      historyIndex: historyIndexRef.current,
+    };
+    const patternResult = gridToPatternResult(editorState.grid, defaultWorkshopConfig.brand);
+
+    await Promise.all([
+      saveWorkshopProject(projectId, {
+        editorState,
+        patternResult,
+        kind: nextPaperState === 'completed' ? 'pattern' : 'draft',
+        status: nextPaperState === 'completed' ? 'ready' : 'editing',
+        paperState: nextPaperState,
+        previewUrl: null,
+        lastOpenedAt: new Date().toISOString(),
+      }),
+      saveWorkshopDraft(projectId, { state: editorState }),
+    ]);
+  };
+
+  const handleBack = async () => {
+    try {
+      await persistEditorSnapshot('draft');
+    } catch (error) {
+      console.error('[WorkshopEditorPage] back save failed', error);
+    } finally {
+      navigate(-1);
+    }
+  };
+
+  const finishEditing = async () => {
+    try {
+      await persistEditorSnapshot('completed');
+    } catch (error) {
+      console.error('[WorkshopEditorPage] finish editing failed', error);
+    } finally {
+      clearLocalEditorDraft(projectId ?? '');
+      navigate(-1);
+    }
+  };
+
   useEffect(() => {
     if (!downloadModalOpen) return;
     console.log('[WorkshopEditorPage] download grid', grid);
@@ -300,6 +348,8 @@ export function WorkshopEditorPage() {
       await ensureWorkshopProject(projectId, {
         kind: 'draft',
         status: 'editing',
+        paperState: 'draft',
+        beadingState: 'idle',
         lastOpenedAt: new Date().toISOString(),
       });
 
@@ -315,6 +365,17 @@ export function WorkshopEditorPage() {
 
       const project = await getWorkshopProject(projectId).catch(() => null);
       if (!alive) return;
+
+      console.log('[WorkshopEditorPage] project status snapshot', {
+        projectId,
+        paperState: project?.paperState ?? null,
+        beadingState: project?.beadingState ?? null,
+        status: project?.status ?? null,
+        kind: project?.kind ?? null,
+        hasPatternResult: Boolean(project?.patternResult),
+        hasEditorState: Boolean(project?.editorState),
+        hasDraftState: Boolean(restoredState),
+      });
 
       if (project?.patternResult) {
         const { patternResult } = project;
@@ -342,8 +403,6 @@ export function WorkshopEditorPage() {
       setProjectReady(true);
 
       if (projectId) {
-        await deleteWorkshopDraft(projectId).catch(() => undefined);
-        clearLocalEditorDraft(projectId);
         await saveWorkshopProject(projectId, {
           editorState: restoredState?.grid?.length ? {
             grid: cloneGrid(restoredState.grid),
@@ -353,10 +412,17 @@ export function WorkshopEditorPage() {
               (restoredState.history?.length ? restoredState.history.length : 1) - 1,
             ),
           } : null,
-          kind: project?.patternResult ? 'pattern' : 'draft',
-          status: project?.patternResult ? 'ready' : 'editing',
+          patternResult: restoredState?.grid?.length
+            ? gridToPatternResult(restoredState.grid, defaultWorkshopConfig.brand)
+            : project?.patternResult ?? null,
+          kind: 'draft',
+          status: 'editing',
+          paperState: 'draft',
           lastOpenedAt: new Date().toISOString(),
         });
+        if (restoredState?.grid?.length) {
+          writeLocalEditorDraft(projectId, restoredState);
+        }
       }
     }
 
@@ -428,8 +494,10 @@ export function WorkshopEditorPage() {
         saveWorkshopDraft(projectId, { state: editorState }),
         saveWorkshopProject(projectId, {
           editorState,
+          patternResult: gridToPatternResult(editorState.grid, defaultWorkshopConfig.brand),
           kind: 'draft',
           status: 'editing',
+          paperState: 'draft',
           lastOpenedAt: new Date().toISOString(),
         }),
       ]);
@@ -1094,7 +1162,7 @@ export function WorkshopEditorPage() {
           <button
             type="button"
             className={styles.titlebarLogo}
-            onClick={() => navigate(-1)}
+            onClick={handleBack}
             title="返回上一页"
             aria-label="返回上一页"
           >
@@ -1130,6 +1198,15 @@ export function WorkshopEditorPage() {
             title="清空画布"
           >
             🗑
+          </button>
+          <button
+            type="button"
+            className={styles.primaryBtn}
+            onClick={finishEditing}
+            disabled={!projectId}
+            title="完成并退出"
+          >
+            ✓ 完成
           </button>
           <button
             type="button"

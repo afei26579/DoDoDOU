@@ -5,10 +5,10 @@
 .titlebarText { min-width: 0; }
 .titlebarText h1 { margin: 0; font-size: 16px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .titlebarText p { margin: 2px 0 0; font-size: 9px; color: rgba(93,83,74,.7); font-weight: 700; letter-spacing: .08em; }
-.titlebarActions { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.iconBtn, .primaryBtn, .miniBtn, .closeBtn, .switch, .toolBtn, .previewToggle, .resizeHandle, .bubble, .sizeDotBtn, .openPaletteBtn, .smallActionBtn, .miniColor, .recentDot, .paletteSwatch { border: 0; cursor: pointer; }
+.titlebarActions { margin-left: auto; display: flex; gap: 6px; flex-wrap: nowrap; justify-content: flex-end; align-items: center; min-width: 0; }
+.iconBtn, .primaryBtn, .miniBtn, .closeBtn, .switch, .toolBtn, .previewToggle, .resizeHandle, .bubble, .sizeDotBtn, .openPaletteBtn, .smallActionBtn, .miniColor, .recentDot, .paletteSwatch { border: 0; cursor: pointer; flex: 0 0 auto; }
 .iconBtn { width: 28px; height: 28px; border-radius: 10px; background: rgba(255,255,255,.78); }
-.primaryBtn { height: 28px; border-radius: 10px; padding: 0 12px; background: #d8b4e2; color: #fff; font-weight: 700; }
+.primaryBtn { height: 28px; border-radius: 10px; padding: 0 12px; background: #d8b4e2; color: #fff; font-weight: 700; white-space: nowrap; }
 .layout { position: fixed; inset: 56px 0 0 0; overflow: hidden; background: #FDFBF7; touch-action: none; }
 .canvasStage { position: absolute; inset: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
 .canvas { position: absolute; left: 0; top: 0; display: block; image-rendering: pixelated; box-shadow: 0 6px 40px rgba(93,83,74,.16); transform-origin: 0 0; }
@@ -75,4 +75,4 @@
 .modalActions button:hover { background: rgba(216,180,226,.26); }
 .closeBtn { width: 32px; height: 32px; border-radius: 10px; background: rgba(93,83,74,.08); }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(93,83,74,.92); color: #fff; padding: 10px 14px; border-radius: 999px; }
-@media (max-width: 520px) { .toolRow, .toolbarContent { padding: 8px 10px; } .paletteGrid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .toolRow, .toolbarContent { padding: 8px 10px; } .titlebarActions { gap: 4px; } .titlebarText h1 { font-size: 14px; } .iconBtn { width: 26px; height: 26px; } .primaryBtn { padding: 0 10px; font-size: 12px; } .paletteGrid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }

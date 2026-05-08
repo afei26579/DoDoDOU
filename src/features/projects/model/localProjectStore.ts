@@ -1,11 +1,16 @@
 export type LocalProjectKind = 'upload' | 'draft' | 'pattern' | 'progress';
 export type LocalProjectStatus = 'editing' | 'ready' | 'paused' | 'completed';
 
+export type LocalProjectPaperState = 'draft' | 'completed';
+export type LocalProjectBeadingState = 'idle' | 'progressing' | 'completed';
+
 export type LocalProjectRecord = {
   id: string;
   title: string;
   kind: LocalProjectKind;
   status: LocalProjectStatus;
+  paperState: LocalProjectPaperState;
+  beadingState: LocalProjectBeadingState;
   coverUrl?: string | null;
   previewUrl?: string | null;
   sourceImage?: {

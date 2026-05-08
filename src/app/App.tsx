@@ -73,6 +73,8 @@ export function App() {
       config: defaultWorkshopConfig,
       patternResult: null,
       viewMode: 'image',
+      paperState: 'completed',
+      beadingState: 'idle',
     });
     navigate(`/workshop/create/${projectId}`);
   };
