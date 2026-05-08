@@ -25,6 +25,7 @@ const mockItems: GalleryItemDetail[] = [
       updatedAt: now,
     },
     createdAt: now,
+    updatedAt: now,
     publishedAt: now,
     visibility: 'public',
     status: 'published',
@@ -32,6 +33,7 @@ const mockItems: GalleryItemDetail[] = [
     sourceUrl: null,
     exportUrl: null,
     pattern: {
+      id: 'pattern-forest-house',
       width: 24,
       height: 24,
       beadCount: 576,
@@ -75,6 +77,7 @@ const mockItems: GalleryItemDetail[] = [
       updatedAt: now,
     },
     createdAt: now,
+    updatedAt: now,
     publishedAt: now,
     visibility: 'public',
     status: 'published',
@@ -82,6 +85,7 @@ const mockItems: GalleryItemDetail[] = [
     sourceUrl: null,
     exportUrl: null,
     pattern: {
+      id: 'pattern-cat-tea',
       width: 32,
       height: 32,
       beadCount: 1024,
@@ -111,6 +115,7 @@ export function getMockGalleryList(): { items: GalleryItemCard[]; total: number;
     items: mockItems.map(({ pattern, previewUrl: _previewUrl, sourceUrl: _sourceUrl, exportUrl: _exportUrl, visibility: _visibility, status: _status, updatedAt: _updatedAt, ...item }) => ({
       ...item,
       coverUrl: item.coverUrl,
+      previewUrl: _previewUrl,
       stats: {
         viewCount: item.stats.viewCount,
         likeCount: item.stats.likeCount,

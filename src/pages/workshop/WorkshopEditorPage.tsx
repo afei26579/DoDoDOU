@@ -16,6 +16,7 @@ import {
   createEmptyGrid,
   floodFill,
   paintGridToCanvas,
+  PALETTE,
   toCellPoint,
 } from './editor/WorkshopEditor.utils';
 

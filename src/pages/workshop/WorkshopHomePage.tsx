@@ -98,6 +98,7 @@ export function WorkshopHomePage({
         onRegenerate={onGeneratePattern}
         onRemoveBackground={() => {}}
         onUploadImage={handleUploadImage}
+        onReuploadImage={handleUploadImage}
         onViewPattern={() => {}}
       />
     </>

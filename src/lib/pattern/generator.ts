@@ -1,5 +1,5 @@
 import { buildPalette, getVendorCode, type PatternPaletteColor, type PatternRgb } from './color-system';
-import { createCropCanvas, loadImage } from './crop';
+import { createCropCanvas, loadImage as loadCropImage } from './crop';
 import type { CropTransform, PatternCell, PatternResult, WorkshopConfig, WorkshopStyle } from '../../features/workshop/model/types';
 
 function colorDistance(a: PatternRgb, b: PatternRgb) {
@@ -141,7 +141,7 @@ export async function generatePatternFromImage(params: {
   cropFrameSize?: number;
 }): Promise<PatternResult> {
   const { imageUrl, config, cropTransform, cropFrameSize = 1200 } = params;
-  const image = await loadImage(imageUrl);
+  const image = await loadCropImage(imageUrl);
   const canvas = cropTransform
     ? createCropCanvas({ image, cropTransform, frameSize: cropFrameSize, outputSize: cropFrameSize })
     : (() => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
 import { drawPatternFocusZoomView, getFocusPanBounds, getFocusWindowBounds, getQuadrant } from '../../lib/pattern/focusZoom';
 import { drawPatternPreview } from '../../lib/pattern/preview';
@@ -141,6 +141,7 @@ function buildConnectedBlocks(cells: PatternCell[], handedness: 'left' | 'right'
 
 export function FocusModePage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { projectId } = useParams();
   const { state, isHydrating } = useWorkshopFlow(projectId ?? null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -546,12 +547,22 @@ export function FocusModePage() {
 
   const canMoveFocusX = Boolean(activeColorKey && panBounds && panBounds.maxX > panBounds.minX);
   const canMoveFocusY = Boolean(activeColorKey && panBounds && panBounds.maxY > panBounds.minY);
+  const returnTo =
+    typeof location.state === 'object' &&
+    location.state &&
+    'returnTo' in location.state &&
+    typeof location.state.returnTo === 'string'
+      ? location.state.returnTo
+      : null;
+  const handleBack = () => {
+    navigate(returnTo ?? `/workshop/result/${projectId ?? ''}`);
+  };
 
   return (
     <main className={styles.page} aria-label="专注模式页面">
       <header className={styles.titlebar}>
         <div className={styles.titlebarLeft}>
-          <button type="button" className={styles.backButton} onClick={() => navigate(`/workshop/result/${projectId ?? ''}`)} aria-label="返回结果页">
+          <button type="button" className={styles.backButton} onClick={handleBack} aria-label="返回上一页">
             ←
           </button>
           <div className={styles.titlebarText}>

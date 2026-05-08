@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchGalleryList } from '../../features/gallery/model/api';
 import type { GalleryItemCard } from '../../features/gallery/model/types';
 
@@ -13,6 +14,7 @@ function formatPatternSummary(item: GalleryItemCard) {
 }
 
 export function CollectionPage() {
+  const navigate = useNavigate();
   const [items, setItems] = useState<GalleryItemCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -99,6 +101,7 @@ export function CollectionPage() {
                       publishedAt: item.publishedAt,
                       stats: item.stats,
                     });
+                    navigate(`/collection/${encodeURIComponent(item.id)}`);
                   }}
                 >
                   <div className="collection-card__topbar" aria-hidden="true">

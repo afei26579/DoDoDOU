@@ -11,7 +11,7 @@ type WorkshopPreviewAreaProps = {
   isHome: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void;
-  onPointerUp: () => void;
+  onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => void;
   onUploadImage: () => void;
 };
 

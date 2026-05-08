@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { navItems, type NavItemId } from './navigation';
 import { BottomNav } from './components/BottomNav';
+import { CollectionDetailPage } from '../pages/collection/CollectionDetailPage';
 import { CollectionPage } from '../pages/collection/CollectionPage';
 import { DiscoveryPage } from '../pages/discovery/DiscoveryPage';
 import { FocusModePage } from '../pages/workshop/FocusModePage';
@@ -23,15 +24,17 @@ const routeToTab: Partial<Record<string, NavItemId>> = {
   '/workshop/focus': 'workshop',
   '/workshop/focus/:projectId': 'workshop',
   '/collection': 'collection',
+  '/collection/detail': 'collection',
 };
 
-const hiddenBottomNavPaths = new Set(['/crop', '/workshop/settings', '/workshop/editor', '/workshop/editor/:projectId', '/workshop/focus', '/workshop/focus/:projectId']);
+const hiddenBottomNavPaths = new Set(['/crop', '/workshop/settings', '/workshop/editor', '/workshop/editor/:projectId', '/workshop/focus', '/workshop/focus/:projectId', '/collection/detail']);
 
 function normalizePath(pathname: string) {
   if (pathname.startsWith('/workshop/create/')) return '/workshop/create';
   if (pathname.startsWith('/workshop/result/')) return '/workshop/result';
   if (pathname.startsWith('/workshop/editor/')) return '/workshop/editor';
   if (pathname.startsWith('/workshop/focus/')) return '/workshop/focus';
+  if (pathname.startsWith('/collection/')) return '/collection/detail';
   return pathname;
 }
 
@@ -84,6 +87,7 @@ export function App() {
               <DiscoveryPage
                 onUploadImage={handleUploadToWorkshop}
                 onOpenWorkshop={() => navigate('/workshop')}
+                onCreateCanvas={() => navigate(`/workshop/editor/${createProjectId()}`)}
               />
             }
           />
@@ -128,6 +132,7 @@ export function App() {
           <Route path="/workshop/editor/:projectId" element={<WorkshopEditorPage />} />
           <Route path="/workshop/focus/:projectId" element={<FocusModePage />} />
           <Route path="/collection" element={<CollectionPage />} />
+          <Route path="/collection/:itemId" element={<CollectionDetailPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

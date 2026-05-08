@@ -16,6 +16,7 @@ export type DownloadPatternOptions = {
 };
 
 type CanvasLike = HTMLCanvasElement | OffscreenCanvas;
+type CanvasContextLike = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
 type PaletteItem = {
   id: string;
@@ -71,14 +72,14 @@ function r(n: number) {
   return Math.max(1, Math.round(n));
 }
 
-function line(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number) {
+function line(ctx: CanvasContextLike, x1: number, y1: number, x2: number, y2: number) {
   ctx.beginPath();
   ctx.moveTo(x1, y1);
   ctx.lineTo(x2, y2);
   ctx.stroke();
 }
 
-function drawDash(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, color: string, lw: number) {
+function drawDash(ctx: CanvasContextLike, x1: number, y1: number, x2: number, y2: number, color: string, lw: number) {
   ctx.save();
   ctx.strokeStyle = color;
   ctx.lineWidth = lw;
@@ -91,7 +92,7 @@ function drawDash(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: num
   ctx.restore();
 }
 
-function rrect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, rd: number) {
+function rrect(ctx: CanvasContextLike, x: number, y: number, w: number, h: number, rd: number) {
   ctx.beginPath();
   ctx.moveTo(x + rd, y);
   ctx.lineTo(x + w - rd, y);
@@ -212,7 +213,7 @@ function rulerNumbers(total: number, divStep: number) {
   return res;
 }
 
-function drawRulerTop(ctx: CanvasRenderingContext2D, L: Layout) {
+function drawRulerTop(ctx: CanvasContextLike, L: Layout) {
   const { xGrid, yRulerTop, rulerSz, rulerFS, cellSize, cols, divStep } = L;
   ctx.fillStyle = '#e8e2d4';
   ctx.fillRect(r(xGrid), r(yRulerTop), r(L.gridW), r(rulerSz));
@@ -229,7 +230,7 @@ function drawRulerTop(ctx: CanvasRenderingContext2D, L: Layout) {
   ctx.strokeRect(r(xGrid), r(yRulerTop), r(L.gridW), r(rulerSz));
 }
 
-function drawRulerBottom(ctx: CanvasRenderingContext2D, L: Layout) {
+function drawRulerBottom(ctx: CanvasContextLike, L: Layout) {
   const { xGrid, yRulerBot, rulerSz, rulerFS, cellSize, cols, divStep } = L;
   ctx.fillStyle = '#e8e2d4';
   ctx.fillRect(r(xGrid), r(yRulerBot), r(L.gridW), r(rulerSz));
@@ -246,7 +247,7 @@ function drawRulerBottom(ctx: CanvasRenderingContext2D, L: Layout) {
   ctx.strokeRect(r(xGrid), r(yRulerBot), r(L.gridW), r(rulerSz));
 }
 
-function drawRulerLeft(ctx: CanvasRenderingContext2D, L: Layout) {
+function drawRulerLeft(ctx: CanvasContextLike, L: Layout) {
   const { xRulerL, yGrid, rulerSz, rulerFS, cellSize, rows, divStep } = L;
   ctx.fillStyle = '#e8e2d4';
   ctx.fillRect(r(xRulerL), r(yGrid), r(rulerSz), r(L.gridH));
@@ -263,7 +264,7 @@ function drawRulerLeft(ctx: CanvasRenderingContext2D, L: Layout) {
   ctx.strokeRect(r(xRulerL), r(yGrid), r(rulerSz), r(L.gridH));
 }
 
-function drawRulerRight(ctx: CanvasRenderingContext2D, L: Layout) {
+function drawRulerRight(ctx: CanvasContextLike, L: Layout) {
   const { xRulerR, yGrid, rulerSz, rulerFS, cellSize, rows, divStep } = L;
   ctx.fillStyle = '#e8e2d4';
   ctx.fillRect(r(xRulerR), r(yGrid), r(rulerSz), r(L.gridH));
@@ -280,7 +281,7 @@ function drawRulerRight(ctx: CanvasRenderingContext2D, L: Layout) {
   ctx.strokeRect(r(xRulerR), r(yGrid), r(rulerSz), r(L.gridH));
 }
 
-function drawSwatches(ctx: CanvasRenderingContext2D, L: Layout, palette: PaletteItem[]) {
+function drawSwatches(ctx: CanvasContextLike, L: Layout, palette: PaletteItem[]) {
   const { xGrid, ySwatches, swW, swH, swGapX, swGapY, SW_COLS, swIdFS, swCntFS } = L;
   const halfH = swH / 2;
   const rad = Math.max(3, swH * 0.12);
@@ -368,8 +369,6 @@ function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options:
     }
   }
 
-  const isTransparentCell = (cell: { hex?: string } | null | undefined) => !cell || cell.hex === 'transparent';
-
   if (cellSize >= 16 && options.showSymbol) {
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
@@ -377,7 +376,7 @@ function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options:
     for (let r2 = 0; r2 < rows; r2 += 1) {
       for (let c2 = 0; c2 < cols; c2 += 1) {
         const cell = grid[r2][c2];
-        if (isTransparentCell(cell)) continue;
+        if (!cell || cell.hex === 'transparent') continue;
         const symbol = cell.vendorCode || getVendorCode(cell.hex, brand);
         if (!symbol || symbol === '?') continue;
         ctx.fillStyle = lum(cell.hex) > 0.35 ? 'rgba(0,0,0,0.60)' : 'rgba(255,255,255,0.80)';
@@ -487,4 +486,8 @@ export async function downloadPatternImage(options: DownloadPatternOptions) {
   link.download = formatDownloadFileName(options, scale);
   link.click();
   URL.revokeObjectURL(url);
+}
+
+export function renderDownloadPatternCanvas(canvas: HTMLCanvasElement, options: DownloadPatternOptions) {
+  drawToCanvas(canvas, options.patternResult, options, 1);
 }

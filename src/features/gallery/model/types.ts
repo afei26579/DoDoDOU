@@ -112,6 +112,7 @@ export type GalleryItemCard = {
   id: string;
   title: string;
   coverUrl: string;
+  previewUrl?: string;
   coverWidth?: number;
   coverHeight?: number;
   author: GalleryAuthor;
