@@ -119,6 +119,12 @@ export type GalleryItemCard = {
   style: WorkshopStyle;
   brand: ColorSystem;
   tags: string[];
+  patternSummary?: {
+    width: number;
+    height: number;
+    beadCount: number;
+    paletteCount: number;
+  };
   stats: Pick<GalleryStats, 'viewCount' | 'likeCount' | 'favoriteCount' | 'hotScore'>;
   createdAt: string;
   publishedAt?: string | null;

@@ -5,7 +5,11 @@ import type { GalleryItemCard } from '../../features/gallery/model/types';
 const collectionFilters = ['全部', '最新', '最热', '我的'] as const;
 
 function formatPatternSummary(item: GalleryItemCard) {
-  return `${item.coverWidth ?? '-'}×${item.coverHeight ?? '-'} · ${item.tags.length > 0 ? item.tags.length : item.stats.hotScore ? item.stats.hotScore : 0} 色`;
+  const summary = item.patternSummary;
+  const sizeText = summary ? `${summary.width}×${summary.height}` : `${item.coverWidth ?? '-'}×${item.coverHeight ?? '-'}`;
+  const colorCount = summary?.paletteCount ?? item.tags.length;
+  const beadCount = summary?.beadCount ?? null;
+  return `${sizeText} · ${colorCount} 色${beadCount ? ` · ${beadCount} 颗` : ''}`;
 }
 
 export function CollectionPage() {
@@ -97,12 +101,14 @@ export function CollectionPage() {
                     });
                   }}
                 >
-                  <div className="collection-card__media collection-card__media--tall" aria-hidden="true">
-                    {item.coverUrl ? <img className="collection-card__image" src={item.coverUrl} alt="" /> : null}
+                  <div className="collection-card__topbar" aria-hidden="true">
+                    <span className="collection-card__title">{item.title}</span>
                     <span className="collection-card__status">{item.sourceType === 'official' ? '官方' : '社区'}</span>
                   </div>
+                  <div className="collection-card__media collection-card__media--tall" aria-hidden="true">
+                    {item.coverUrl ? <img className="collection-card__image" src={item.coverUrl} alt="" /> : null}
+                  </div>
                   <div className="collection-card__body">
-                    <strong>{item.title}</strong>
                     <p>{formatPatternSummary(item)}</p>
                   </div>
                 </article>

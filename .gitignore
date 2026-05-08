@@ -6,7 +6,11 @@ node_modules
 *.log
 
 .cursor
-/example_project
 
 
+*.db
+
+.cursor/
+
+/demo
 

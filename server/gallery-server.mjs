@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 const dataDir = path.join(rootDir, 'public', 'data', 'gallery');
 const itemsDir = path.join(dataDir, 'items');
-const host = process.env.GALLERY_SERVER_HOST || '127.0.0.1';
+const host = process.env.GALLERY_SERVER_HOST || '0.0.0.0';
 const port = Number(process.env.GALLERY_SERVER_PORT || 3001);
 const app = express();
 
@@ -44,6 +44,15 @@ function toSlug(value) {
 }
 
 function mapItem(item, assets = {}) {
+  const patternSummary = item.patternDetail
+    ? {
+        width: item.patternDetail.width,
+        height: item.patternDetail.height,
+        beadCount: item.patternDetail.beadCount,
+        paletteCount: item.patternDetail.paletteCount,
+      }
+    : undefined;
+
   return {
     id: item.id,
     title: item.title,
@@ -59,6 +68,7 @@ function mapItem(item, assets = {}) {
     style: item.style,
     brand: item.brand,
     tags: item.tagsJson,
+    patternSummary,
     stats: {
       viewCount: item.viewCount,
       likeCount: item.likeCount,
@@ -74,7 +84,7 @@ function mapItem(item, assets = {}) {
 app.get('/api/gallery/items', async (_req, res) => {
   const items = await prisma.galleryItem.findMany({
     where: { visibility: 'public', status: 'published' },
-    include: { author: true, coverAsset: true },
+    include: { author: true, coverAsset: true, patternDetail: true },
     orderBy: [{ sortWeight: 'desc' }, { publishedAt: 'desc' }],
   });
   res.json({
