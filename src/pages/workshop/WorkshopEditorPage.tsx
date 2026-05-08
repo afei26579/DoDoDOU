@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import styles from './WorkshopEditorPage.module.css';
 import { WorkshopPreviewPanel } from './components/WorkshopPreviewPanel';
 import { DownloadSettingsModal } from './DownloadSettingsModal';
-import { getWorkshopProject } from '../../features/workshop/model/projectStore';
+import { ensureWorkshopProject, getWorkshopProject, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import {
   deleteWorkshopDraft,
   getWorkshopDraft,
@@ -297,6 +297,11 @@ export function WorkshopEditorPage() {
       const draft = await getWorkshopDraft(projectId).catch(() => null);
       const localDraft = readLocalEditorDraft(projectId);
       const restoredState = draft?.state ?? localDraft;
+      await ensureWorkshopProject(projectId, {
+        kind: 'draft',
+        status: 'editing',
+        lastOpenedAt: new Date().toISOString(),
+      });
 
       if (restoredState?.grid?.length) {
         setGrid(cloneGrid(restoredState.grid));
@@ -339,6 +344,19 @@ export function WorkshopEditorPage() {
       if (projectId) {
         await deleteWorkshopDraft(projectId).catch(() => undefined);
         clearLocalEditorDraft(projectId);
+        await saveWorkshopProject(projectId, {
+          editorState: restoredState?.grid?.length ? {
+            grid: cloneGrid(restoredState.grid),
+            history: cloneHistory(restoredState.history?.length ? restoredState.history : [restoredState.grid]),
+            historyIndex: Math.min(
+              restoredState.historyIndex ?? restoredState.history.length - 1,
+              (restoredState.history?.length ? restoredState.history.length : 1) - 1,
+            ),
+          } : null,
+          kind: project?.patternResult ? 'pattern' : 'draft',
+          status: project?.patternResult ? 'ready' : 'editing',
+          lastOpenedAt: new Date().toISOString(),
+        });
       }
     }
 
@@ -406,7 +424,15 @@ export function WorkshopEditorPage() {
     };
 
     try {
-      await saveWorkshopDraft(projectId, { state: editorState });
+      await Promise.all([
+        saveWorkshopDraft(projectId, { state: editorState }),
+        saveWorkshopProject(projectId, {
+          editorState,
+          kind: 'draft',
+          status: 'editing',
+          lastOpenedAt: new Date().toISOString(),
+        }),
+      ]);
       writeLocalEditorDraft(projectId, editorState);
     } catch {
       writeLocalEditorDraft(projectId, editorState);

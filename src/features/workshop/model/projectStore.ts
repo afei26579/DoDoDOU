@@ -1,21 +1,82 @@
-import type { CropTransform, PatternResult, UploadedImage, WorkshopConfig } from './types';
+import type { CropTransform, PatternResult, UploadedImage, WorkshopConfig, WorkshopEditorState } from './types';
 
 const DB_NAME = 'dodoudou-workshop';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'projects';
 const MEMORY_CACHE = new Map<string, WorkshopProjectRecord>();
 
+export type WorkshopProjectKind = 'upload' | 'draft' | 'pattern' | 'progress';
+export type WorkshopProjectStatus = 'editing' | 'ready' | 'paused' | 'completed';
+
+export type WorkshopProjectProgress = {
+  percent: number;
+  step?: string;
+  updatedAt?: string;
+};
+
 export type WorkshopProjectRecord = {
   projectId: string;
+  title: string;
+  kind: WorkshopProjectKind;
+  status: WorkshopProjectStatus;
   uploadedImage: UploadedImage | null;
   cropTransform: CropTransform;
   config: WorkshopConfig;
   patternResult: PatternResult | null;
-  viewMode: 'image' | 'pattern';
-  updatedAt: number;
+  editorState: WorkshopEditorState | null;
+  progress: WorkshopProjectProgress | null;
+  coverUrl?: string | null;
+  previewUrl?: string | null;
+  lastOpenedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
-type WorkshopProjectPatch = Partial<Omit<WorkshopProjectRecord, 'projectId' | 'updatedAt'>>;
+type WorkshopProjectPatch = Partial<Omit<WorkshopProjectRecord, 'projectId' | 'createdAt' | 'updatedAt'>>;
+
+function getDefaultConfig(): WorkshopConfig {
+  return {
+    canvasSize: 100,
+    brand: 'MARD',
+    style: '动漫',
+    colorMergeThreshold: 30,
+  };
+}
+
+function createDefaultRecord(projectId: string): WorkshopProjectRecord {
+  const now = new Date().toISOString();
+  return {
+    projectId,
+    title: '未命名作品',
+    kind: 'upload',
+    status: 'editing',
+    uploadedImage: null,
+    cropTransform: { scale: 1, x: 0, y: 0 },
+    config: getDefaultConfig(),
+    patternResult: null,
+    editorState: null,
+    progress: null,
+    coverUrl: null,
+    previewUrl: null,
+    lastOpenedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
+  return {
+    ...createDefaultRecord(record.projectId),
+    ...record,
+    uploadedImage: record.uploadedImage ?? null,
+    patternResult: record.patternResult ?? null,
+    editorState: record.editorState ?? null,
+    progress: record.progress ?? null,
+    coverUrl: record.coverUrl ?? null,
+    previewUrl: record.previewUrl ?? null,
+    lastOpenedAt: record.lastOpenedAt ?? null,
+  };
+}
 
 function getDb() {
   return new Promise<IDBDatabase>((resolve, reject) => {
@@ -38,7 +99,10 @@ async function readRecord(projectId: string) {
     const store = tx.objectStore(STORE_NAME);
     const request = store.get(projectId);
     request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve((request.result as WorkshopProjectRecord | undefined) ?? null);
+    request.onsuccess = () => {
+      const result = request.result as WorkshopProjectRecord | undefined;
+      resolve(result ? normalizeRecord(result) : null);
+    };
   });
 }
 
@@ -62,6 +126,21 @@ async function deleteRecord(projectId: string) {
   });
 }
 
+export async function listWorkshopProjects() {
+  const db = await getDb();
+  return new Promise<WorkshopProjectRecord[]>((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, 'readonly');
+    const store = tx.objectStore(STORE_NAME);
+    const request = store.getAll();
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const records = (request.result as WorkshopProjectRecord[]).map(normalizeRecord);
+      records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      resolve(records);
+    };
+  });
+}
+
 export async function getWorkshopProject(projectId: string) {
   if (MEMORY_CACHE.has(projectId)) return MEMORY_CACHE.get(projectId) ?? null;
   const record = await readRecord(projectId).catch(() => null);
@@ -69,24 +148,30 @@ export async function getWorkshopProject(projectId: string) {
   return record;
 }
 
-export async function saveWorkshopProject(projectId: string, patch: WorkshopProjectPatch) {
-  const current = (await getWorkshopProject(projectId)) ?? null;
-  const record: WorkshopProjectRecord = {
+export async function ensureWorkshopProject(projectId: string, patch: WorkshopProjectPatch = {}) {
+  const current = (await getWorkshopProject(projectId)) ?? createDefaultRecord(projectId);
+  const next: WorkshopProjectRecord = normalizeRecord({
+    ...current,
+    ...patch,
     projectId,
-    uploadedImage: patch.uploadedImage ?? current?.uploadedImage ?? null,
-    cropTransform: patch.cropTransform ?? current?.cropTransform ?? { scale: 1, x: 0, y: 0 },
-    config: patch.config ?? current?.config ?? {
-      canvasSize: 100,
-      brand: 'MARD',
-      style: '动漫',
-      colorMergeThreshold: 30,
-    },
-    patternResult: patch.patternResult ?? current?.patternResult ?? null,
-    viewMode: patch.viewMode ?? current?.viewMode ?? 'image',
-    updatedAt: Date.now(),
-  };
-  MEMORY_CACHE.set(projectId, record);
-  await writeRecord(record);
+    createdAt: current.createdAt,
+    updatedAt: new Date().toISOString(),
+  });
+  MEMORY_CACHE.set(projectId, next);
+  await writeRecord(next);
+  return next;
+}
+
+export async function saveWorkshopProject(projectId: string, patch: WorkshopProjectPatch) {
+  return ensureWorkshopProject(projectId, patch);
+}
+
+export async function patchWorkshopProject(projectId: string, patch: WorkshopProjectPatch) {
+  return ensureWorkshopProject(projectId, patch);
+}
+
+export async function markWorkshopProjectOpened(projectId: string) {
+  return ensureWorkshopProject(projectId, { lastOpenedAt: new Date().toISOString() });
 }
 
 export async function deleteWorkshopProject(projectId: string) {

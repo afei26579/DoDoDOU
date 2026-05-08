@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { defaultCropTransform, defaultWorkshopConfig, defaultWorkshopFlowState } from './defaults';
-import { getWorkshopProject, saveWorkshopProject, type WorkshopProjectRecord } from './projectStore';
+import {
+  ensureWorkshopProject,
+  getWorkshopProject,
+  saveWorkshopProject,
+  type WorkshopProjectRecord,
+} from './projectStore';
+import { ensureLocalProject, patchLocalProject } from '../../projects/model/localProjectStore';
 import type { CropTransform, PatternResult, UploadedImage, WorkshopConfig, WorkshopFlowState } from './types';
 
 function toFlowState(record: WorkshopProjectRecord | null): WorkshopFlowState {
@@ -33,9 +39,30 @@ export function useWorkshopFlow(projectId: string | null) {
       }
 
       if (alive) setIsHydrating(true);
-      const record = await getWorkshopProject(projectId);
+      const record = await ensureWorkshopProject(projectId);
       if (!alive) return;
       setState(toFlowState(record));
+      if (record) {
+        await ensureLocalProject({
+          id: projectId,
+          title: record.title,
+          kind: record.kind,
+          status: record.status,
+          coverUrl: record.coverUrl ?? record.uploadedImage?.dataUrl ?? null,
+          previewUrl: record.previewUrl ?? null,
+          sourceImage: record.uploadedImage,
+          pattern: record.patternResult
+            ? {
+                width: record.patternResult.width,
+                height: record.patternResult.height,
+                beadCount: record.patternResult.stats.totalCells,
+                paletteCount: record.patternResult.stats.colorCount,
+              }
+            : null,
+          progress: null,
+          lastOpenedAt: record.lastOpenedAt,
+        }).catch(() => undefined);
+      }
       setIsHydrating(false);
     }
 
@@ -47,13 +74,62 @@ export function useWorkshopFlow(projectId: string | null) {
 
   const persist = (patch: Partial<WorkshopFlowState>) => {
     if (!projectId) return;
-    void saveWorkshopProject(projectId, {
-      uploadedImage: patch.uploadedImage,
-      cropTransform: patch.cropTransform,
-      config: patch.config,
-      patternResult: patch.patternResult,
-      viewMode: patch.viewMode,
-    });
+    const lastOpenedAt = new Date().toISOString();
+    const nextKind = patch.patternResult ? 'pattern' : patch.uploadedImage ? 'draft' : undefined;
+    const nextStatus = patch.patternResult ? 'ready' : patch.uploadedImage ? 'editing' : undefined;
+    void Promise.all([
+      saveWorkshopProject(projectId, {
+        uploadedImage: patch.uploadedImage,
+        cropTransform: patch.cropTransform,
+        config: patch.config,
+        patternResult: patch.patternResult,
+        viewMode: patch.viewMode,
+        kind: nextKind,
+        status: nextStatus,
+        lastOpenedAt,
+      }),
+      ensureLocalProject({
+        id: projectId,
+        title: patch.uploadedImage?.name?.replace(/\.[^.]+$/, '') || '未命名作品',
+        kind: nextKind ?? 'upload',
+        status: nextStatus ?? 'editing',
+        coverUrl: patch.uploadedImage?.dataUrl ?? null,
+        previewUrl: patch.patternResult ? null : patch.uploadedImage?.dataUrl ?? null,
+        sourceImage: patch.uploadedImage
+          ? {
+              ...patch.uploadedImage,
+              width: patch.uploadedImage.width ?? 0,
+              height: patch.uploadedImage.height ?? 0,
+            }
+          : null,
+        pattern: patch.patternResult
+          ? {
+              width: patch.patternResult.width,
+              height: patch.patternResult.height,
+              beadCount: patch.patternResult.stats.totalCells,
+              paletteCount: patch.patternResult.stats.colorCount,
+            }
+          : null,
+        progress: null,
+        lastOpenedAt,
+      }),
+      patchLocalProject(projectId, {
+        title: patch.uploadedImage?.name?.replace(/\.[^.]+$/, '') || undefined,
+        kind: nextKind,
+        status: nextStatus,
+        coverUrl: patch.uploadedImage?.dataUrl ?? undefined,
+        previewUrl: patch.patternResult ? null : patch.uploadedImage?.dataUrl ?? undefined,
+        pattern: patch.patternResult
+          ? {
+              width: patch.patternResult.width,
+              height: patch.patternResult.height,
+              beadCount: patch.patternResult.stats.totalCells,
+              paletteCount: patch.patternResult.stats.colorCount,
+            }
+          : undefined,
+        lastOpenedAt,
+      }).catch(() => null),
+    ]);
   };
 
   const actions = useMemo(

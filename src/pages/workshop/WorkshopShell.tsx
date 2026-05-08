@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { defaultCropTransform, defaultWorkshopConfig } from '../../features/workshop/model/defaults';
-import { saveWorkshopProject } from '../../features/workshop/model/projectStore';
+import { ensureWorkshopProject, markWorkshopProjectOpened, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
 import { generatePatternFromImage } from '../../lib/pattern/generator';
 import { removePatternBackground } from '../../lib/pattern/remove-background';
@@ -21,6 +21,11 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const { state, actions, isHydrating } = useWorkshopFlow(projectId ?? null);
+
+  useEffect(() => {
+    if (!projectId) return;
+    void markWorkshopProjectOpened(projectId);
+  }, [projectId]);
   const [isPublishOpen, setIsPublishOpen] = useState(false);
 
   const persistCurrentProject = async (nextPatternResult = state.patternResult) => {
@@ -31,6 +36,9 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       config: state.config,
       patternResult: nextPatternResult,
       viewMode: nextPatternResult ? 'pattern' : state.viewMode,
+      kind: nextPatternResult ? 'pattern' : state.uploadedImage ? 'draft' : 'upload',
+      status: nextPatternResult ? 'ready' : state.uploadedImage ? 'editing' : 'editing',
+      lastOpenedAt: new Date().toISOString(),
     });
   };
 
@@ -85,7 +93,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     });
 
     const nextProjectId = createProjectId();
-    await saveWorkshopProject(nextProjectId, {
+    await ensureWorkshopProject(nextProjectId, {
+      title: file.name.replace(/\.[^.]+$/, '') || '未命名作品',
       uploadedImage: {
         name: file.name,
         type: file.type,
@@ -98,6 +107,9 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       config: defaultWorkshopConfig,
       patternResult: null,
       viewMode: 'image',
+      kind: 'upload',
+      status: 'editing',
+      lastOpenedAt: new Date().toISOString(),
     });
 
     navigate(`/workshop/create/${nextProjectId}`);
