@@ -272,7 +272,15 @@ export function CollectionPage() {
                       <span className="collection-card__status">{item.sourceType === 'official' ? '官方' : '社区'}</span>
                     </div>
                     <div className="collection-card__media collection-card__media--tall" aria-hidden="true">
-                      {item.coverUrl ? <img className="collection-card__image" src={item.coverUrl} alt="" /> : null}
+                      {item.coverUrl ? (
+                        <img
+                          className="collection-card__image"
+                          src={item.coverUrl}
+                          alt=""
+                          width={item.coverWidth}
+                          height={item.coverHeight}
+                        />
+                      ) : null}
                     </div>
                     <div className="collection-card__body">
                       <p>{formatPatternSummary(item)}</p>

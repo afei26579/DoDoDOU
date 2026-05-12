@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PatternResult, WorkshopConfig, UploadedImage } from '../../../features/workshop/model/types';
 import { publishGalleryItem } from '../../../features/gallery/model/api';
+import { generatePatternCover } from '../../../lib/pattern/cover';
 import { drawPatternPreview } from '../../../lib/pattern/preview';
 
 export type GalleryPublishSheetProps = {
@@ -67,6 +68,7 @@ export function GalleryPublishSheet({
     setSubmitting(true);
     setError(null);
     try {
+      const cover = generatePatternCover(patternResult);
       const response = await publishGalleryItem({
         title: title.trim(),
         description: description.trim() || undefined,
@@ -75,10 +77,10 @@ export function GalleryPublishSheet({
         tags: splitTags(tags),
         coverAssetId: `cover-${projectId ?? Date.now()}`,
         previewAssetId: `preview-${projectId ?? Date.now()}`,
-        coverUrl,
+        coverUrl: cover.dataUrl || coverUrl,
         previewUrl,
-        coverWidth: patternResult.width,
-        coverHeight: patternResult.height,
+        coverWidth: cover.width,
+        coverHeight: cover.height,
         patternDetail: {
           width: patternResult.width,
           height: patternResult.height,
