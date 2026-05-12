@@ -6,8 +6,13 @@ import {
   saveWorkshopProject,
   type WorkshopProjectRecord,
 } from './projectStore';
-import { ensureLocalProject, patchLocalProject } from '../../projects/model/localProjectStore';
 import type { CropTransform, PatternResult, UploadedImage, WorkshopConfig, WorkshopFlowState } from './types';
+
+const UNTITLED_PROJECT_NAME = '未命名作品';
+
+function getProjectTitle(image: UploadedImage | null | undefined) {
+  return image?.name?.replace(/\.[^.]+$/, '') || UNTITLED_PROJECT_NAME;
+}
 
 function toFlowState(record: WorkshopProjectRecord | null): WorkshopFlowState {
   if (!record) return defaultWorkshopFlowState;
@@ -20,6 +25,7 @@ function toFlowState(record: WorkshopProjectRecord | null): WorkshopFlowState {
     viewMode: record.viewMode,
     paperState: record.paperState,
     beadingState: record.beadingState,
+    beadingProgress: record.beadingProgress,
     isGenerating: false,
   };
 }
@@ -44,29 +50,6 @@ export function useWorkshopFlow(projectId: string | null) {
       const record = await ensureWorkshopProject(projectId);
       if (!alive) return;
       setState(toFlowState(record));
-      if (record) {
-        await ensureLocalProject({
-          id: projectId,
-          title: record.title,
-          kind: record.kind,
-          status: record.status,
-          paperState: record.paperState,
-          beadingState: record.beadingState,
-          coverUrl: record.coverUrl ?? record.uploadedImage?.dataUrl ?? null,
-          previewUrl: record.previewUrl ?? null,
-          sourceImage: record.uploadedImage,
-          pattern: record.patternResult
-            ? {
-                width: record.patternResult.width,
-                height: record.patternResult.height,
-                beadCount: record.patternResult.stats.totalCells,
-                paletteCount: record.patternResult.stats.colorCount,
-              }
-            : null,
-          progress: null,
-          lastOpenedAt: record.lastOpenedAt,
-        }).catch(() => undefined);
-      }
       setIsHydrating(false);
     }
 
@@ -79,69 +62,26 @@ export function useWorkshopFlow(projectId: string | null) {
   const persist = (patch: Partial<WorkshopFlowState>) => {
     if (!projectId) return;
     const lastOpenedAt = new Date().toISOString();
-    const nextKind = patch.patternResult ? 'pattern' : patch.uploadedImage ? 'draft' : undefined;
-    const nextStatus = patch.patternResult ? 'ready' : patch.uploadedImage ? 'editing' : undefined;
-    const nextPaperState = patch.paperState ?? (patch.patternResult ? 'completed' : undefined);
-    const nextBeadingState = patch.beadingState ?? (patch.patternResult ? 'idle' : undefined);
-    void Promise.all([
-      saveWorkshopProject(projectId, {
-        uploadedImage: patch.uploadedImage,
-        cropTransform: patch.cropTransform,
-        config: patch.config,
-        patternResult: patch.patternResult,
-        viewMode: patch.viewMode,
-        kind: nextKind,
-        status: nextStatus,
-        paperState: nextPaperState ?? null,
-        beadingState: nextBeadingState ?? null,
-        lastOpenedAt,
-      }),
-      ensureLocalProject({
-        id: projectId,
-        title: patch.uploadedImage?.name?.replace(/\.[^.]+$/, '') || '未命名作品',
-        kind: nextKind ?? 'upload',
-        status: nextStatus ?? 'editing',
-        paperState: nextPaperState ?? null,
-        beadingState: nextBeadingState ?? null,
-        coverUrl: patch.uploadedImage?.dataUrl ?? null,
-        previewUrl: patch.patternResult ? null : patch.uploadedImage?.dataUrl ?? null,
-        sourceImage: patch.uploadedImage
-          ? {
-              ...patch.uploadedImage,
-              width: patch.uploadedImage.width ?? 0,
-              height: patch.uploadedImage.height ?? 0,
-            }
-          : null,
-        pattern: patch.patternResult
-          ? {
-              width: patch.patternResult.width,
-              height: patch.patternResult.height,
-              beadCount: patch.patternResult.stats.totalCells,
-              paletteCount: patch.patternResult.stats.colorCount,
-            }
-          : null,
-        progress: null,
-        lastOpenedAt,
-      }),
-      patchLocalProject(projectId, {
-        title: patch.uploadedImage?.name?.replace(/\.[^.]+$/, '') || undefined,
-        kind: nextKind,
-        status: nextStatus,
-        paperState: nextPaperState,
-        beadingState: nextBeadingState,
-        coverUrl: patch.uploadedImage?.dataUrl ?? undefined,
-        previewUrl: patch.patternResult ? null : patch.uploadedImage?.dataUrl ?? undefined,
-        pattern: patch.patternResult
-          ? {
-              width: patch.patternResult.width,
-              height: patch.patternResult.height,
-              beadCount: patch.patternResult.stats.totalCells,
-              paletteCount: patch.patternResult.stats.colorCount,
-            }
-          : undefined,
-        lastOpenedAt,
-      }).catch(() => null),
-    ]);
+    const nextPaperState = patch.paperState ?? (patch.patternResult ? 'completed' : defaultWorkshopFlowState.paperState);
+    const nextBeadingState = patch.beadingState ?? (patch.patternResult ? 'idle' : defaultWorkshopFlowState.beadingState);
+    const nextKind = patch.patternResult ? 'pattern' : nextPaperState === 'draft' ? 'draft' : patch.uploadedImage ? 'upload' : 'upload';
+    const nextStatus = nextPaperState === 'draft' ? 'editing' : patch.patternResult ? 'ready' : patch.uploadedImage ? 'editing' : 'editing';
+    void saveWorkshopProject(projectId, {
+      title: patch.uploadedImage ? getProjectTitle(patch.uploadedImage) : undefined,
+      uploadedImage: patch.uploadedImage,
+      cropTransform: patch.cropTransform,
+      config: patch.config,
+      patternResult: patch.patternResult,
+      viewMode: patch.viewMode,
+      beadingProgress: patch.beadingProgress,
+      kind: nextKind,
+      status: nextStatus,
+      paperState: nextPaperState,
+      beadingState: nextBeadingState,
+      coverUrl: patch.uploadedImage?.dataUrl,
+      previewUrl: patch.patternResult ? null : patch.uploadedImage?.dataUrl,
+      lastOpenedAt,
+    });
   };
 
   const actions = useMemo(
@@ -158,8 +98,9 @@ export function useWorkshopFlow(projectId: string | null) {
             cropTransform: defaultCropTransform,
             patternResult: null,
             viewMode: 'image' as const,
-            paperState: null,
-            beadingState: null,
+            paperState: 'completed' as const,
+            beadingState: 'idle' as const,
+            beadingProgress: null,
           };
           persist(nextState);
           return nextState;
@@ -206,6 +147,7 @@ export function useWorkshopFlow(projectId: string | null) {
             viewMode: result ? ('pattern' as const) : current.viewMode,
             paperState: result ? ('completed' as const) : current.paperState,
             beadingState: 'idle' as const,
+            beadingProgress: null,
           };
           persist(nextState);
           return nextState;

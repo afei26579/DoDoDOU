@@ -62,13 +62,25 @@ export type WorkshopEditorState = {
   historyIndex: number;
 };
 
+export type WorkshopBeadingProgress = {
+  activeColorKey: string | null;
+  activeCellKey: string | null;
+  completedColorKeys: string[];
+  completedCellKeys: string[];
+  percent: number;
+  mode: string;
+  handedness: 'left' | 'right';
+  updatedAt: string;
+};
+
 export type WorkshopFlowState = {
   uploadedImage: UploadedImage | null;
   cropTransform: CropTransform;
   config: WorkshopConfig;
   patternResult: PatternResult | null;
   viewMode: WorkshopViewMode;
-  paperState: WorkshopPaperState | null;
-  beadingState: WorkshopBeadingState | null;
+  paperState: WorkshopPaperState;
+  beadingState: WorkshopBeadingState;
+  beadingProgress: WorkshopBeadingProgress | null;
   isGenerating: boolean;
 };

@@ -1,3 +1,6 @@
+// Deprecated: workshop project records in dodoudou-workshop/projects are the local source of truth.
+// Keep this module only for old IndexedDB data inspection or future one-off migration code.
+
 export type LocalProjectKind = 'upload' | 'draft' | 'pattern' | 'progress';
 export type LocalProjectStatus = 'editing' | 'ready' | 'paused' | 'completed';
 

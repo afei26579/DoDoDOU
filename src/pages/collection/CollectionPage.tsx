@@ -2,7 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchGalleryList } from '../../features/gallery/model/api';
 import type { GalleryItemCard } from '../../features/gallery/model/types';
-import { listLocalProjects, type LocalProjectRecord } from '../../features/projects/model/localProjectStore';
+import {
+  groupWorkshopProjects,
+  listWorkshopProjects,
+  type WorkshopProjectCard,
+  type WorkshopProjectRecord,
+} from '../../features/workshop/model/projectStore';
 
 const collectionFilters = ['全部', '最新', '最热', '我的'] as const;
 
@@ -14,7 +19,7 @@ function formatPatternSummary(item: GalleryItemCard) {
   return `${sizeText} · ${colorCount} 色${beadCount ? ` · ${beadCount} 颗` : ''}`;
 }
 
-function formatMyProjectSummary(project: LocalProjectRecord) {
+function formatMyProjectSummary(project: WorkshopProjectCard) {
   const progressText = project.progress ? `${project.progress.percent}%` : null;
   const detail = project.paperState === 'draft'
     ? '草稿'
@@ -29,11 +34,24 @@ function formatMyProjectSummary(project: LocalProjectRecord) {
 export function CollectionPage() {
   const navigate = useNavigate();
   const [items, setItems] = useState<GalleryItemCard[]>([]);
-  const [myItems, setMyItems] = useState<LocalProjectRecord[]>([]);
+  const [myItems, setMyItems] = useState<WorkshopProjectRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [myLoading, setMyLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<(typeof collectionFilters)[number]>('全部');
+
+  const [columnCount, setColumnCount] = useState(2);
+
+  useEffect(() => {
+    const updateColumnCount = () => {
+      const width = window.innerWidth;
+      setColumnCount(width >= 1120 ? 4 : width >= 760 ? 3 : 2);
+    };
+
+    updateColumnCount();
+    window.addEventListener('resize', updateColumnCount);
+    return () => window.removeEventListener('resize', updateColumnCount);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -61,7 +79,7 @@ export function CollectionPage() {
   useEffect(() => {
     let alive = true;
     setMyLoading(true);
-    listLocalProjects()
+    listWorkshopProjects()
       .then((projects) => {
         if (!alive) return;
         setMyItems(projects);
@@ -80,14 +98,15 @@ export function CollectionPage() {
   }, []);
 
   const columns = useMemo(
-    () => [items.filter((_, index) => index % 2 === 0), items.filter((_, index) => index % 2 === 1)],
-    [items],
+    () => Array.from({ length: columnCount }, (_, columnIndex) => items.filter((_, index) => index % columnCount === columnIndex)),
+    [columnCount, items],
   );
 
-  const myRecentItems = myItems.slice(0, 4);
-  const myDrafts = myItems.filter((item) => item.paperState === 'draft').slice(0, 4);
-  const myPatterns = myItems.filter((item) => item.paperState === 'completed' && item.beadingState !== 'progressing').slice(0, 4);
-  const myProgressing = myItems.filter((item) => item.beadingState === 'progressing').slice(0, 4);
+  const myGroups = useMemo(() => groupWorkshopProjects(myItems), [myItems]);
+  const myRecentItems = myGroups.recent.slice(0, 4);
+  const myDrafts = myGroups.drafts.slice(0, 4);
+  const myPatterns = myGroups.patterns.slice(0, 4);
+  const myProgressing = myGroups.progressing.slice(0, 4);
 
   return (
     <main className="collection-page">

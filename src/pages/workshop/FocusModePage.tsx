@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { saveWorkshopProject } from '../../features/workshop/model/projectStore';
+import type { WorkshopBeadingProgress } from '../../features/workshop/model/types';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
 import { drawPatternFocusZoomView, getFocusPanBounds, getFocusWindowBounds, getQuadrant } from '../../lib/pattern/focusZoom';
 import { drawPatternPreview } from '../../lib/pattern/preview';
@@ -55,12 +57,18 @@ const separatorColorOptions: SeparatorColorOption[] = [
   { label: '黄色', value: '#FDBA28' },
 ];
 
+const patternModes: PatternMode[] = ['smart', 'color-block', 'edge-first', 'region-first', 'row-by-row'];
+
 function getCellKey(cell: { colorId: string; vendorCode: string; hex: string }) {
   return `${cell.colorId}-${cell.vendorCode}-${cell.hex}`;
 }
 
 function isTransparentCellHex(hex: string) {
   return hex === 'transparent';
+}
+
+function isPatternMode(value: string): value is PatternMode {
+  return patternModes.includes(value as PatternMode);
 }
 
 type CellCoordinate = {
@@ -165,6 +173,8 @@ export function FocusModePage() {
   const previewImageDataUrlRef = useRef<string | null>(null);
   const [focusPan, setFocusPan] = useState<FocusPanState | null>(null);
   const [focusWindowOverride, setFocusWindowOverride] = useState<{ startX: number; startY: number } | null>(null);
+  const restoredProgressProjectRef = useRef<string | null>(null);
+  const skipNextProgressSaveRef = useRef(false);
 
   const patternResult = state.patternResult;
 
@@ -205,9 +215,27 @@ export function FocusModePage() {
     return patternResult.cells.filter((cell) => !cell.isExternal && cell.vendorCode && cell.hex && !isTransparentCellHex(cell.hex)).length;
   }, [patternResult]);
 
-  const completedPatternCells = useMemo(() => new Set(completedCellKeys).size, [completedCellKeys]);
+  const patternCellKeySet = useMemo(() => {
+    const keys = new Set<string>();
+    if (!patternResult) return keys;
+    for (const cell of patternResult.cells) {
+      if (cell.isExternal || !cell.vendorCode || !cell.hex || isTransparentCellHex(cell.hex)) continue;
+      keys.add(`${cell.x},${cell.y}`);
+    }
+    return keys;
+  }, [patternResult]);
+
+  const normalizedCompletedCellKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const key of completedCellKeys) {
+      if (patternCellKeySet.has(key)) keys.add(key);
+    }
+    return Array.from(keys);
+  }, [completedCellKeys, patternCellKeySet]);
+
+  const completedPatternCells = normalizedCompletedCellKeys.length;
   const overallProgress = totalPatternCells > 0 ? completedPatternCells / totalPatternCells : 0;
-  const overallProgressPercent = Math.round(overallProgress * 100);
+  const overallProgressPercent = Math.min(100, Math.round(overallProgress * 100));
   const completedColorCount = completedColorKeys.length;
   const totalColorCount = palette.length;
 
@@ -241,13 +269,99 @@ export function FocusModePage() {
       return;
     }
 
-    if (!activeColorKey || !orderedColorEntries.some((item) => item.colorKey === activeColorKey)) {
+    const validColorKeys = new Set(orderedColorEntries.map((item) => item.colorKey));
+    setCompletedColorKeys((current) => current.filter((key) => validColorKeys.has(key)));
+    setCompletedCellKeys((current) => current.filter((key) => patternCellKeySet.has(key)));
+
+    if (activeColorKey && !validColorKeys.has(activeColorKey)) {
       setActiveColorKey(null);
       setActiveCellKey(null);
-      setCompletedColorKeys([]);
-      setCompletedCellKeys([]);
     }
-  }, [activeColorKey, orderedColorEntries, palette, patternResult]);
+  }, [activeColorKey, orderedColorEntries, palette, patternCellKeySet, patternResult]);
+
+  useEffect(() => {
+    restoredProgressProjectRef.current = null;
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId || isHydrating || !patternResult) return;
+    if (restoredProgressProjectRef.current === projectId) return;
+
+    restoredProgressProjectRef.current = projectId;
+    const progress = state.beadingProgress;
+    if (!progress) return;
+
+    skipNextProgressSaveRef.current = true;
+    const validColorKeys = new Set(orderedColorEntries.map((item) => item.colorKey));
+    setPatternMode(isPatternMode(progress.mode) ? progress.mode : 'smart');
+    setHandedness(progress.handedness === 'right' ? 'right' : 'left');
+    setActiveColorKey(progress.activeColorKey && validColorKeys.has(progress.activeColorKey) ? progress.activeColorKey : null);
+    setActiveCellKey(progress.activeCellKey && patternCellKeySet.has(progress.activeCellKey) ? progress.activeCellKey : null);
+    setCompletedColorKeys(progress.completedColorKeys.filter((key) => validColorKeys.has(key)));
+    setCompletedCellKeys(progress.completedCellKeys.filter((key) => patternCellKeySet.has(key)));
+  }, [isHydrating, orderedColorEntries, patternCellKeySet, patternResult, projectId, state.beadingProgress]);
+
+  useEffect(() => {
+    if (!projectId || isHydrating || !patternResult || totalPatternCells === 0) return;
+    const updatedAt = new Date().toISOString();
+    const completed = state.beadingState === 'completed' || state.beadingProgress?.percent === 100;
+    void saveWorkshopProject(projectId, {
+      kind: 'progress',
+      status: completed ? 'completed' : 'paused',
+      beadingState: completed ? 'completed' : 'progressing',
+      lastOpenedAt: updatedAt,
+    });
+  }, [isHydrating, patternResult, projectId, state.beadingProgress?.percent, state.beadingState, totalPatternCells]);
+
+  useEffect(() => {
+    if (!projectId || isHydrating || !patternResult || totalPatternCells === 0) return;
+    if (skipNextProgressSaveRef.current) {
+      skipNextProgressSaveRef.current = false;
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const updatedAt = new Date().toISOString();
+      const completed = overallProgressPercent >= 100;
+      const progress: WorkshopBeadingProgress = {
+        activeColorKey,
+        activeCellKey,
+        completedColorKeys: Array.from(new Set(completedColorKeys)),
+        completedCellKeys: normalizedCompletedCellKeys,
+        percent: overallProgressPercent,
+        mode: patternMode,
+        handedness,
+        updatedAt,
+      };
+
+      void saveWorkshopProject(projectId, {
+        kind: 'progress',
+        status: completed ? 'completed' : 'paused',
+        beadingState: completed ? 'completed' : 'progressing',
+        beadingProgress: progress,
+        progress: {
+          percent: overallProgressPercent,
+          step: patternMode,
+          updatedAt,
+        },
+        lastOpenedAt: updatedAt,
+      });
+    }, 400);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    activeCellKey,
+    activeColorKey,
+    completedColorKeys,
+    handedness,
+    isHydrating,
+    normalizedCompletedCellKeys,
+    overallProgressPercent,
+    patternMode,
+    patternResult,
+    projectId,
+    totalPatternCells,
+  ]);
 
   const currentColor = useMemo(
     () => palette.find((item) => `${item.colorId}-${item.vendorCode}-${item.hex}` === activeColorKey) ?? null,

@@ -32,6 +32,7 @@ type WorkshopPageProps = {
   onOpenEditor?: () => void;
   onOpenFocusMode?: () => void;
   isHome: boolean;
+  backgroundRemovalNotice?: string | null;
 };
 
 export function WorkshopPage({
@@ -54,6 +55,7 @@ export function WorkshopPage({
   onOpenEditor,
   onOpenFocusMode,
   isHome,
+  backgroundRemovalNotice,
 }: WorkshopPageProps) {
   const [activeTag, setActiveTag] = useState<ParameterTagId>('size');
   const dragStateRef = useRef<{
@@ -252,6 +254,7 @@ export function WorkshopPage({
         onPointerMove={handlePreviewPointerMove}
         onPointerUp={handlePreviewPointerUp}
         onUploadImage={onUploadImage}
+        backgroundRemovalNotice={backgroundRemovalNotice}
       />
 
       <section className="workshop-toolbar-surface card-surface" aria-label="工具栏">
@@ -279,7 +282,7 @@ export function WorkshopPage({
 
       <section className="workshop-panel card-surface" aria-label="参数设置">
         {mode === 'result' ? (
-          <>
+          <div className="workshop-panel__result-content">
             {patternResult ? <WorkshopResultStats patternResult={patternResult} onOpenStats={() => setIsStatsSheetOpen(true)} /> : null}
             <WorkshopGenerateButton
               mode={mode}
@@ -294,7 +297,7 @@ export function WorkshopPage({
               onManualEditNavigate={onOpenEditor}
               onOpenFocusMode={onOpenFocusMode}
             />
-          </>
+          </div>
         ) : (
           <>
             <div className="section-heading-row">
@@ -308,14 +311,16 @@ export function WorkshopPage({
               <WorkshopParameterPanel activeTag={activeTag} config={config} onConfigChange={onConfigChange} />
             </div>
 
-            <WorkshopGenerateButton
-              mode={mode}
-              isGenerating={isGenerating}
-              disabled={!uploadedImage || isGenerating}
-              onClick={onGeneratePattern}
-              onOpenEditor={onOpenEditor}
-              onManualEditNavigate={onOpenEditor}
-            />
+            <div className="workshop-bottom-action" aria-label="生成操作">
+              <WorkshopGenerateButton
+                mode={mode}
+                isGenerating={isGenerating}
+                disabled={!uploadedImage || isGenerating}
+                onClick={onGeneratePattern}
+                onOpenEditor={onOpenEditor}
+                onManualEditNavigate={onOpenEditor}
+              />
+            </div>
           </>
         )}
       </section>

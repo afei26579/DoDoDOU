@@ -13,6 +13,7 @@ type WorkshopPreviewAreaProps = {
   onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void;
   onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => void;
   onUploadImage: () => void;
+  backgroundRemovalNotice?: string | null;
 };
 
 function WorkshopLoadingState() {
@@ -235,6 +236,7 @@ export function WorkshopPreviewArea({
   onPointerMove,
   onPointerUp,
   onUploadImage,
+  backgroundRemovalNotice,
 }: WorkshopPreviewAreaProps) {
   return (
     <section className="workshop-canvas card-surface" aria-label="画布预览">
@@ -272,6 +274,11 @@ export function WorkshopPreviewArea({
         ) : (
           <WorkshopEmptyState onUploadImage={onUploadImage} />
         )}
+        {mode === 'result' && backgroundRemovalNotice ? (
+          <div className="workshop-canvas__center-notice" role="status" aria-live="polite">
+            {backgroundRemovalNotice}
+          </div>
+        ) : null}
       </div>
     </section>
   );

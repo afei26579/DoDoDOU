@@ -151,3 +151,135 @@
   .toolbarSection { padding-inline: 12px; padding-bottom: 12px; }
   .paletteSection { margin-inline: 12px; }
 }
+
+@media (max-width: 720px) {
+  .titlebar {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    padding-block: 8px;
+  }
+
+  .titlebarLeft,
+  .titlebarRight {
+    max-width: calc(50% - 6px);
+  }
+
+  .titlebarCenter {
+    order: 3;
+    flex-basis: 100%;
+    padding: 0;
+  }
+
+  .progressMeta {
+    gap: 8px;
+  }
+
+  .progressLabel {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .currentColorCard,
+  .gamepadPanel {
+    flex-wrap: wrap;
+  }
+
+  .nextColorCard {
+    width: 72px;
+  }
+
+  .previewFloat {
+    width: min(160px, 40vw);
+    bottom: 118px;
+  }
+}
+
+@media (min-width: 900px) {
+  .page {
+    display: grid;
+    grid-template-columns: minmax(260px, 360px) minmax(420px, 1fr) minmax(260px, 360px);
+    grid-template-rows: 64px minmax(0, 1fr) auto;
+    gap: 16px;
+    padding: 0 16px 16px;
+  }
+
+  .titlebar {
+    grid-column: 1 / -1;
+    height: 64px;
+    margin-inline: -16px;
+    padding-inline: 20px;
+  }
+
+  .currentColorSection {
+    grid-column: 1;
+    grid-row: 2;
+    align-self: start;
+    padding: 0;
+  }
+
+  .currentColorCard {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .currentColorArrow,
+  .nextColorCard {
+    display: none;
+  }
+
+  .canvasSection {
+    grid-column: 2;
+    grid-row: 2;
+    padding: 0;
+    place-items: center;
+  }
+
+  .canvasPlaceholder {
+    max-width: min(100%, calc(100dvh - 164px), 720px);
+  }
+
+  .paletteSection {
+    grid-column: 3;
+    grid-row: 2;
+    align-self: start;
+    max-height: calc(100dvh - 160px);
+    margin: 0;
+    overflow: hidden;
+  }
+
+  .paletteStrip {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(52px, 1fr));
+    align-content: start;
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-height: calc(100dvh - 204px);
+    padding-right: 4px;
+  }
+
+  .paletteDotButton,
+  .paletteDotWrap,
+  .paletteDotRing {
+    width: 52px;
+    height: 52px;
+  }
+
+  .toolbarSection {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    padding: 0;
+  }
+
+  .gamepadPanel {
+    width: min(760px, 100%);
+    margin: 0 auto;
+  }
+
+  .previewFloat {
+    right: 24px;
+    bottom: 124px;
+    width: min(220px, 18vw);
+  }
+}

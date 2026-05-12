@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { defaultCropTransform, defaultWorkshopConfig } from '../../features/workshop/model/defaults';
+import { defaultCropTransform } from '../../features/workshop/model/defaults';
 import { saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import { WorkshopPage } from './WorkshopPage';
 import type { WorkshopFlowState } from '../../features/workshop/model/types';
@@ -75,9 +75,11 @@ export function WorkshopHomePage({
               ...imageSize,
             },
             cropTransform: defaultCropTransform,
-            config: defaultWorkshopConfig,
+            config: flowState.config,
             patternResult: null,
             viewMode: 'image',
+            paperState: 'completed',
+            beadingState: 'idle',
           });
 
           await onUploadImage();

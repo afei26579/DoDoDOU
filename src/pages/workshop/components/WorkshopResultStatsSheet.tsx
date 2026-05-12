@@ -6,12 +6,14 @@ type WorkshopResultStatsSheetProps = {
 };
 
 function formatBeads(count: number) {
-  return `${count.toLocaleString()} beads`;
+  return `${count.toLocaleString()} 颗`;
 }
 
 export function WorkshopResultStatsSheet({ patternResult, onClose }: WorkshopResultStatsSheetProps) {
+  const gridSize = `${patternResult.width}x${patternResult.height}网格`;
   const totalBeads = patternResult.stats.totalCells.toLocaleString();
   const totalColors = patternResult.stats.colorCount;
+  const paletteItems = [...patternResult.palette].sort((a, b) => b.count - a.count);
 
   return (
     <div className="workshop-stats-sheet__backdrop" role="presentation" onClick={onClose}>
@@ -26,9 +28,9 @@ export function WorkshopResultStatsSheet({ patternResult, onClose }: WorkshopRes
 
         <header className="workshop-stats-sheet__header">
           <div>
-            <h3>物料统计</h3>
+            <h3>物料清单</h3>
             <p>
-              Total: {totalColors} Colors, {totalBeads} Beads
+              {gridSize}，共 {totalColors} 种颜色，{totalBeads} 颗豆子
             </p>
           </div>
           <button type="button" className="workshop-stats-sheet__close" aria-label="关闭" onClick={onClose}>
@@ -37,12 +39,12 @@ export function WorkshopResultStatsSheet({ patternResult, onClose }: WorkshopRes
         </header>
 
         <div className="workshop-stats-sheet__list">
-          {patternResult.palette.map((entry) => (
+          {paletteItems.map((entry) => (
             <div key={`${entry.colorId}-${entry.vendorCode}`} className="workshop-stats-sheet__item">
               <span className="workshop-stats-sheet__swatch" style={{ backgroundColor: entry.hex }} aria-hidden="true" />
               <div className="workshop-stats-sheet__meta">
-                <strong>{entry.colorId}</strong>
-                <span>{entry.vendorCode}</span>
+                <strong> {entry.vendorCode || '未匹配'}</strong>
+             
               </div>
               <div className="workshop-stats-sheet__count">{formatBeads(entry.count)}</div>
             </div>

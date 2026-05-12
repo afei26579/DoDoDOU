@@ -118,9 +118,11 @@ export function removePatternBackground(pattern: PatternResult) {
 
   if (stack.length === 0) return null;
 
+  let removedCount = 0;
   while (stack.length > 0) {
     const { row, col } = stack.pop()!;
     newPixelData[row][col] = createTransparentCell(newPixelData[row][col], col, row);
+    removedCount += 1;
     pushIfTarget(row - 1, col);
     pushIfTarget(row + 1, col);
     pushIfTarget(row, col - 1);
@@ -130,5 +132,6 @@ export function removePatternBackground(pattern: PatternResult) {
   return {
     newPixelData,
     newPatternResult: rebuildPatternResult(newPixelData),
+    removedCount,
   };
 }

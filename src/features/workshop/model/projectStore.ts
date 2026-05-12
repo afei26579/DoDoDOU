@@ -1,4 +1,12 @@
-import type { CropTransform, PatternResult, UploadedImage, WorkshopConfig, WorkshopEditorState } from './types';
+import type {
+  CropTransform,
+  PatternResult,
+  UploadedImage,
+  WorkshopBeadingProgress,
+  WorkshopConfig,
+  WorkshopEditorState,
+  WorkshopViewMode,
+} from './types';
 
 const DB_NAME = 'dodoudou-workshop';
 const DB_VERSION = 2;
@@ -21,14 +29,16 @@ export type WorkshopProjectRecord = {
   title: string;
   kind: WorkshopProjectKind;
   status: WorkshopProjectStatus;
-  paperState: WorkshopPaperState | null;
-  beadingState: WorkshopBeadingState | null;
+  paperState: WorkshopPaperState;
+  beadingState: WorkshopBeadingState;
   uploadedImage: UploadedImage | null;
   cropTransform: CropTransform;
   config: WorkshopConfig;
   patternResult: PatternResult | null;
+  viewMode: WorkshopViewMode;
   editorState: WorkshopEditorState | null;
   progress: WorkshopProjectProgress | null;
+  beadingProgress: WorkshopBeadingProgress | null;
   coverUrl?: string | null;
   previewUrl?: string | null;
   lastOpenedAt: string | null;
@@ -37,6 +47,34 @@ export type WorkshopProjectRecord = {
 };
 
 type WorkshopProjectPatch = Partial<Omit<WorkshopProjectRecord, 'projectId' | 'createdAt' | 'updatedAt'>>;
+
+export type WorkshopProjectCard = {
+  id: string;
+  title: string;
+  kind: WorkshopProjectKind;
+  status: WorkshopProjectStatus;
+  paperState: WorkshopPaperState;
+  beadingState: WorkshopBeadingState;
+  coverUrl?: string | null;
+  previewUrl?: string | null;
+  progress: WorkshopProjectProgress | null;
+  pattern: {
+    width: number;
+    height: number;
+    beadCount: number;
+    paletteCount: number;
+  } | null;
+  createdAt: string;
+  updatedAt: string;
+  lastOpenedAt: string | null;
+};
+
+export type WorkshopProjectGroups = {
+  recent: WorkshopProjectCard[];
+  drafts: WorkshopProjectCard[];
+  patterns: WorkshopProjectCard[];
+  progressing: WorkshopProjectCard[];
+};
 
 function getDefaultConfig(): WorkshopConfig {
   return {
@@ -54,14 +92,16 @@ function createDefaultRecord(projectId: string): WorkshopProjectRecord {
     title: '未命名作品',
     kind: 'upload',
     status: 'editing',
-    paperState: null,
-    beadingState: null,
+    paperState: 'draft',
+    beadingState: 'idle',
     uploadedImage: null,
     cropTransform: { scale: 1, x: 0, y: 0 },
     config: getDefaultConfig(),
     patternResult: null,
+    viewMode: 'image',
     editorState: null,
     progress: null,
+    beadingProgress: null,
     coverUrl: null,
     previewUrl: null,
     lastOpenedAt: now,
@@ -70,19 +110,116 @@ function createDefaultRecord(projectId: string): WorkshopProjectRecord {
   };
 }
 
+function normalizeTimestamp(value: unknown, fallback: string): string {
+  if (typeof value === 'string') {
+    const time = Date.parse(value);
+    return Number.isNaN(time) ? fallback : new Date(time).toISOString();
+  }
+
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? fallback : value.toISOString();
+  }
+
+  return fallback;
+}
+
+function normalizeNullableTimestamp(value: unknown, fallback: string | null): string | null {
+  if (value == null) return fallback;
+  if (typeof value === 'string') {
+    const time = Date.parse(value);
+    return Number.isNaN(time) ? fallback : new Date(time).toISOString();
+  }
+
+  if (typeof value === 'number') {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? fallback : value.toISOString();
+  }
+
+  return fallback;
+}
+
 function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
+  const defaultRecord = createDefaultRecord(record.projectId);
+  const createdAt = normalizeTimestamp(record.createdAt, defaultRecord.createdAt);
+  const updatedAt = normalizeTimestamp(record.updatedAt, createdAt);
   return {
-    ...createDefaultRecord(record.projectId),
+    ...defaultRecord,
     ...record,
-    paperState: record.paperState ?? null,
-    beadingState: record.beadingState ?? null,
+    paperState: record.paperState ?? defaultRecord.paperState,
+    beadingState: record.beadingState ?? defaultRecord.beadingState,
     uploadedImage: record.uploadedImage ?? null,
     patternResult: record.patternResult ?? null,
+    viewMode: record.viewMode ?? defaultRecord.viewMode,
     editorState: record.editorState ?? null,
     progress: record.progress ?? null,
+    beadingProgress: record.beadingProgress ?? null,
     coverUrl: record.coverUrl ?? null,
     previewUrl: record.previewUrl ?? null,
-    lastOpenedAt: record.lastOpenedAt ?? null,
+    lastOpenedAt: normalizeNullableTimestamp(record.lastOpenedAt, null),
+    createdAt,
+    updatedAt,
+  };
+}
+
+function getPatternSummary(patternResult: PatternResult | null) {
+  return patternResult
+    ? {
+        width: patternResult.width,
+        height: patternResult.height,
+        beadCount: patternResult.stats.totalCells,
+        paletteCount: patternResult.stats.colorCount,
+      }
+    : null;
+}
+
+function getProjectTimestamp(record: Pick<WorkshopProjectRecord | WorkshopProjectCard, 'lastOpenedAt' | 'updatedAt' | 'createdAt'>) {
+  return normalizeNullableTimestamp(record.lastOpenedAt, null) ?? normalizeTimestamp(record.updatedAt, normalizeTimestamp(record.createdAt, new Date(0).toISOString()));
+}
+
+export function toProjectCard(record: WorkshopProjectRecord): WorkshopProjectCard {
+  const progress = record.beadingProgress
+    ? {
+        percent: record.beadingProgress.percent,
+        step: record.beadingProgress.mode,
+        updatedAt: record.beadingProgress.updatedAt,
+      }
+    : record.progress;
+
+  return {
+    id: record.projectId,
+    title: record.title,
+    kind: record.kind,
+    status: record.status,
+    paperState: record.paperState,
+    beadingState: record.beadingState,
+    coverUrl: record.coverUrl ?? record.uploadedImage?.dataUrl ?? null,
+    previewUrl: record.previewUrl ?? null,
+    progress,
+    pattern: getPatternSummary(record.patternResult),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    lastOpenedAt: record.lastOpenedAt,
+  };
+}
+
+export function groupWorkshopProjects(records: WorkshopProjectRecord[]): WorkshopProjectGroups {
+  const cards = records.map(toProjectCard);
+  const byOpened = [...cards].sort((a, b) => getProjectTimestamp(b).localeCompare(getProjectTimestamp(a)));
+
+  return {
+    recent: byOpened,
+    drafts: cards.filter((item) => item.paperState === 'draft'),
+    patterns: cards.filter((item) => item.paperState === 'completed' && item.beadingState !== 'progressing'),
+    progressing: cards.filter((item) => item.beadingState === 'progressing'),
   };
 }
 
@@ -143,7 +280,7 @@ export async function listWorkshopProjects() {
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
       const records = (request.result as WorkshopProjectRecord[]).map(normalizeRecord);
-      records.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      records.sort((a, b) => getProjectTimestamp(b).localeCompare(getProjectTimestamp(a)));
       resolve(records);
     };
   });
@@ -158,9 +295,10 @@ export async function getWorkshopProject(projectId: string) {
 
 export async function ensureWorkshopProject(projectId: string, patch: WorkshopProjectPatch = {}) {
   const current = (await getWorkshopProject(projectId)) ?? createDefaultRecord(projectId);
+  const definedPatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as WorkshopProjectPatch;
   const next: WorkshopProjectRecord = normalizeRecord({
     ...current,
-    ...patch,
+    ...definedPatch,
     projectId,
     createdAt: current.createdAt,
     updatedAt: new Date().toISOString(),

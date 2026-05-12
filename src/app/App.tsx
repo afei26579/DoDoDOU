@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { navItems, type NavItemId } from './navigation';
 import { BottomNav } from './components/BottomNav';
@@ -9,8 +9,9 @@ import { FocusModePage } from '../pages/workshop/FocusModePage';
 import { WorkshopEditorPage } from '../pages/workshop/WorkshopEditorPage';
 import { WorkshopHomePage } from '../pages/workshop/WorkshopHomePage';
 import { WorkshopShell } from '../pages/workshop/WorkshopShell';
-import { defaultCropTransform, defaultWorkshopConfig } from '../features/workshop/model/defaults';
+import { defaultCropTransform, defaultWorkshopConfig, defaultWorkshopFlowState } from '../features/workshop/model/defaults';
 import { saveWorkshopProject } from '../features/workshop/model/projectStore';
+import type { WorkshopFlowState } from '../features/workshop/model/types';
 
 const routeToTab: Partial<Record<string, NavItemId>> = {
   '/': 'discovery',
@@ -45,6 +46,10 @@ function createProjectId() {
 export function App() {
   const navigate = useNavigate();
   const location = useLocation();
+  const [workshopHomeState, setWorkshopHomeState] = useState<WorkshopFlowState>({
+    ...defaultWorkshopFlowState,
+    config: defaultWorkshopConfig,
+  });
 
   const normalizedPath = useMemo(() => normalizePath(location.pathname), [location.pathname]);
   const activeTab: NavItemId = routeToTab[normalizedPath] ?? 'discovery';
@@ -98,18 +103,19 @@ export function App() {
             path="/workshop"
             element={
               <WorkshopHomePage
-                flowState={{
-                  uploadedImage: null,
-                  cropTransform: { scale: 1, x: 0, y: 0 },
-                  config: { canvasSize: 100, brand: 'MARD', style: '动漫', colorMergeThreshold: 30 },
-                  patternResult: null,
-                  viewMode: 'image',
-                  isGenerating: false,
-                }}
+                flowState={workshopHomeState}
                 projectId={null}
                 isHydrating={false}
                 onUploadImage={() => navigate('/workshop')}
-                onConfigChange={() => {}}
+                onConfigChange={(patch) => {
+                  setWorkshopHomeState((current) => ({
+                    ...current,
+                    config: {
+                      ...current.config,
+                      ...patch,
+                    },
+                  }));
+                }}
                 onCropTransformChange={() => {}}
                 onGeneratePattern={() => {}}
                 onSwitchViewMode={() => {}}

@@ -75,4 +75,95 @@
 .modalActions button:hover { background: rgba(216,180,226,.26); }
 .closeBtn { width: 32px; height: 32px; border-radius: 10px; background: rgba(93,83,74,.08); }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(93,83,74,.92); color: #fff; padding: 10px 14px; border-radius: 999px; }
-@media (max-width: 520px) { .toolRow, .toolbarContent { padding: 8px 10px; } .titlebarActions { gap: 4px; } .titlebarText h1 { font-size: 14px; } .iconBtn { width: 26px; height: 26px; } .primaryBtn { padding: 0 10px; font-size: 12px; } .paletteGrid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (max-width: 700px) {
+  .titlebar {
+    align-items: center;
+  }
+
+  .titlebarActions {
+    gap: 4px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .titlebarText h1 {
+    font-size: 14px;
+  }
+
+  .iconBtn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .primaryBtn {
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .layout {
+    inset-block-start: 56px;
+  }
+
+  .previewPanel {
+    width: min(42vw, 150px);
+    right: 10px;
+  }
+
+  .bubble {
+    right: 10px;
+  }
+
+  .toolbar {
+    width: calc(100vw - 20px);
+    bottom: max(10px, env(safe-area-inset-bottom));
+  }
+
+  .toolRow,
+  .toolbarContent {
+    padding: 8px 10px;
+  }
+}
+
+@media (min-width: 900px) {
+  .titlebar {
+    padding-inline: 20px;
+  }
+
+  .titlebarText h1 {
+    font-size: 18px;
+  }
+
+  .iconBtn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .primaryBtn {
+    height: 34px;
+    padding-inline: 16px;
+  }
+
+  .toolbar {
+    width: min(860px, calc(100vw - 48px));
+    bottom: 24px;
+  }
+
+  .previewPanel {
+    top: 82px;
+    right: 24px;
+    width: clamp(160px, 18vw, 240px);
+  }
+
+  .bubble {
+    top: 82px;
+    right: 24px;
+  }
+
+  .zoomBar {
+    bottom: 28px;
+  }
+}
+
+@media (max-width: 520px) {
+  .paletteGrid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}

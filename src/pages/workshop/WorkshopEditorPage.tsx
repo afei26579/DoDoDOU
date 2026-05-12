@@ -142,11 +142,21 @@ function cloneHistory(history: string[][][]) {
   return history.map((snap) => snap.map((row) => [...row]));
 }
 
+function createFreshEditorState(grid: string[][]): WorkshopEditorState {
+  const currentGrid = cloneGrid(grid);
+  return {
+    grid: currentGrid,
+    history: [cloneGrid(currentGrid)],
+    historyIndex: 0,
+  };
+}
+
 function gridToPatternResult(grid: string[][], brand: WorkshopConfig['brand']): PatternResult {
   const height = grid.length;
   const width = grid[0]?.length ?? 0;
   const cells: PatternResult['cells'] = [];
   const paletteMap = new Map<string, { count: number; vendorCode: string }>();
+  let totalCells = 0;
 
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
@@ -164,6 +174,7 @@ function gridToPatternResult(grid: string[][], brand: WorkshopConfig['brand']): 
       }
 
       const vendorCode = getVendorCode(hex, brand);
+      totalCells += 1;
       cells.push({
         x,
         y,
@@ -190,7 +201,7 @@ function gridToPatternResult(grid: string[][], brand: WorkshopConfig['brand']): 
       count: value.count,
     })),
     stats: {
-      totalCells: width * height,
+      totalCells,
       colorCount: paletteMap.size,
     },
   };
@@ -342,9 +353,12 @@ export function WorkshopEditorPage() {
         return;
       }
 
-      const draft = await getWorkshopDraft(projectId).catch(() => null);
+      const currentProject = await getWorkshopProject(projectId).catch(() => null);
+      const shouldRestoreDraft = currentProject?.paperState === 'draft';
+      const draft = shouldRestoreDraft ? await getWorkshopDraft(projectId).catch(() => null) : null;
       const localDraft = readLocalEditorDraft(projectId);
-      const restoredState = draft?.state ?? localDraft;
+      const restoredState = shouldRestoreDraft ? draft?.state ?? localDraft : null;
+      const restoredGrid = restoredState?.grid?.length ? cloneGrid(restoredState.grid) : null;
       await ensureWorkshopProject(projectId, {
         kind: 'draft',
         status: 'editing',
@@ -353,21 +367,12 @@ export function WorkshopEditorPage() {
         lastOpenedAt: new Date().toISOString(),
       });
 
-      if (restoredState?.grid?.length) {
-        setGrid(cloneGrid(restoredState.grid));
-        historyRef.current = cloneHistory(restoredState.history?.length ? restoredState.history : [restoredState.grid]);
-        historyIndexRef.current = Math.min(
-          restoredState.historyIndex ?? restoredState.history.length - 1,
-          historyRef.current.length - 1,
-        );
-        setHistoryState({ index: historyIndexRef.current, length: historyRef.current.length });
-      }
-
       const project = await getWorkshopProject(projectId).catch(() => null);
       if (!alive) return;
 
       console.log('[WorkshopEditorPage] project status snapshot', {
         projectId,
+        sourcePaperState: currentProject?.paperState ?? null,
         paperState: project?.paperState ?? null,
         beadingState: project?.beadingState ?? null,
         status: project?.status ?? null,
@@ -377,52 +382,46 @@ export function WorkshopEditorPage() {
         hasDraftState: Boolean(restoredState),
       });
 
+      let loadedGridForPersistence: string[][] | null = null;
+
       if (project?.patternResult) {
         const { patternResult } = project;
-        const nextGrid = restoredState?.grid?.length ? cloneGrid(restoredState.grid) : buildGridFromPattern(patternResult);
+        const nextGrid = restoredGrid ? cloneGrid(restoredGrid) : buildGridFromPattern(patternResult);
 
         console.log('[WorkshopEditorPage] patternResult', patternResult);
         console.log('[WorkshopEditorPage] gridFromPatternResult', nextGrid);
 
-        setCols(patternResult.width);
-        setRows(patternResult.height);
+        setCols(nextGrid[0]?.length ?? patternResult.width);
+        setRows(nextGrid.length || patternResult.height);
         setGrid(nextGrid);
-
-        if (!restoredState?.grid?.length) {
-          historyRef.current = [cloneGrid(nextGrid)];
-          historyIndexRef.current = 0;
-          setHistoryState({ index: 0, length: 1 });
-        }
-      } else if (!restoredState?.grid?.length) {
+        loadedGridForPersistence = cloneGrid(nextGrid);
+      } else if (restoredGrid) {
+        setCols(restoredGrid[0]?.length ?? 32);
+        setRows(restoredGrid.length);
+        setGrid(restoredGrid);
+        loadedGridForPersistence = cloneGrid(restoredGrid);
+      } else {
         const initialGrid = cloneGrid(grid);
-        historyRef.current = [initialGrid];
-        historyIndexRef.current = 0;
-        setHistoryState({ index: 0, length: 1 });
+        loadedGridForPersistence = cloneGrid(initialGrid);
       }
 
+      const freshEditorState = createFreshEditorState(loadedGridForPersistence);
+      historyRef.current = cloneHistory(freshEditorState.history);
+      historyIndexRef.current = freshEditorState.historyIndex;
+      setHistoryState({ index: freshEditorState.historyIndex, length: freshEditorState.history.length });
       setProjectReady(true);
 
       if (projectId) {
         await saveWorkshopProject(projectId, {
-          editorState: restoredState?.grid?.length ? {
-            grid: cloneGrid(restoredState.grid),
-            history: cloneHistory(restoredState.history?.length ? restoredState.history : [restoredState.grid]),
-            historyIndex: Math.min(
-              restoredState.historyIndex ?? restoredState.history.length - 1,
-              (restoredState.history?.length ? restoredState.history.length : 1) - 1,
-            ),
-          } : null,
-          patternResult: restoredState?.grid?.length
-            ? gridToPatternResult(restoredState.grid, defaultWorkshopConfig.brand)
-            : project?.patternResult ?? null,
+          editorState: freshEditorState,
+          patternResult: gridToPatternResult(freshEditorState.grid, defaultWorkshopConfig.brand),
           kind: 'draft',
           status: 'editing',
           paperState: 'draft',
           lastOpenedAt: new Date().toISOString(),
         });
-        if (restoredState?.grid?.length) {
-          writeLocalEditorDraft(projectId, restoredState);
-        }
+        await saveWorkshopDraft(projectId, { state: freshEditorState });
+        writeLocalEditorDraft(projectId, freshEditorState);
       }
     }
 

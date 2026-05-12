@@ -88,6 +88,10 @@ export function CollectionDetailPage() {
       config: item.pattern.config,
       patternResult,
       viewMode: 'pattern',
+      kind: 'pattern',
+      status: 'ready',
+      paperState: 'completed',
+      beadingState: 'idle',
     });
     return projectId;
   };

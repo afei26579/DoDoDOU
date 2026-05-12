@@ -20,6 +20,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
   const { projectId } = useParams();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const noticeTimerRef = useRef<number | null>(null);
   const { state, actions, isHydrating } = useWorkshopFlow(projectId ?? null);
 
   useEffect(() => {
@@ -40,6 +41,27 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
 
   const [isPublishOpen, setIsPublishOpen] = useState(false);
 
+  useEffect(() => {
+    return () => {
+      if (noticeTimerRef.current) {
+        window.clearTimeout(noticeTimerRef.current);
+      }
+    };
+  }, []);
+
+  const [backgroundRemovalNotice, setBackgroundRemovalNotice] = useState<string | null>(null);
+
+  const showBackgroundRemovalNotice = (message: string) => {
+    if (noticeTimerRef.current) {
+      window.clearTimeout(noticeTimerRef.current);
+    }
+    setBackgroundRemovalNotice(message);
+    noticeTimerRef.current = window.setTimeout(() => {
+      setBackgroundRemovalNotice(null);
+      noticeTimerRef.current = null;
+    }, 2400);
+  };
+
   const persistCurrentProject = async (nextPatternResult = state.patternResult) => {
     if (!projectId) return;
     await saveWorkshopProject(projectId, {
@@ -50,8 +72,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       viewMode: nextPatternResult ? 'pattern' : state.viewMode,
       kind: nextPatternResult ? 'pattern' : state.uploadedImage ? 'draft' : 'upload',
       status: nextPatternResult ? 'ready' : state.uploadedImage ? 'editing' : 'editing',
-      paperState: nextPatternResult ? 'completed' : null,
-      beadingState: nextPatternResult ? 'idle' : null,
+      paperState: nextPatternResult ? 'completed' : state.paperState,
+      beadingState: nextPatternResult ? 'idle' : state.beadingState,
       lastOpenedAt: new Date().toISOString(),
     });
   };
@@ -87,10 +109,14 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     if (!state.patternResult) return;
 
     const result = removePatternBackground(state.patternResult);
-    if (!result) return;
+    if (!result || result.removedCount <= 0) {
+      showBackgroundRemovalNotice('未检测到可去除背景');
+      return;
+    }
 
     actions.setPatternResult(result.newPatternResult);
     await persistCurrentProject(result.newPatternResult);
+    showBackgroundRemovalNotice(`完成，共去除${result.removedCount.toLocaleString()}颗`);
   };
 
   const handleUploadSelected = async (file: File) => {
@@ -125,8 +151,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       viewMode: 'image',
       kind: 'upload',
       status: 'editing',
-      paperState: null,
-      beadingState: null,
+      paperState: 'completed',
+      beadingState: 'idle',
       lastOpenedAt: new Date().toISOString(),
     });
 
@@ -175,6 +201,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         onOpenEditor={() => navigate(`/workshop/editor/${projectId ?? createProjectId()}`)}
         onOpenFocusMode={() => navigate(`/workshop/focus/${projectId ?? createProjectId()}`)}
         onUploadToGallery={() => setIsPublishOpen(true)}
+        backgroundRemovalNotice={backgroundRemovalNotice}
       />
       <GalleryPublishSheet
         open={isPublishOpen && mode === 'result'}

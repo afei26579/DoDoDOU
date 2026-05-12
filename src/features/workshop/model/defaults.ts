@@ -20,7 +20,8 @@ export const defaultWorkshopFlowState: WorkshopFlowState = {
   config: defaultWorkshopConfig,
   patternResult: null,
   viewMode: 'image',
-  paperState: null,
-  beadingState: null,
+  paperState: 'draft',
+  beadingState: 'idle',
+  beadingProgress: null,
   isGenerating: false,
 };
