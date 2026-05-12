@@ -1,0 +1,106 @@
+<svg width="380" height="380" viewBox="30 20 320 320" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>发现图标 - 激活状态</title>
+  <desc>温馨手工坊发现页导航图标激活态，紫色电量环放大镜</desc>
+
+  <defs>
+    <!-- 紫色发光滤镜 -->
+    <filter id="glow-purple" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur"/>
+      <feColorMatrix in="blur" type="matrix"
+        values="0.7 0 0.5 0 0.2
+                0   0 0.7 0 0.1
+                0.9 0 1.2 0 0.3
+                0   0 0   1 0" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- 外圈光晕渐变 -->
+    <radialGradient id="aura" cx="50%" cy="50%" r="50%">
+      <stop offset="60%" stop-color="#D8B4E2" stop-opacity="0"/>
+      <stop offset="85%" stop-color="#D8B4E2" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#B07CC8" stop-opacity="0.0"/>
+    </radialGradient>
+
+    <!-- 电量环渐变（顺时针紫色） -->
+    <linearGradient id="ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EED8F8"/>
+      <stop offset="40%" stop-color="#D8B4E2"/>
+      <stop offset="100%" stop-color="#A860C8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 背景光晕圆 -->
+  <circle cx="175" cy="170" r="175" fill="url(#aura)"/>
+
+  <!-- 电量底环（灰色轨道） -->
+  <circle cx="175" cy="170" r="148"
+    fill="none"
+    stroke="#EDE0F5"
+    stroke-width="10"
+    opacity="0.5"/>
+
+  <!-- 电量进度弧 270° （周长≈930，270°≈697） -->
+  <circle cx="175" cy="170" r="148"
+    fill="none"
+    stroke="url(#ring-grad)"
+    stroke-width="11"
+    stroke-linecap="round"
+    stroke-dasharray="697 233"
+    stroke-dashoffset="-58"
+    filter="url(#glow-purple)"/>
+
+  <!-- 电量弧起点圆球 -->
+  <circle cx="50" cy="92" r="7" fill="#D8B4E2" filter="url(#glow-purple)"/>
+  <!-- 电量弧终点圆球 -->
+  <circle cx="97" cy="295" r="7" fill="#A860C8" filter="url(#glow-purple)"/>
+
+  <!-- 放大镜外圈 - 紫色描边 -->
+  <circle cx="175" cy="170" r="118" fill="#F0E8F8" stroke="#C090D8" stroke-width="14" filter="url(#glow-purple)"/>
+
+  <!-- 放大镜内圈 - 淡紫镜面 -->
+  <circle cx="175" cy="170" r="104" fill="#FBF7FF"/>
+
+  <!-- 镜面内高光 -->
+  <circle cx="145" cy="140" r="22" fill="#FFFFFF" opacity="0.5"/>
+
+  <!-- 豆豆 1 - 橙红色 大 -->
+  <circle cx="158" cy="158" r="26" fill="#F0907A" stroke="#D06050" stroke-width="3.5"/>
+  <circle cx="150" cy="150" r="8" fill="#FFFFFF" opacity="0.35"/>
+
+  <!-- 豆豆 2 - 薄荷绿 大 -->
+  <circle cx="204" cy="148" r="22" fill="#7ED9B0" stroke="#4DBF8A" stroke-width="3.5"/>
+  <circle cx="197" cy="141" r="7" fill="#FFFFFF" opacity="0.35"/>
+
+  <!-- 豆豆 3 - 柔紫 大 -->
+  <circle cx="200" cy="192" r="22" fill="#C89EDA" stroke="#A870C0" stroke-width="3.5"/>
+  <circle cx="193" cy="185" r="7" fill="#FFFFFF" opacity="0.35"/>
+
+  <!-- 豆豆 4 - 暖黄 小 -->
+  <circle cx="158" cy="196" r="16" fill="#F9D77E" stroke="#E0B040" stroke-width="3"/>
+  <circle cx="152" cy="190" r="5" fill="#FFFFFF" opacity="0.35"/>
+
+  <!-- 豆豆 5 - 蓝色 小 -->
+  <circle cx="178" cy="175" r="13" fill="#A0C8F0" stroke="#6090D0" stroke-width="2.5"/>
+  <circle cx="173" cy="170" r="4" fill="#FFFFFF" opacity="0.35"/>
+
+  <!-- 放大镜外框高光弧 -->
+  <path d="M90 110 Q105 75 145 62" stroke="#C8A8E8" stroke-width="8" stroke-linecap="round" fill="none" opacity="0.8"/>
+
+  <!-- 把柄 - 亮紫色 -->
+  <line x1="264" y1="259" x2="308" y2="303" stroke="#9A60C8" stroke-width="28" stroke-linecap="round"/>
+  <!-- 把柄高光 -->
+  <line x1="264" y1="259" x2="308" y2="303" stroke="#D8B4F0" stroke-width="10" stroke-linecap="round" opacity="0.55"/>
+
+  <!-- 装饰星星 - 紫色发光 -->
+  <path d="M320 90 L325 103 L338 108 L325 113 L320 126 L315 113 L302 108 L315 103 Z" fill="#D8B4E2" opacity="1" filter="url(#glow-purple)"/>
+  <path d="M44 218 L47 227 L56 230 L47 233 L44 242 L41 233 L32 230 L41 227 Z" fill="#C890E0" opacity="1" filter="url(#glow-purple)"/>
+
+  <!-- 小圆点装饰 - 亮紫 -->
+  <circle cx="335" cy="152" r="6" fill="#D8B4E2" opacity="1" filter="url(#glow-purple)"/>
+  <circle cx="40" cy="128" r="5" fill="#C8A0E8" opacity="0.9"/>
+  <circle cx="68" cy="298" r="7" fill="#D8B4E2" opacity="0.9" filter="url(#glow-purple)"/>
+
+</svg>

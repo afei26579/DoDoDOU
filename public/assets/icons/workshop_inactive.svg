@@ -1,0 +1,109 @@
+<svg width="100%" viewBox="40 50 320 320" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>工坊图标 - 未激活状态</title>
+  <desc>温馨手工坊工坊页导航图标，拼豆板与夹子</desc>
+
+  <!-- ===== 拼豆板主体 ===== -->
+  <!-- 板底阴影 -->
+  <rect x="72" y="82" width="228" height="228" rx="32" ry="32"
+        fill="#C8B09A" opacity="0.35"/>
+  <!-- 板主体 - 米色暖调 -->
+  <rect x="66" y="76" width="228" height="228" rx="32" ry="32"
+        fill="#EDE0D0" stroke="#8B6F55" stroke-width="12"/>
+  <!-- 板面高光 -->
+  <rect x="80" y="90" width="80" height="40" rx="16"
+        fill="#FFFFFF" opacity="0.28"/>
+
+  <!-- ===== 插孔网格 5×5（居中，小尺寸仍清晰）===== -->
+  <!-- 行1 -->
+  <circle cx="122" cy="136" r="7" fill="#C8B09A" opacity="0.55"/>
+  <circle cx="154" cy="136" r="7" fill="#C8B09A" opacity="0.55"/>
+  <circle cx="186" cy="136" r="7" fill="#C8B09A" opacity="0.55"/>
+  <circle cx="218" cy="136" r="7" fill="#C8B09A" opacity="0.55"/>
+  <circle cx="250" cy="136" r="7" fill="#C8B09A" opacity="0.55"/>
+  <!-- 行2 -->
+  <circle cx="122" cy="168" r="7" fill="#C8B09A" opacity="0.55"/>
+  <circle cx="250" cy="168" r="7" fill="#C8B09A" opacity="0.55"/>
+  <!-- 行3 -->
+  <circle cx="122" cy="200" r="7" fill="#C8B09A" opacity="0.55"/>
+  <circle cx="250" cy="200" r="7" fill="#C8B09A" opacity="0.55"/>
+  <!-- 行4 -->
+  <circle cx="122" cy="232" r="7" fill="#C8B09A" opacity="0.55"/>
+  <circle cx="154" cy="232" r="7" fill="#C8B09A" opacity="0.55"/>
+  <circle cx="186" cy="232" r="7" fill="#C8B09A" opacity="0.55"/>
+  <circle cx="218" cy="232" r="7" fill="#C8B09A" opacity="0.55"/>
+  <circle cx="250" cy="232" r="7" fill="#C8B09A" opacity="0.55"/>
+
+  <!-- ===== 心形拼豆图案（中间区域）===== -->
+  <!-- 心形左上 -->
+  <circle cx="154" cy="168" r="16" fill="#F0907A" stroke="#D06050" stroke-width="3"/>
+  <circle cx="148" cy="162" r="5" fill="#FFFFFF" opacity="0.38"/>
+  <!-- 心形右上 -->
+  <circle cx="186" cy="168" r="16" fill="#C89EDA" stroke="#A870C0" stroke-width="3"/>
+  <circle cx="180" cy="162" r="5" fill="#FFFFFF" opacity="0.38"/>
+  <!-- 心形左中 -->
+  <circle cx="138" cy="190" r="16" fill="#7ED9B0" stroke="#4DBF8A" stroke-width="3"/>
+  <circle cx="132" cy="184" r="5" fill="#FFFFFF" opacity="0.38"/>
+  <!-- 心形右中 -->
+  <circle cx="200" cy="190" r="16" fill="#F9D77E" stroke="#E0B040" stroke-width="3"/>
+  <circle cx="194" cy="184" r="5" fill="#FFFFFF" opacity="0.38"/>
+  <!-- 心形底部左 -->
+  <circle cx="154" cy="212" r="16" fill="#A0C8F0" stroke="#6090D0" stroke-width="3"/>
+  <circle cx="148" cy="206" r="5" fill="#FFFFFF" opacity="0.38"/>
+  <!-- 心形底部中 -->
+  <circle cx="186" cy="212" r="14" fill="#F0907A" stroke="#D06050" stroke-width="3"/>
+  <circle cx="180" cy="206" r="4" fill="#FFFFFF" opacity="0.38"/>
+  <!-- 心形顶部中 -->
+  <circle cx="170" cy="155" r="13" fill="#FFDAC1" stroke="#E0A080" stroke-width="2.5"/>
+  <circle cx="165" cy="150" r="4" fill="#FFFFFF" opacity="0.38"/>
+
+  <!-- ===== 散落豆豆（板外左下）===== -->
+  <circle cx="88" cy="290" r="11" fill="#C89EDA" stroke="#A870C0" stroke-width="2.5"/>
+  <circle cx="84" cy="286" r="3.5" fill="#FFFFFF" opacity="0.4"/>
+
+  <!-- ===== 夹子 ===== -->
+  <!-- 夹子主臂左 -->
+  <path d="M268 100 Q285 130 278 200 Q275 230 260 250"
+        stroke="#7A5A8A" stroke-width="18" stroke-linecap="round" fill="none"/>
+  <!-- 夹子主臂左高光 -->
+  <path d="M268 100 Q285 130 278 200 Q275 230 260 250"
+        stroke="#C8A8E0" stroke-width="6" stroke-linecap="round" fill="none" opacity="0.45"/>
+  <!-- 夹子主臂右 -->
+  <path d="M300 100 Q285 130 292 200 Q295 230 310 250"
+        stroke="#7A5A8A" stroke-width="18" stroke-linecap="round" fill="none"/>
+  <!-- 夹子主臂右高光 -->
+  <path d="M300 100 Q285 130 292 200 Q295 230 310 250"
+        stroke="#C8A8E0" stroke-width="6" stroke-linecap="round" fill="none" opacity="0.45"/>
+  <!-- 夹子顶部弯弧 -->
+  <path d="M268 100 Q284 80 300 100"
+        stroke="#8B6F55" stroke-width="14" stroke-linecap="round" fill="none"/>
+  <path d="M268 100 Q284 80 300 100"
+        stroke="#C8A880" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.5"/>
+  <!-- 夹子中段弹簧环 -->
+  <ellipse cx="285" cy="185" rx="18" ry="10"
+           fill="none" stroke="#8B6F55" stroke-width="8"/>
+  <ellipse cx="285" cy="185" rx="18" ry="10"
+           fill="none" stroke="#C8A880" stroke-width="3" opacity="0.5"/>
+  <!-- 夹嘴左 -->
+  <path d="M260 250 Q248 272 258 285"
+        stroke="#7A5A8A" stroke-width="16" stroke-linecap="round" fill="none"/>
+  <!-- 夹嘴右 -->
+  <path d="M310 250 Q322 272 312 285"
+        stroke="#7A5A8A" stroke-width="16" stroke-linecap="round" fill="none"/>
+  <!-- 夹嘴高光 -->
+  <path d="M260 250 Q248 272 258 285"
+        stroke="#C8A8E0" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.4"/>
+  <path d="M310 250 Q322 272 312 285"
+        stroke="#C8A8E0" stroke-width="5" stroke-linecap="round" fill="none" opacity="0.4"/>
+
+  <!-- ===== 装饰元素 ===== -->
+  <!-- 右上星星 -->
+  <path d="M336 78 L339 87 L348 90 L339 93 L336 102 L333 93 L324 90 L333 87 Z"
+        fill="#FFDAC1" opacity="0.9"/>
+  <!-- 左侧星星 -->
+  <path d="M46 210 L49 218 L57 221 L49 224 L46 232 L43 224 L35 221 L43 218 Z"
+        fill="#D8B4E2" opacity="0.8"/>
+  <!-- 小圆点 -->
+  <circle cx="48" cy="120" r="5" fill="#FFDAC1" opacity="0.8"/>
+  <circle cx="342" cy="180" r="5" fill="#B5EAD7" opacity="0.9"/>
+  <circle cx="58" cy="318" r="6" fill="#D8B4E2" opacity="0.6"/>
+</svg>

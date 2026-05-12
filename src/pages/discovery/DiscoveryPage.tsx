@@ -11,20 +11,52 @@ type DiscoveryPageProps = {
 
 const quickActions = [
   {
-    title: '照片变图纸',
-    subtitle: '上传美好瞬间',
+    title: '图纸生成',
+    subtitle: '一键生成像素图纸',
+    badge: '智能生成',
     accent: 'mint',
-    icon: '◌',
     route: 'upload',
   },
   {
     title: '新的开始',
-    subtitle: '创建空白画布',
+    subtitle: '空白画布',
+    badge: '自由创作',
     accent: 'lavender',
-    icon: '✦',
     route: 'blank',
   },
 ] as const;
+
+function QuickCardIcon({ route }: { route: (typeof quickActions)[number]['route'] }) {
+  if (route === 'upload') {
+    return (
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+        <rect x="2" y="5" width="24" height="18" rx="4" fill="rgba(255,255,255,0.9)" stroke="#4DBF8A" strokeWidth="1.5" />
+        <circle cx="10" cy="12" r="3" fill="#7ED9B0" />
+        <path d="M2 20 L8 14 L13 19 L18 13 L26 20" stroke="#4DBF8A" strokeWidth="1.8" strokeLinejoin="round" />
+        <path d="M20 4 L23 7 L20 10" stroke="#4DBF8A" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M23 7 L17 7" stroke="#4DBF8A" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+      {[[5, 5], [13, 5], [21, 5], [5, 13], [13, 13], [21, 13], [5, 21], [13, 21], [21, 21]].map(([x, y], index) => (
+        <rect
+          key={`${x}-${y}`}
+          x={x - 3.5}
+          y={y - 3.5}
+          width="7"
+          height="7"
+          rx="2.5"
+          fill={index === 4 ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.65)'}
+          stroke="rgba(255,255,255,0.3)"
+          strokeWidth="0.5"
+        />
+      ))}
+    </svg>
+  );
+}
 
 const inspirationTones = ['rose', 'mint', 'amber', 'mauve', 'rose'] as const;
 
@@ -36,7 +68,6 @@ const beginnerSteps = [
 
 export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }: DiscoveryPageProps) {
   const navigate = useNavigate();
-  const marqueeRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [inspirationItems, setInspirationItems] = useState<GalleryItemCard[]>([]);
@@ -78,28 +109,6 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
     };
   }, []);
 
-  useEffect(() => {
-    const marquee = marqueeRef.current;
-    if (!marquee) return;
-
-    let animationFrame = 0;
-
-    const tick = () => {
-      if (!isPaused) {
-        const maxScrollLeft = marquee.scrollWidth - marquee.clientWidth;
-        const nextScrollLeft = marquee.scrollLeft + 0.6;
-
-        marquee.scrollLeft = nextScrollLeft >= maxScrollLeft ? 0 : nextScrollLeft;
-      }
-
-      animationFrame = window.requestAnimationFrame(tick);
-    };
-
-    animationFrame = window.requestAnimationFrame(tick);
-
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [isPaused]);
-
   return (
     <main className="discovery-page">
       <section className="home-hero" aria-label="首页问候">
@@ -114,9 +123,23 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
             data-route={action.route}
             onClick={action.route === 'upload' ? () => fileInputRef.current?.click() : action.route === 'blank' ? onCreateCanvas : onOpenWorkshop}
           >
-            <span className="quick-card__icon" aria-hidden="true">{action.icon}</span>
+            <span className="quick-card__bead quick-card__bead--large" aria-hidden="true" />
+            <span className="quick-card__bead quick-card__bead--medium" aria-hidden="true" />
+            <span className="quick-card__bead quick-card__bead--small" aria-hidden="true" />
+            <span className="quick-card__dot quick-card__dot--one" aria-hidden="true" />
+            <span className="quick-card__dot quick-card__dot--two" aria-hidden="true" />
+            <span className="quick-card__grid" aria-hidden="true" />
+            <span className="quick-card__icon">
+              <QuickCardIcon route={action.route} />
+            </span>
             <strong>{action.title}</strong>
             <p>{action.subtitle}</p>
+            <span className="quick-card__badge">{action.badge}</span>
+            <span className="quick-card__arrow" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 7h8M8 4l3 3-3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
           </button>
         ))}
       </section>
@@ -147,8 +170,28 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
           <h3>灵感画廊</h3>
         </div>
 
-        <div className="inspiration-marquee" aria-label="灵感卡片列表">
-          <div className="inspiration-track" ref={marqueeRef} onPointerEnter={() => setIsPaused(true)} onPointerLeave={() => setIsPaused(false)}>
+        <div
+          className="inspiration-marquee"
+          aria-label="灵感卡片列表"
+          onPointerEnter={(event) => {
+            if (event.pointerType === 'mouse') setIsPaused(true);
+          }}
+          onPointerLeave={(event) => {
+            if (event.pointerType === 'mouse') setIsPaused(false);
+          }}
+          onPointerDown={(event) => {
+            if (event.pointerType !== 'mouse') setIsPaused(true);
+          }}
+          onPointerUp={(event) => {
+            if (event.pointerType !== 'mouse') setIsPaused(false);
+          }}
+          onPointerCancel={(event) => {
+            if (event.pointerType !== 'mouse') setIsPaused(false);
+          }}
+          onFocus={() => setIsPaused(true)}
+          onBlur={() => setIsPaused(false)}
+        >
+          <div className={`inspiration-track ${isPaused ? 'is-paused' : ''}`} style={{ animationPlayState: isPaused ? 'paused' : 'running' }}>
             {Array.from({ length: 2 }).flatMap((_, repeatIndex) =>
               inspirationItems.map((item, index) => (
                 <article

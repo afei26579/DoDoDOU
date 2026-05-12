@@ -1,0 +1,50 @@
+<svg width="100%" viewBox="30 20 320 320" role="img" xmlns="http://www.w3.org/2000/svg" style="">
+  <title style="fill:rgb(0, 0, 0);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">发现图标 - 放大镜</title>
+  <desc style="fill:rgb(0, 0, 0);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto">温馨手工坊发现页导航图标，放大镜内含彩色拼豆颗粒</desc>
+
+  <!-- 背景透明 -->
+
+  <!-- 放大镜外圈 - 深色描边环 -->
+  <circle cx="175" cy="170" r="118" fill="#EDE0D0" stroke="#8B6F55" stroke-width="14" style="fill:rgb(237, 224, 208);stroke:rgb(139, 111, 85);color:rgb(0, 0, 0);stroke-width:14px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <!-- 放大镜内圈 - 米白镜面 -->
+  <circle cx="175" cy="170" r="104" fill="#FAF6F0" style="fill:rgb(250, 246, 240);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <!-- 镜面内高光 -->
+  <circle cx="145" cy="140" r="22" fill="#FFFFFF" opacity="0.45" style="fill:rgb(255, 255, 255);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.45;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- 豆豆 1 - 橙红色 大 -->
+  <circle cx="158" cy="158" r="26" fill="#F0907A" stroke="#D06050" stroke-width="3.5" style="fill:rgb(240, 144, 122);stroke:rgb(208, 96, 80);color:rgb(0, 0, 0);stroke-width:3.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <circle cx="150" cy="150" r="8" fill="#FFFFFF" opacity="0.35" style="fill:rgb(255, 255, 255);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.35;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- 豆豆 2 - 薄荷绿 大 -->
+  <circle cx="204" cy="148" r="22" fill="#7ED9B0" stroke="#4DBF8A" stroke-width="3.5" style="fill:rgb(126, 217, 176);stroke:rgb(77, 191, 138);color:rgb(0, 0, 0);stroke-width:3.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <circle cx="197" cy="141" r="7" fill="#FFFFFF" opacity="0.35" style="fill:rgb(255, 255, 255);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.35;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- 豆豆 3 - 柔紫 大 -->
+  <circle cx="200" cy="192" r="22" fill="#C89EDA" stroke="#A870C0" stroke-width="3.5" style="fill:rgb(200, 158, 218);stroke:rgb(168, 112, 192);color:rgb(0, 0, 0);stroke-width:3.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <circle cx="193" cy="185" r="7" fill="#FFFFFF" opacity="0.35" style="fill:rgb(255, 255, 255);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.35;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- 豆豆 4 - 暖黄 小 -->
+  <circle cx="158" cy="196" r="16" fill="#F9D77E" stroke="#E0B040" stroke-width="3" style="fill:rgb(249, 215, 126);stroke:rgb(224, 176, 64);color:rgb(0, 0, 0);stroke-width:3px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <circle cx="152" cy="190" r="5" fill="#FFFFFF" opacity="0.35" style="fill:rgb(255, 255, 255);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.35;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- 豆豆 5 - 蓝色 小 -->
+  <circle cx="178" cy="175" r="13" fill="#A0C8F0" stroke="#6090D0" stroke-width="2.5" style="fill:rgb(160, 200, 240);stroke:rgb(96, 144, 208);color:rgb(0, 0, 0);stroke-width:2.5px;stroke-linecap:butt;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <circle cx="173" cy="170" r="4" fill="#FFFFFF" opacity="0.35" style="fill:rgb(255, 255, 255);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.35;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- 放大镜外框高光弧 -->
+  <path d="M90 110 Q105 75 145 62" stroke="#C8A880" stroke-width="7" stroke-linecap="round" fill="none" opacity="0.6" style="fill:none;stroke:rgb(200, 168, 128);color:rgb(0, 0, 0);stroke-width:7px;stroke-linecap:round;stroke-linejoin:miter;opacity:0.6;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- 把柄 - 短且粗，紫色 -->
+  <line x1="264" y1="259" x2="308" y2="303" stroke="#7A5A8A" stroke-width="28" stroke-linecap="round" style="fill:rgb(0, 0, 0);stroke:rgb(122, 90, 138);color:rgb(0, 0, 0);stroke-width:28px;stroke-linecap:round;stroke-linejoin:miter;opacity:1;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <!-- 把柄高光 -->
+  <line x1="264" y1="259" x2="308" y2="303" stroke="#C8A8E0" stroke-width="10" stroke-linecap="round" opacity="0.45" style="fill:rgb(0, 0, 0);stroke:rgb(200, 168, 224);color:rgb(0, 0, 0);stroke-width:10px;stroke-linecap:round;stroke-linejoin:miter;opacity:0.45;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- 装饰星星 -->
+  <path d="M320 90 L324 100 L334 104 L324 108 L320 118 L316 108 L306 104 L316 100 Z" fill="#FFDAC1" opacity="0.9" style="fill:rgb(255, 218, 193);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.9;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <path d="M58 230 L61 237 L68 240 L61 243 L58 250 L55 243 L48 240 L55 237 Z" fill="#D8B4E2" opacity="0.8" style="fill:rgb(216, 180, 226);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.8;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+
+  <!-- 小圆点装饰 -->
+  <circle cx="330" cy="155" r="5" fill="#B5EAD7" opacity="0.9" style="fill:rgb(181, 234, 215);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.9;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <circle cx="42" cy="130" r="4" fill="#FFDAC1" opacity="0.8" style="fill:rgb(255, 218, 193);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.8;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+  <circle cx="70" cy="300" r="6" fill="#D8B4E2" opacity="0.6" style="fill:rgb(216, 180, 226);stroke:none;color:rgb(0, 0, 0);stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;opacity:0.6;font-family:&quot;Anthropic Sans&quot;, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif;font-size:16px;font-weight:400;text-anchor:start;dominant-baseline:auto"/>
+</svg>
