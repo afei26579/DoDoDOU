@@ -22,6 +22,7 @@ type WorkshopPageProps = {
   onSwitchViewMode: (mode: WorkshopFlowState['viewMode']) => void;
   onBackToOriginal: () => void;
   onRegenerate: () => void;
+  onAutoCropPattern: () => void;
   onRemoveBackground: () => void;
   onUploadImage: () => void;
   onReuploadImage: () => void;
@@ -47,6 +48,7 @@ export function WorkshopPage({
   onSwitchViewMode,
   onBackToOriginal,
   onRegenerate,
+  onAutoCropPattern,
   onRemoveBackground,
   onUploadImage,
   onReuploadImage,
@@ -283,7 +285,7 @@ export function WorkshopPage({
               onViewPattern={onViewPattern}
               onBackToOriginal={onBackToOriginal}
               onRegenerate={onRegenerate}
-              onRemoveBackground={onRemoveBackground}
+              onAutoCropPattern={onAutoCropPattern}
               onReuploadImage={onReuploadImage}
               onUploadToGallery={onUploadToGallery}
             />

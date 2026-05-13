@@ -161,6 +161,7 @@ export function WorkshopHomePage({
         onSwitchViewMode={onSwitchViewMode}
         onBackToOriginal={() => navigate('/workshop')}
         onRegenerate={onGeneratePattern}
+        onAutoCropPattern={() => {}}
         onRemoveBackground={() => {}}
         onUploadImage={handleUploadImage}
         onReuploadImage={handleUploadImage}

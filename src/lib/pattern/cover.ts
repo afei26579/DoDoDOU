@@ -1,6 +1,5 @@
 import type { PatternResult } from '../../features/workshop/model/types';
 
-const COVER_BACKGROUND_COLOR = '#F3F1EC';
 const MAX_COVER_SIDE = 960;
 const MIN_CELL_SIZE = 4;
 
@@ -25,16 +24,14 @@ export function generatePatternCover(pattern: PatternResult): PatternCoverImage 
   }
 
   ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = COVER_BACKGROUND_COLOR;
-  ctx.fillRect(0, 0, width, height);
+  ctx.clearRect(0, 0, width, height);
 
   for (const cell of pattern.cells) {
     if (cell.hex === 'transparent' || cell.isExternal) {
-      ctx.fillStyle = COVER_BACKGROUND_COLOR;
-    } else {
-      ctx.fillStyle = cell.hex;
+      continue;
     }
 
+    ctx.fillStyle = cell.hex;
     ctx.fillRect(cell.x * cellSize, cell.y * cellSize, cellSize, cellSize);
   }
 

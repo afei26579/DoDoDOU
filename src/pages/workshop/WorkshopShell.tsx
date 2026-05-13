@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { defaultCropTransform, defaultWorkshopConfig } from '../../features/workshop/model/defaults';
+import { deleteWorkshopDraft } from '../../features/workshop/model/draftStore';
 import { ensureWorkshopProject, markWorkshopProjectOpened, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
+import { cropPatternToEffectiveBounds } from '../../lib/pattern/effectiveCrop';
 import { generatePatternFromImage } from '../../lib/pattern/generator';
 import { removePatternBackground } from '../../lib/pattern/remove-background';
 import { WorkshopPage } from './WorkshopPage';
@@ -14,6 +16,13 @@ type WorkshopShellProps = {
 
 function createProjectId() {
   return String(Date.now());
+}
+
+const WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX = 'dodoudou:workshop-editor-local-draft:';
+
+function removeLocalEditorDraft(projectId: string) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(`${WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX}${projectId}`);
 }
 
 export function WorkshopShell({ mode }: WorkshopShellProps) {
@@ -61,21 +70,6 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     }, 2400);
   };
 
-  const persistCurrentProject = async (nextPatternResult = state.patternResult) => {
-    if (!projectId) return;
-    await saveWorkshopProject(projectId, {
-      uploadedImage: state.uploadedImage,
-      cropTransform: state.cropTransform,
-      config: state.config,
-      patternResult: nextPatternResult,
-      viewMode: nextPatternResult ? 'pattern' : state.viewMode,
-      kind: nextPatternResult ? 'pattern' : 'upload',
-      status: nextPatternResult ? 'ready' : state.uploadedImage ? 'editing' : 'editing',
-      beadingState: nextPatternResult ? 'idle' : state.beadingState,
-      lastOpenedAt: new Date().toISOString(),
-    });
-  };
-
   const handleGeneratePattern = async () => {
     if (!state.uploadedImage || !projectId) return;
 
@@ -102,8 +96,41 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     }
   };
 
+  const handleAutoCropPattern = async () => {
+    if (!state.patternResult || !projectId) return;
+
+    const result = cropPatternToEffectiveBounds(state.patternResult);
+    if (!result) {
+      showBackgroundRemovalNotice('当前图纸没有可裁剪的有效格子');
+      return;
+    }
+
+    if (!result.cropped) {
+      showBackgroundRemovalNotice('图纸已经是有效尺寸');
+      return;
+    }
+
+    await deleteWorkshopDraft(projectId);
+    removeLocalEditorDraft(projectId);
+    await saveWorkshopProject(projectId, {
+      uploadedImage: state.uploadedImage,
+      cropTransform: state.cropTransform,
+      config: state.config,
+      patternResult: result.newPatternResult,
+      viewMode: 'pattern',
+      kind: 'pattern',
+      status: 'ready',
+      beadingState: 'idle',
+      beadingProgress: null,
+      editorState: null,
+      lastOpenedAt: new Date().toISOString(),
+    });
+    actions.setPatternResult(result.newPatternResult);
+    showBackgroundRemovalNotice(`已裁剪为 ${result.newPatternResult.width}×${result.newPatternResult.height}`);
+  };
+
   const handleRemoveBackground = async () => {
-    if (!state.patternResult) return;
+    if (!state.patternResult || !projectId) return;
 
     const result = removePatternBackground(state.patternResult);
     if (!result || result.removedCount <= 0) {
@@ -111,8 +138,22 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       return;
     }
 
+    await deleteWorkshopDraft(projectId);
+    removeLocalEditorDraft(projectId);
+    await saveWorkshopProject(projectId, {
+      uploadedImage: state.uploadedImage,
+      cropTransform: state.cropTransform,
+      config: state.config,
+      patternResult: result.newPatternResult,
+      viewMode: 'pattern',
+      kind: 'pattern',
+      status: 'ready',
+      beadingState: 'idle',
+      beadingProgress: null,
+      editorState: null,
+      lastOpenedAt: new Date().toISOString(),
+    });
     actions.setPatternResult(result.newPatternResult);
-    await persistCurrentProject(result.newPatternResult);
     showBackgroundRemovalNotice(`完成，共去除${result.removedCount.toLocaleString()}颗`);
   };
 
@@ -181,6 +222,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         onSwitchViewMode={actions.setViewMode}
         onBackToOriginal={() => navigate(`/workshop/create/${projectId ?? createProjectId()}`)}
         onRegenerate={handleGeneratePattern}
+        onAutoCropPattern={handleAutoCropPattern}
         onRemoveBackground={handleRemoveBackground}
         onUploadImage={() => {
           console.debug('[workshop] file input click requested', { projectId, hasInput: Boolean(fileInputRef.current) });

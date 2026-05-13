@@ -22,7 +22,7 @@ const previewStats = [
 ] as const;
 
 const actions: PreviewAction[] = [
-  { title: '去背景', active: true },
+  { title: '自动裁剪', active: true },
   { title: '下载图纸', active: false, action: 'download' },
   { title: '手动编辑', active: false, action: 'edit' },
   { title: '立即拼豆', active: false, action: 'focus' },

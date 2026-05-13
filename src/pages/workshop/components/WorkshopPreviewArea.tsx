@@ -137,8 +137,10 @@ function WorkshopPatternView({ patternResult }: { patternResult: PatternResult }
   useEffect(() => {
     if (!patternResult || !patternCanvasRef.current) return;
     const canvas = patternCanvasRef.current;
-    canvas.width = 1200;
-    canvas.height = 1200;
+    const longestSide = Math.max(patternResult.width, patternResult.height, 1);
+    const cellSize = Math.max(1, Math.floor(1200 / longestSide));
+    canvas.width = Math.max(1, patternResult.width * cellSize);
+    canvas.height = Math.max(1, patternResult.height * cellSize);
     drawPatternPreview({ canvas, pattern: patternResult });
   }, [patternResult]);
 
@@ -215,11 +217,7 @@ function WorkshopPatternView({ patternResult }: { patternResult: PatternResult }
             <strong>{tooltipText}</strong>
           </div>
         ) : null}
-        <div className="workshop-canvas__pattern-meta">
-          <span>{patternResult.width} × {patternResult.height}</span>
-          <span>{patternResult.stats.colorCount} 色</span>
-          <span>{patternResult.stats.totalCells} 颗豆豆</span>
-        </div>
+       
       </div>
     </div>
   );

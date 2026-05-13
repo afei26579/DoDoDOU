@@ -10,6 +10,7 @@ import {
 } from '../../features/workshop/model/projectStore';
 
 const collectionFilters = ['全部', '最新', '最热', '我的'] as const;
+const collectionCardBackgrounds = ['#F9F0FF', '#F0FBF6', '#FFF8F0', '#FFF0F6', '#EDF2FF'];
 
 function formatPatternSummary(item: GalleryItemCard) {
   const summary = item.patternSummary;
@@ -17,6 +18,15 @@ function formatPatternSummary(item: GalleryItemCard) {
   const colorCount = summary?.paletteCount ?? item.tags.length;
   const beadCount = summary?.beadCount ?? null;
   return `${sizeText} · ${colorCount} 色${beadCount ? ` · ${beadCount} 颗` : ''}`;
+}
+
+function getPatternMeta(item: GalleryItemCard) {
+  const summary = item.patternSummary;
+  return {
+    size: summary ? `${summary.width}×${summary.height}` : `${item.coverWidth ?? '-'}×${item.coverHeight ?? '-'}`,
+    colors: `${summary?.paletteCount ?? item.tags.length}色`,
+    beads: summary?.beadCount ? `${summary.beadCount}颗` : '图纸',
+  };
 }
 
 function formatMyProjectSummary(project: WorkshopProjectCard) {
@@ -37,19 +47,6 @@ export function CollectionPage() {
   const [myLoading, setMyLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<(typeof collectionFilters)[number]>('全部');
-
-  const [columnCount, setColumnCount] = useState(2);
-
-  useEffect(() => {
-    const updateColumnCount = () => {
-      const width = window.innerWidth;
-      setColumnCount(width >= 1120 ? 4 : width >= 760 ? 3 : 2);
-    };
-
-    updateColumnCount();
-    window.addEventListener('resize', updateColumnCount);
-    return () => window.removeEventListener('resize', updateColumnCount);
-  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -94,11 +91,6 @@ export function CollectionPage() {
       alive = false;
     };
   }, []);
-
-  const columns = useMemo(
-    () => Array.from({ length: columnCount }, (_, columnIndex) => items.filter((_, index) => index % columnCount === columnIndex)),
-    [columnCount, items],
-  );
 
   const myGroups = useMemo(() => groupWorkshopProjects(myItems), [myItems]);
   const myRecentItems = myGroups.recent.slice(0, 4);
@@ -228,38 +220,44 @@ export function CollectionPage() {
           {loading ? <div className="collection-empty">正在加载画册…</div> : null}
           {error ? <div className="collection-empty">{error}</div> : null}
           {!loading && !error ? (
-            columns.map((column, columnIndex) => (
-              <div key={columnIndex} className="collection-masonry__column">
-                {column.map((item) => (
-                  <article
-                    key={item.id}
-                    className="collection-card collection-card--mauve"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => navigate(`/collection/${encodeURIComponent(item.id)}`)}
-                  >
-                    <div className="collection-card__topbar" aria-hidden="true">
-                      <span className="collection-card__title">{item.title}</span>
-                      <span className="collection-card__status">{item.sourceType === 'official' ? '官方' : '社区'}</span>
+            items.map((item, index) => {
+              const meta = getPatternMeta(item);
+              return (
+                <article
+                  key={item.id}
+                  className="collection-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/collection/${encodeURIComponent(item.id)}`)}
+                >
+                  <div className="collection-card__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }} aria-hidden="true">
+                    {item.coverUrl ? (
+                      <img
+                        className="collection-card__image"
+                        src={item.coverUrl}
+                        alt=""
+                        width={item.coverWidth}
+                        height={item.coverHeight}
+                      />
+                    ) : null}
+                    <button type="button" className="collection-card__favorite" aria-label="收藏图纸" tabIndex={-1}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path d="M12 21s-8.5-6.7-8.5-12.2C3.5 6.2 5.5 4 8 4c1.7 0 3.1.9 4 2.2C12.9 4.9 14.3 4 16 4c2.5 0 4.5 2.2 4.5 4.8C20.5 14.3 12 21 12 21Z" />
+                      </svg>
+                    </button>
+                    <span className="collection-card__status">{item.sourceType === 'official' ? '官方' : '社区'}</span>
+                  </div>
+                  <div className="collection-card__body">
+                    <h3 className="collection-card__title">{item.title}</h3>
+                    <div className="collection-card__meta" aria-label={formatPatternSummary(item)}>
+                      <span className="collection-card__pill collection-card__pill--size">{meta.size}</span>
+                      <span className="collection-card__pill collection-card__pill--color">{meta.colors}</span>
+                      <span className="collection-card__pill collection-card__pill--count">{meta.beads}</span>
                     </div>
-                    <div className="collection-card__media collection-card__media--tall" aria-hidden="true">
-                      {item.coverUrl ? (
-                        <img
-                          className="collection-card__image"
-                          src={item.coverUrl}
-                          alt=""
-                          width={item.coverWidth}
-                          height={item.coverHeight}
-                        />
-                      ) : null}
-                    </div>
-                    <div className="collection-card__body">
-                      <p>{formatPatternSummary(item)}</p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ))
+                  </div>
+                </article>
+              );
+            })
           ) : null}
         </section>
       ) : null}

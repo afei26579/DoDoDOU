@@ -1,0 +1,638 @@
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&family=Nunito:wght@400;500;600;700&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --primary: #D8B4E2;
+    --primary-deep: #B48EC8;
+    --bg: #FDFBF7;
+    --surface: #FFFFFF;
+    --text: #5D534A;
+    --text-soft: #9B8F88;
+    --mint: #B5EAD7;
+    --mint-deep: #6BCBA8;
+    --peach: #FFDAC1;
+    --peach-deep: #F5A878;
+    --yellow: #FFF0B3;
+    --tag-bg: #F3EBF8;
+    --tag-text: #9B6BB5;
+  }
+
+  .phone {
+    width: 380px;
+    min-height: 780px;
+    background: var(--bg);
+    font-family: 'Nunito', sans-serif;
+    color: var(--text);
+    position: relative;
+    overflow: hidden;
+    padding-bottom: 80px;
+  }
+
+  /* TOP BAR */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 20px 12px;
+  }
+  .topbar-title {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 22px;
+    color: var(--text);
+    letter-spacing: 0.5px;
+  }
+  .cloud-btn {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: none;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    opacity: 0.85;
+  }
+  .cloud-btn svg { width: 18px; height: 18px; fill: white; }
+
+  /* TABS */
+  .tabs {
+    display: flex;
+    gap: 8px;
+    padding: 0 20px 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab {
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 1.5px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .tab.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+  }
+  .tab:not(.active) {
+    background: var(--surface);
+    color: var(--text-soft);
+    border-color: #EDE3F5;
+  }
+
+  /* SEARCH BAR */
+  .search-wrap {
+    padding: 0 20px 18px;
+  }
+  .search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--surface);
+    border: 1.5px solid #EDE3F5;
+    border-radius: 16px;
+    padding: 9px 14px;
+  }
+  .search-box svg { width: 16px; height: 16px; flex-shrink: 0; }
+  .search-box input {
+    border: none; outline: none; background: transparent;
+    font-family: 'Nunito', sans-serif;
+    font-size: 13px; color: var(--text);
+    flex: 1;
+  }
+  .search-box input::placeholder { color: #C5B8B0; }
+
+  /* FILTER CHIPS */
+  .filter-chips {
+    display: flex;
+    gap: 7px;
+    padding: 0 20px 18px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .chip {
+    display: flex; align-items: center; gap: 4px;
+    padding: 5px 12px;
+    border-radius: 12px;
+    font-size: 12px; font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .chip svg { width: 12px; height: 12px; }
+  .chip-all   { background: var(--tag-bg); color: var(--tag-text); }
+  .chip-cat   { background: #FFF0F5; color: #C9749D; }
+  .chip-food  { background: #FFF8E6; color: #C08B2A; }
+  .chip-nature{ background: #E6F8F0; color: #3BAB7A; }
+  .chip-game  { background: #EDF0FF; color: #5B6FD6; }
+
+  /* GALLERY GRID */
+  .gallery {
+    padding: 0 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .card {
+    background: var(--surface);
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1.5px solid #F0E8F8;
+    cursor: pointer;
+    transition: transform 0.18s;
+  }
+  .card:active { transform: scale(0.97); }
+
+  .card-img {
+    width: 100%; aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .card-img canvas {
+    image-rendering: pixelated;
+    width: 100%; height: 100%;
+  }
+
+  .official-badge {
+    position: absolute; top: 8px; right: 8px;
+    background: var(--primary);
+    color: white;
+    font-size: 10px; font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 8px;
+    letter-spacing: 0.3px;
+  }
+
+  .heart-btn {
+    position: absolute; top: 8px; left: 8px;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.85);
+    border: none;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  .heart-btn svg { width: 14px; height: 14px; }
+
+  .card-info {
+    padding: 10px 12px 12px;
+  }
+  .card-name {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 15px;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .card-meta {
+    display: flex; flex-wrap: wrap; gap: 4px;
+  }
+  .meta-pill {
+    font-size: 10px; font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 8px;
+  }
+  .pill-size { background: #F3EBF8; color: #9B6BB5; }
+  .pill-color { background: #E6F8F0; color: #3BAB7A; }
+  .pill-count { background: #FFF4E6; color: #C08B2A; }
+
+  /* WIDE CARD (full row) */
+  .card-wide {
+    grid-column: span 2;
+    background: var(--surface);
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1.5px solid #F0E8F8;
+    display: flex;
+    cursor: pointer;
+    transition: transform 0.18s;
+    min-height: 110px;
+  }
+  .card-wide:active { transform: scale(0.98); }
+  .card-wide .card-img-side {
+    width: 110px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  .card-wide .card-img-side canvas {
+    image-rendering: pixelated;
+    width: 100%; height: 100%;
+  }
+  .card-wide .card-body {
+    flex: 1; padding: 14px 14px 14px 12px;
+    display: flex; flex-direction: column; justify-content: center; gap: 6px;
+  }
+  .card-wide .card-name {
+    font-family: 'ZCOOL KuaiLe', cursive;
+    font-size: 16px; color: var(--text);
+    margin-bottom: 0;
+  }
+  .card-wide .card-desc {
+    font-size: 12px; color: var(--text-soft); line-height: 1.5;
+  }
+  .card-wide .card-meta { gap: 5px; }
+
+  /* FAB */
+  .fab {
+    position: absolute; bottom: 90px; right: 20px;
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: none;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(216,180,226,0.55);
+  }
+  .fab svg { width: 24px; height: 24px; stroke: white; stroke-width: 2.2; fill: none; }
+
+  /* NAV */
+  .nav {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    height: 72px;
+    background: var(--surface);
+    border-top: 1.5px solid #F0E8F8;
+    display: flex;
+    align-items: center;
+  }
+  .nav-item {
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 8px 0;
+  }
+  .nav-icon {
+    width: 28px; height: 28px;
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .nav-icon svg { width: 20px; height: 20px; }
+  .nav-label { font-size: 11px; font-weight: 600; }
+
+  .nav-item.active .nav-icon { background: var(--primary); }
+  .nav-item.active .nav-icon svg { stroke: white; }
+  .nav-item.active .nav-label { color: var(--primary-deep); }
+  .nav-item:not(.active) .nav-icon svg { stroke: #C5B8B0; }
+  .nav-item:not(.active) .nav-label { color: #C5B8B0; }
+
+  /* section label */
+  .section-label {
+    padding: 4px 20px 12px;
+    font-size: 12px; font-weight: 700;
+    color: var(--text-soft);
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+</style>
+
+<div class="phone">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="topbar-title">✨ 画册</div>
+    <button class="cloud-btn" aria-label="云端同步">
+      <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 8.5C16.7 6 14.6 4 12 4C9.8 4 7.9 5.3 7.1 7.2C5.3 7.5 4 9.1 4 11C4 13.2 5.8 15 8 15H17C18.9 15 20.5 13.4 20.5 11.5C20.5 9.7 19.1 8.2 17 8.5Z"/></svg>
+    </button>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab active">全部</button>
+    <button class="tab">最新</button>
+    <button class="tab">最热</button>
+    <button class="tab">我的</button>
+  </div>
+
+  <!-- SEARCH -->
+  <div class="search-wrap">
+    <div class="search-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#C5B8B0" stroke-width="2" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="11" cy="11" r="6"/><path d="M17 17l3 3"/>
+      </svg>
+      <input type="text" placeholder="搜索图纸…" readonly />
+    </div>
+  </div>
+
+  <!-- FILTER CHIPS -->
+  <div class="filter-chips">
+    <div class="chip chip-all">🌸 全部</div>
+    <div class="chip chip-cat">🐱 猫咪</div>
+    <div class="chip chip-food">🍰 美食</div>
+    <div class="chip chip-nature">🌿 自然</div>
+    <div class="chip chip-game">🎮 游戏</div>
+  </div>
+
+  <!-- SECTION -->
+  <div class="section-label">精选图纸</div>
+
+  <!-- GALLERY -->
+  <div class="gallery">
+
+    <!-- Card 1 -->
+    <div class="card">
+      <div class="card-img" style="background:#F9F0FF;">
+        <canvas id="c1" width="24" height="24"></canvas>
+        <span class="official-badge">官方</span>
+        <button class="heart-btn" aria-label="收藏">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#D8B4E2" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14 3 8.5C3 6 5 4 7.5 4C9.2 4 10.7 5 11.5 6.4C12.3 5 13.8 4 15.5 4C18 4 20 6 20 8.5C20 14 12 21 12 21Z"/></svg>
+        </button>
+      </div>
+      <div class="card-info">
+        <div class="card-name">三花猫</div>
+        <div class="card-meta">
+          <span class="meta-pill pill-size">100×100</span>
+          <span class="meta-pill pill-color">11色</span>
+          <span class="meta-pill pill-count">5928颗</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2 -->
+    <div class="card">
+      <div class="card-img" style="background:#F0FBF6;">
+        <canvas id="c2" width="16" height="16"></canvas>
+        <span class="official-badge">官方</span>
+        <button class="heart-btn" aria-label="收藏">
+          <svg viewBox="0 0 24 24" fill="#D8B4E2" stroke="#D8B4E2" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14 3 8.5C3 6 5 4 7.5 4C9.2 4 10.7 5 11.5 6.4C12.3 5 13.8 4 15.5 4C18 4 20 6 20 8.5C20 14 12 21 12 21Z"/></svg>
+        </button>
+      </div>
+      <div class="card-info">
+        <div class="card-name">小草莓</div>
+        <div class="card-meta">
+          <span class="meta-pill pill-size">24×24</span>
+          <span class="meta-pill pill-color">6色</span>
+          <span class="meta-pill pill-count">320颗</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 3 wide -->
+    <div class="card-wide">
+      <div class="card-img-side" style="background:#FFF8F0;">
+        <canvas id="c3" width="16" height="16"></canvas>
+        <span class="official-badge" style="top:6px;right:6px;">官方</span>
+      </div>
+      <div class="card-body">
+        <div class="card-name">柴犬拉面</div>
+        <div class="card-desc">超可爱的柴犬正在享用拉面，适合初学者~</div>
+        <div class="card-meta">
+          <span class="meta-pill pill-size">32×32</span>
+          <span class="meta-pill pill-color">9色</span>
+          <span class="meta-pill pill-count">680颗</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 4 -->
+    <div class="card">
+      <div class="card-img" style="background:#FFF0F6;">
+        <canvas id="c4" width="20" height="20"></canvas>
+        <button class="heart-btn" aria-label="收藏">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#D8B4E2" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14 3 8.5C3 6 5 4 7.5 4C9.2 4 10.7 5 11.5 6.4C12.3 5 13.8 4 15.5 4C18 4 20 6 20 8.5C20 14 12 21 12 21Z"/></svg>
+        </button>
+      </div>
+      <div class="card-info">
+        <div class="card-name">粉樱花</div>
+        <div class="card-meta">
+          <span class="meta-pill pill-size">48×48</span>
+          <span class="meta-pill pill-color">5色</span>
+          <span class="meta-pill pill-count">1024颗</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 5 -->
+    <div class="card">
+      <div class="card-img" style="background:#EDF2FF;">
+        <canvas id="c5" width="20" height="20"></canvas>
+        <button class="heart-btn" aria-label="收藏">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#D8B4E2" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><path d="M12 21C12 21 3 14 3 8.5C3 6 5 4 7.5 4C9.2 4 10.7 5 11.5 6.4C12.3 5 13.8 4 15.5 4C18 4 20 6 20 8.5C20 14 12 21 12 21Z"/></svg>
+        </button>
+      </div>
+      <div class="card-info">
+        <div class="card-name">像素城堡</div>
+        <div class="card-meta">
+          <span class="meta-pill pill-size">32×32</span>
+          <span class="meta-pill pill-color">8色</span>
+          <span class="meta-pill pill-count">512颗</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 6 wide -->
+    <div class="card-wide">
+      <div class="card-img-side" style="background:#F0FBF6;">
+        <canvas id="c6" width="16" height="16"></canvas>
+      </div>
+      <div class="card-body">
+        <div class="card-name">青蛙雨天</div>
+        <div class="card-desc">用户 @豆豆手工坊 共享，收藏 246 次 💜</div>
+        <div class="card-meta">
+          <span class="meta-pill pill-size">24×24</span>
+          <span class="meta-pill pill-color">7色</span>
+          <span class="meta-pill pill-count">298颗</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- FAB -->
+  <button class="fab" aria-label="新建图纸">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  </button>
+
+  <!-- BOTTOM NAV -->
+  <nav class="nav" aria-label="主导航">
+    <div class="nav-item">
+      <div class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><circle cx="11" cy="11" r="6"/><path d="M17 17l3 3"/></svg>
+      </div>
+      <span class="nav-label">发现</span>
+    </div>
+    <div class="nav-item">
+      <div class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><path d="M13 16.5h7M16.5 13v7"/></svg>
+      </div>
+      <span class="nav-label">工坊</span>
+    </div>
+    <div class="nav-item active">
+      <div class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>
+      </div>
+      <span class="nav-label">画册</span>
+    </div>
+    <div class="nav-item">
+      <div class="nav-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
+      </div>
+      <span class="nav-label">我的</span>
+    </div>
+  </nav>
+
+</div>
+
+<script>
+function drawPixelCat(canvas) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0,0,w,h);
+  const s = Math.floor(Math.min(w,h)/12);
+  const ox = Math.floor((w - 10*s)/2);
+  const oy = Math.floor((h - 11*s)/2);
+  const pixels = [
+    [0,0,0,1,1,1,1,0,0,0],
+    [0,0,1,2,2,2,2,1,0,0],
+    [0,1,2,2,2,2,2,2,1,0],
+    [0,1,2,3,2,2,3,2,1,0],
+    [0,1,2,2,4,4,2,2,1,0],
+    [0,0,1,2,2,2,2,1,5,0],
+    [0,0,1,2,2,2,2,1,5,0],
+    [0,1,2,6,2,2,6,2,1,5],
+    [0,1,6,2,6,2,2,6,1,0],
+    [0,1,6,6,2,2,6,6,1,0],
+    [0,0,1,1,0,0,1,1,0,0],
+  ];
+  const cols = ['transparent','#3D3D3D','#F5F0E8','#E8835C','#1A1A1A','#F0A859','#D4C5B0'];
+  pixels.forEach((row, y) => row.forEach((v, x) => {
+    if(v===0) return;
+    ctx.fillStyle = cols[v];
+    ctx.fillRect(ox+x*s, oy+y*s, s, s);
+  }));
+}
+
+function drawPixelStrawberry(canvas) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const s = Math.floor(Math.min(w,h)/10);
+  const ox = Math.floor((w - 8*s)/2);
+  const oy = Math.floor((h - 9*s)/2);
+  const pixels = [
+    [0,0,1,1,0,1,1,0],
+    [0,0,0,1,1,1,0,0],
+    [0,2,2,2,2,2,2,0],
+    [2,2,3,2,2,3,2,2],
+    [2,2,2,2,2,2,2,2],
+    [0,2,2,3,2,2,2,0],
+    [0,0,2,2,2,2,0,0],
+    [0,0,0,2,2,0,0,0],
+    [0,0,0,0,4,0,0,0],
+  ];
+  const cols = ['transparent','#4CAF50','#EF5350','#F8BBD0','#795548'];
+  pixels.forEach((row,y)=>row.forEach((v,x)=>{
+    if(v===0) return;
+    ctx.fillStyle=cols[v];
+    ctx.fillRect(ox+x*s,oy+y*s,s,s);
+  }));
+}
+
+function drawPixelDog(canvas) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const s = Math.floor(Math.min(w,h)/10);
+  const ox = Math.floor((w - 8*s)/2);
+  const oy = Math.floor((h - 8*s)/2);
+  const pixels = [
+    [1,0,0,0,0,0,0,1],
+    [1,2,2,2,2,2,2,1],
+    [0,2,3,2,2,3,2,0],
+    [0,2,2,4,4,2,2,0],
+    [0,2,2,2,2,2,2,0],
+    [0,0,2,2,2,2,0,0],
+    [0,2,2,0,0,2,2,0],
+    [0,2,2,0,0,2,2,0],
+  ];
+  const cols=['transparent','#8D6E63','#FFCC80','#1A1A1A','#FF6B6B'];
+  pixels.forEach((row,y)=>row.forEach((v,x)=>{
+    if(v===0)return;
+    ctx.fillStyle=cols[v];
+    ctx.fillRect(ox+x*s,oy+y*s,s,s);
+  }));
+}
+
+function drawPixelFlower(canvas) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const s = Math.floor(Math.min(w,h)/10);
+  const ox = Math.floor((w - 9*s)/2);
+  const oy = Math.floor((h - 9*s)/2);
+  const pixels = [
+    [0,0,0,1,1,1,0,0,0],
+    [0,0,1,1,2,1,1,0,0],
+    [0,1,1,2,2,2,1,1,0],
+    [1,1,2,2,3,2,2,1,1],
+    [1,2,2,3,3,3,2,2,1],
+    [1,1,2,2,3,2,2,1,1],
+    [0,1,1,2,2,2,1,1,0],
+    [0,0,1,1,2,1,1,0,0],
+    [0,0,0,1,1,1,0,0,0],
+  ];
+  const cols=['transparent','#F8BBD0','#F48FB1','#FFDAB9'];
+  pixels.forEach((row,y)=>row.forEach((v,x)=>{
+    if(v===0)return;
+    ctx.fillStyle=cols[v];
+    ctx.fillRect(ox+x*s,oy+y*s,s,s);
+  }));
+}
+
+function drawPixelCastle(canvas) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const s = Math.floor(Math.min(w,h)/10);
+  const ox = Math.floor((w - 9*s)/2);
+  const oy = Math.floor((h - 9*s)/2);
+  const pixels = [
+    [1,0,1,0,0,0,1,0,1],
+    [1,1,1,0,1,0,1,1,1],
+    [1,1,1,1,1,1,1,1,1],
+    [0,1,0,1,1,1,0,1,0],
+    [0,1,0,1,2,1,0,1,0],
+    [0,1,1,1,2,1,1,1,0],
+    [0,0,1,1,2,1,1,0,0],
+    [0,0,1,3,3,3,1,0,0],
+    [0,0,1,1,1,1,1,0,0],
+  ];
+  const cols=['transparent','#90A4AE','#BBDEFB','#78909C'];
+  pixels.forEach((row,y)=>row.forEach((v,x)=>{
+    if(v===0)return;
+    ctx.fillStyle=cols[v];
+    ctx.fillRect(ox+x*s,oy+y*s,s,s);
+  }));
+}
+
+function drawPixelFrog(canvas) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  const s = Math.floor(Math.min(w,h)/10);
+  const ox = Math.floor((w - 8*s)/2);
+  const oy = Math.floor((h - 8*s)/2);
+  const pixels = [
+    [1,1,0,0,0,0,1,1],
+    [1,1,1,1,1,1,1,1],
+    [0,1,2,1,1,2,1,0],
+    [0,1,1,1,1,1,1,0],
+    [0,1,3,1,1,3,1,0],
+    [0,1,1,4,4,1,1,0],
+    [1,0,1,1,1,1,0,1],
+    [1,0,0,0,0,0,0,1],
+  ];
+  const cols=['transparent','#66BB6A','#1A1A1A','#A5D6A7','#F8BBD0'];
+  pixels.forEach((row,y)=>row.forEach((v,x)=>{
+    if(v===0)return;
+    ctx.fillStyle=cols[v];
+    ctx.fillRect(ox+x*s,oy+y*s,s,s);
+  }));
+}
+
+drawPixelCat(document.getElementById('c1'));
+drawPixelStrawberry(document.getElementById('c2'));
+drawPixelDog(document.getElementById('c3'));
+drawPixelFlower(document.getElementById('c4'));
+drawPixelCastle(document.getElementById('c5'));
+drawPixelFrog(document.getElementById('c6'));
+</script>

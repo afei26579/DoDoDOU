@@ -10,7 +10,7 @@ type WorkshopToolbarProps = {
   onViewPattern: () => void;
   onBackToOriginal: () => void;
   onRegenerate: () => void;
-  onRemoveBackground: () => void;
+  onAutoCropPattern: () => void;
   onReuploadImage: () => void;
   onUploadToGallery?: () => void;
 };
@@ -27,7 +27,7 @@ export function WorkshopToolbar({
   onViewPattern,
   onBackToOriginal,
   onRegenerate,
-  onRemoveBackground,
+  onAutoCropPattern,
   onReuploadImage,
   onUploadToGallery,
 }: WorkshopToolbarProps) {
@@ -45,7 +45,7 @@ export function WorkshopToolbar({
   const resultTools = [
     { label: '返回原图', icon: '◀', onClick: onBackToOriginal },
     { label: '重新生成', icon: '↻', onClick: onRegenerate },
-    { label: '去背景', icon: '⌗', onClick: onRemoveBackground },
+    { label: '自动裁剪', icon: '⌗', onClick: onAutoCropPattern },
     ...(onUploadToGallery ? [{ label: '上传图纸', icon: '↟', onClick: onUploadToGallery }] : []),
   ];
 
