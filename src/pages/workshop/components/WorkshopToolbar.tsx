@@ -33,25 +33,39 @@ export function WorkshopToolbar({
 }: WorkshopToolbarProps) {
   if (!hasImage) return null;
 
+  const createTools = [
+    { label: '放大', icon: '↗', onClick: onCropZoomIn },
+    { label: '缩小', icon: '↙', onClick: onCropZoomOut },
+    { label: '重置', icon: '↺', onClick: onCropReset },
+    { label: '裁剪', icon: '⌗', onClick: onViewCropPreview },
+    { label: '重新上传', icon: '↟', onClick: onReuploadImage },
+    ...(patternResultExists ? [{ label: '查看图纸', icon: '▣', onClick: onViewPattern }] : []),
+  ];
+
+  const resultTools = [
+    { label: '返回原图', icon: '◀', onClick: onBackToOriginal },
+    { label: '重新生成', icon: '↻', onClick: onRegenerate },
+    { label: '去背景', icon: '⌗', onClick: onRemoveBackground },
+    ...(onUploadToGallery ? [{ label: '上传图纸', icon: '↟', onClick: onUploadToGallery }] : []),
+  ];
+
+  const tools = mode === 'create' ? createTools : resultTools;
+
   return (
     <div className="workshop-canvas__toolbar">
-      {mode === 'create' ? (
-        <>
-          <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="放大" onClick={onCropZoomIn} disabled={isGenerating}>＋</button>
-          <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="缩小" onClick={onCropZoomOut} disabled={isGenerating}>－</button>
-          <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="重置" onClick={onCropReset} disabled={isGenerating}>⟲</button>
-          <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="查看裁剪预览" onClick={onViewCropPreview} disabled={isGenerating}>◫</button>
-          <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="重新上传" onClick={onReuploadImage} disabled={isGenerating}>↺</button>
-          {patternResultExists ? <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="查看图纸" onClick={onViewPattern} disabled={isGenerating}>▣</button> : null}
-        </>
-      ) : (
-        <>
-          <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="返回原图" onClick={onBackToOriginal} disabled={isGenerating}>◀</button>
-          <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="重新生成" onClick={onRegenerate} disabled={isGenerating}>↻</button>
-          <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="去背景" onClick={onRemoveBackground} disabled={isGenerating}>⌗</button>
-          {onUploadToGallery ? <button type="button" className="workshop-canvas__tool workshop-canvas__tool--icon" aria-label="上传图纸" onClick={onUploadToGallery} disabled={isGenerating}>↑</button> : null}
-        </>
-      )}
+      {tools.map((item) => (
+        <button
+          key={item.label}
+          type="button"
+          className="workshop-canvas__tool workshop-canvas__tool--icon"
+          aria-label={item.label}
+          onClick={item.onClick}
+          disabled={isGenerating}
+        >
+          <span className="workshop-canvas__tool-icon" aria-hidden="true">{item.icon}</span>
+          <span className="workshop-canvas__tool-label">{item.label}</span>
+        </button>
+      ))}
     </div>
   );
 }

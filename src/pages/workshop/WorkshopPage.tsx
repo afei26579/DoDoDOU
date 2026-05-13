@@ -31,6 +31,8 @@ type WorkshopPageProps = {
   onOpenDownloadSettings?: () => void;
   onOpenEditor?: () => void;
   onOpenFocusMode?: () => void;
+  onCreateCanvas?: () => void;
+  onImportPattern?: () => void;
   isHome: boolean;
   backgroundRemovalNotice?: string | null;
 };
@@ -54,6 +56,8 @@ export function WorkshopPage({
   onOpenDownloadSettings,
   onOpenEditor,
   onOpenFocusMode,
+  onCreateCanvas,
+  onImportPattern,
   isHome,
   backgroundRemovalNotice,
 }: WorkshopPageProps) {
@@ -241,7 +245,7 @@ export function WorkshopPage({
   };
 
   return (
-    <main className="workshop-page">
+    <main className={`workshop-page ${isHome ? 'workshop-page--home' : ''}`}>
       <WorkshopHero projectId={projectId} />
       <WorkshopPreviewArea
         mode={mode}
@@ -257,73 +261,97 @@ export function WorkshopPage({
         backgroundRemovalNotice={backgroundRemovalNotice}
       />
 
-      <section className="workshop-toolbar-surface card-surface" aria-label="工具栏">
-        {isHome ? (
-          <WorkshopHomeToolbar isGenerating={isGenerating} onAiInspiration={() => {}} onCreateCanvas={() => {}} />
-        ) : (
-          <WorkshopToolbar
-            mode={mode}
-            hasImage={Boolean(uploadedImage)}
-            patternResultExists={Boolean(patternResult)}
-            isGenerating={isGenerating}
-            onCropZoomIn={() => onCropTransformChange((current) => ({ ...current, scale: Math.min(3, +(current.scale + 0.1).toFixed(2)) }))}
-            onCropZoomOut={() => onCropTransformChange((current) => ({ ...current, scale: Math.max(0.5, +(current.scale - 0.1).toFixed(2)) }))}
-            onCropReset={() => onCropTransformChange({ scale: 1, x: 0, y: 0, rotate: 0 })}
-            onViewCropPreview={handleOpenCropPreview}
-            onViewPattern={onViewPattern}
-            onBackToOriginal={onBackToOriginal}
-            onRegenerate={onRegenerate}
-            onRemoveBackground={onRemoveBackground}
-            onReuploadImage={onReuploadImage}
-            onUploadToGallery={onUploadToGallery}
-          />
-        )}
-      </section>
-
-      <section className="workshop-panel card-surface" aria-label="参数设置">
-        {mode === 'result' ? (
-          <div className="workshop-panel__result-content">
-            {patternResult ? <WorkshopResultStats patternResult={patternResult} onOpenStats={() => setIsStatsSheetOpen(true)} /> : null}
-            <WorkshopGenerateButton
+      {isHome ? (
+        <WorkshopHomeToolbar
+          isGenerating={isGenerating}
+          onAiInspiration={() => {}}
+          onCreateCanvas={onCreateCanvas ?? (() => {})}
+          onImportPattern={onImportPattern ?? (() => {})}
+        />
+      ) : (
+        <>
+          <section className={`workshop-toolbar-surface workshop-toolbar-surface--${mode} card-surface`} aria-label="工具栏">
+            <WorkshopToolbar
               mode={mode}
+              hasImage={Boolean(uploadedImage)}
+              patternResultExists={Boolean(patternResult)}
               isGenerating={isGenerating}
-              disabled={!uploadedImage || isGenerating}
-              onClick={onGeneratePattern}
-              onRemoveBackground={onRemoveBackground}
+              onCropZoomIn={() => onCropTransformChange((current) => ({ ...current, scale: Math.min(3, +(current.scale + 0.1).toFixed(2)) }))}
+              onCropZoomOut={() => onCropTransformChange((current) => ({ ...current, scale: Math.max(0.5, +(current.scale - 0.1).toFixed(2)) }))}
+              onCropReset={() => onCropTransformChange({ scale: 1, x: 0, y: 0, rotate: 0 })}
+              onViewCropPreview={handleOpenCropPreview}
               onViewPattern={onViewPattern}
-              onOpenEditor={onOpenEditor}
-              onRegenerate={onGeneratePattern}
-              onOpenDownloadSettings={() => setIsDownloadModalOpen(true)}
-              onManualEditNavigate={onOpenEditor}
-              onOpenFocusMode={onOpenFocusMode}
+              onBackToOriginal={onBackToOriginal}
+              onRegenerate={onRegenerate}
+              onRemoveBackground={onRemoveBackground}
+              onReuploadImage={onReuploadImage}
+              onUploadToGallery={onUploadToGallery}
             />
-          </div>
-        ) : (
-          <>
-            <div className="section-heading-row">
-              <div><h3>参数设计</h3></div>
-              <span className="workshop-panel__hint">当前：{tagLabel}</span>
-            </div>
+          </section>
 
-            <WorkshopParameterTabs activeTag={activeTag} onChange={setActiveTag} />
+          {mode === 'result' ? (
+            <>
+              <section className="workshop-panel card-surface" aria-label="图纸操作">
+                <div className="workshop-panel__result-content">
+                  {patternResult ? <WorkshopResultStats patternResult={patternResult} onOpenStats={() => setIsStatsSheetOpen(true)} /> : null}
+                  <WorkshopGenerateButton
+                    mode={mode}
+                    resultLayout="actionsOnly"
+                    isGenerating={isGenerating}
+                    disabled={!uploadedImage || isGenerating}
+                    onClick={onGeneratePattern}
+                    onRemoveBackground={onRemoveBackground}
+                    onViewPattern={onViewPattern}
+                    onOpenEditor={onOpenEditor}
+                    onRegenerate={onGeneratePattern}
+                    onOpenDownloadSettings={() => setIsDownloadModalOpen(true)}
+                    onManualEditNavigate={onOpenEditor}
+                    onOpenFocusMode={onOpenFocusMode}
+                  />
+                </div>
+              </section>
 
-            <div className="workshop-settings" aria-label="参数内容">
-              <WorkshopParameterPanel activeTag={activeTag} config={config} onConfigChange={onConfigChange} />
-            </div>
+              <div className="workshop-bottom-action workshop-bottom-action--standalone" aria-label="拼豆操作">
+                <WorkshopGenerateButton
+                  mode={mode}
+                  resultLayout="primaryOnly"
+                  isGenerating={isGenerating}
+                  disabled={!uploadedImage || isGenerating}
+                  onClick={onGeneratePattern}
+                  onRegenerate={onGeneratePattern}
+                  onOpenFocusMode={onOpenFocusMode}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <section className="workshop-panel card-surface" aria-label="参数设置">
+                <div className="section-heading-row">
+                  <div><h3>参数设计</h3></div>
+                  <span className="workshop-panel__hint">当前：{tagLabel}</span>
+                </div>
 
-            <div className="workshop-bottom-action" aria-label="生成操作">
-              <WorkshopGenerateButton
-                mode={mode}
-                isGenerating={isGenerating}
-                disabled={!uploadedImage || isGenerating}
-                onClick={onGeneratePattern}
-                onOpenEditor={onOpenEditor}
-                onManualEditNavigate={onOpenEditor}
-              />
-            </div>
-          </>
-        )}
-      </section>
+                <WorkshopParameterTabs activeTag={activeTag} onChange={setActiveTag} />
+
+                <div className="workshop-settings" aria-label="参数内容">
+                  <WorkshopParameterPanel activeTag={activeTag} config={config} onConfigChange={onConfigChange} />
+                </div>
+              </section>
+
+              <div className="workshop-bottom-action workshop-bottom-action--standalone" aria-label="生成操作">
+                <WorkshopGenerateButton
+                  mode={mode}
+                  isGenerating={isGenerating}
+                  disabled={!uploadedImage || isGenerating}
+                  onClick={onGeneratePattern}
+                  onOpenEditor={onOpenEditor}
+                  onManualEditNavigate={onOpenEditor}
+                />
+              </div>
+            </>
+          )}
+        </>
+      )}
 
       {mode === 'result' && patternResult && isStatsSheetOpen ? (
         <WorkshopResultStatsSheet patternResult={patternResult} onClose={() => setIsStatsSheetOpen(false)} />

@@ -1,5 +1,6 @@
 type WorkshopGenerateButtonProps = {
   mode: 'create' | 'result';
+  resultLayout?: 'combined' | 'actionsOnly' | 'primaryOnly';
   isGenerating: boolean;
   disabled: boolean;
   onClick: () => void;
@@ -14,6 +15,7 @@ type WorkshopGenerateButtonProps = {
 
 export function WorkshopGenerateButton({
   mode,
+  resultLayout = 'combined',
   isGenerating,
   disabled,
   onClick,
@@ -26,6 +28,16 @@ export function WorkshopGenerateButton({
   onOpenFocusMode,
 }: WorkshopGenerateButtonProps) {
   if (mode === 'result') {
+    const primaryButton = (
+      <button type="button" className="workshop-generate-button workshop-generate-button--result" onClick={onOpenFocusMode ?? onRegenerate ?? onClick} disabled={disabled}>
+        {isGenerating ? '拼豆准备中...' : '立即拼豆'}
+      </button>
+    );
+
+    if (resultLayout === 'primaryOnly') {
+      return primaryButton;
+    }
+
     return (
       <div className="workshop-result-actions" aria-label="图纸操作">
         <div className="workshop-result-actions__grid">
@@ -42,9 +54,7 @@ export function WorkshopGenerateButton({
             <span className="workshop-result-actions__label">手动编辑</span>
           </button>
         </div>
-        <button type="button" className="workshop-generate-button workshop-generate-button--result" onClick={onOpenFocusMode ?? onRegenerate ?? onClick} disabled={disabled}>
-          {isGenerating ? '拼豆准备中...' : '立即拼豆'}
-        </button>
+        {resultLayout === 'combined' ? primaryButton : null}
       </div>
     );
   }

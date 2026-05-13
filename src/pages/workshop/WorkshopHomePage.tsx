@@ -1,9 +1,9 @@
 import { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { defaultCropTransform } from '../../features/workshop/model/defaults';
+import { defaultCropTransform, defaultWorkshopConfig } from '../../features/workshop/model/defaults';
 import { saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import { WorkshopPage } from './WorkshopPage';
-import type { WorkshopFlowState } from '../../features/workshop/model/types';
+import type { PatternResult, WorkshopFlowState } from '../../features/workshop/model/types';
 import type { CropTransform } from '../../features/workshop/model/types';
 
 type WorkshopHomePageProps = {
@@ -21,6 +21,24 @@ function createProjectId() {
   return String(Date.now());
 }
 
+function readPatternResult(value: unknown): PatternResult | null {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Partial<PatternResult> & { patternResult?: unknown };
+  if (candidate.patternResult) return readPatternResult(candidate.patternResult);
+  if (
+    typeof candidate.width === 'number' &&
+    typeof candidate.height === 'number' &&
+    Array.isArray(candidate.cells) &&
+    Array.isArray(candidate.palette) &&
+    candidate.stats &&
+    typeof candidate.stats.totalCells === 'number' &&
+    typeof candidate.stats.colorCount === 'number'
+  ) {
+    return candidate as PatternResult;
+  }
+  return null;
+}
+
 export function WorkshopHomePage({
   flowState,
   projectId,
@@ -33,10 +51,19 @@ export function WorkshopHomePage({
 }: WorkshopHomePageProps) {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const patternInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleUploadImage = async () => {
     console.debug('[workshop] home upload trigger', { hasInput: Boolean(fileInputRef.current) });
     fileInputRef.current?.click();
+  };
+
+  const handleCreateCanvas = () => {
+    navigate(`/workshop/editor/${createProjectId()}`);
+  };
+
+  const handleImportPattern = () => {
+    patternInputRef.current?.click();
   };
 
   return (
@@ -86,6 +113,44 @@ export function WorkshopHomePage({
           navigate(`/workshop/create/${nextProjectId}`);
         }}
       />
+      <input
+        ref={patternInputRef}
+        hidden
+        type="file"
+        accept="application/json,.json"
+        onChange={async (event) => {
+          const file = event.target.files?.[0];
+          event.target.value = '';
+          if (!file) return;
+
+          const raw = await file.text();
+          let parsed: unknown = null;
+          try {
+            parsed = JSON.parse(raw);
+          } catch {
+            return;
+          }
+          const patternResult = readPatternResult(parsed);
+          if (!patternResult) return;
+
+          const nextProjectId = createProjectId();
+          await saveWorkshopProject(nextProjectId, {
+            title: file.name.replace(/\.[^.]+$/, '') || '导入图纸',
+            uploadedImage: null,
+            cropTransform: defaultCropTransform,
+            config: defaultWorkshopConfig,
+            patternResult,
+            viewMode: 'pattern',
+            kind: 'pattern',
+            status: 'ready',
+            paperState: 'completed',
+            beadingState: 'idle',
+            lastOpenedAt: new Date().toISOString(),
+          });
+
+          navigate(`/workshop/result/${nextProjectId}`);
+        }}
+      />
       <WorkshopPage
         flowState={flowState}
         projectId={projectId}
@@ -102,6 +167,8 @@ export function WorkshopHomePage({
         onUploadImage={handleUploadImage}
         onReuploadImage={handleUploadImage}
         onViewPattern={() => {}}
+        onCreateCanvas={handleCreateCanvas}
+        onImportPattern={handleImportPattern}
       />
     </>
   );
