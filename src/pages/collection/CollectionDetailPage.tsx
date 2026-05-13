@@ -6,6 +6,8 @@ import { saveWorkshopProject } from '../../features/workshop/model/projectStore'
 import type { PatternResult } from '../../features/workshop/model/types';
 import { downloadPatternImage, renderDownloadPatternCanvas } from '../../lib/pattern/download';
 
+const GO_BACK_ICON = '/assets/system_icons/goback.png';
+
 function toPatternResult(item: GalleryItemDetail): PatternResult | null {
   const payload = item.pattern?.patternPayload;
   if (!payload) return null;
@@ -90,7 +92,6 @@ export function CollectionDetailPage() {
       viewMode: 'pattern',
       kind: 'pattern',
       status: 'ready',
-      paperState: 'completed',
       beadingState: 'idle',
     });
     return projectId;
@@ -129,7 +130,7 @@ export function CollectionDetailPage() {
     <main className="gallery-detail-page">
       <header className="gallery-detail__topbar">
         <button type="button" className="gallery-detail__back" onClick={() => navigate('/collection')} aria-label="返回画册">
-          ←
+          <img src={GO_BACK_ICON} alt="" />
         </button>
         <div className="gallery-detail__actions" aria-label="图纸操作">
           <button type="button" onClick={handleDownload} disabled={isActionDisabled}>下载</button>

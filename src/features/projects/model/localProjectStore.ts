@@ -1,10 +1,9 @@
 // Deprecated: workshop project records in dodoudou-workshop/projects are the local source of truth.
 // Keep this module only for old IndexedDB data inspection or future one-off migration code.
 
-export type LocalProjectKind = 'upload' | 'draft' | 'pattern' | 'progress';
+export type LocalProjectKind = 'upload' | 'pattern' | 'progress';
 export type LocalProjectStatus = 'editing' | 'ready' | 'paused' | 'completed';
 
-export type LocalProjectPaperState = 'draft' | 'completed';
 export type LocalProjectBeadingState = 'idle' | 'progressing' | 'completed';
 
 export type LocalProjectRecord = {
@@ -12,7 +11,6 @@ export type LocalProjectRecord = {
   title: string;
   kind: LocalProjectKind;
   status: LocalProjectStatus;
-  paperState: LocalProjectPaperState;
   beadingState: LocalProjectBeadingState;
   coverUrl?: string | null;
   previewUrl?: string | null;

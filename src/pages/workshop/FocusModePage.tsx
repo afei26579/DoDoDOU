@@ -3,40 +3,29 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import type { WorkshopBeadingProgress } from '../../features/workshop/model/types';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
+import {
+  buildBeadingPlan,
+  buildPalette,
+  getCellCoordKey,
+  getCellKey,
+  isTransparentCellHex,
+  type BeadingAxis,
+  type BeadingBlock,
+  type BeadingConnectivity,
+  type BeadingPaletteItem,
+  type PatternMode,
+} from '../../lib/pattern/beadingPlan';
 import { drawPatternFocusZoomView, getFocusPanBounds, getFocusWindowBounds, getQuadrant } from '../../lib/pattern/focusZoom';
 import { drawPatternPreview } from '../../lib/pattern/preview';
 import styles from './FocusModePage.module.css';
 
-type PatternMode = 'smart' | 'color-block' | 'edge-first' | 'region-first' | 'row-by-row';
+const GO_BACK_ICON = '/assets/system_icons/goback.png';
 
 type ToggleKey = 'label' | 'separator';
 
 type SeparatorColorOption = {
   label: string;
   value: string;
-};
-
-type PaletteItem = {
-  colorId: string;
-  vendorCode: string;
-  hex: string;
-  count: number;
-};
-
-type PatternCell = {
-  x: number;
-  y: number;
-  colorId: string;
-  vendorCode: string;
-  hex: string;
-  isExternal?: boolean;
-};
-
-type OrderedBlock = {
-  key: string;
-  cells: PatternCell[];
-  anchorX: number;
-  anchorY: number;
 };
 
 type FocusPanState = {
@@ -58,93 +47,20 @@ const separatorColorOptions: SeparatorColorOption[] = [
 ];
 
 const patternModes: PatternMode[] = ['smart', 'color-block', 'edge-first', 'region-first', 'row-by-row'];
-
-function getCellKey(cell: { colorId: string; vendorCode: string; hex: string }) {
-  return `${cell.colorId}-${cell.vendorCode}-${cell.hex}`;
-}
-
-function isTransparentCellHex(hex: string) {
-  return hex === 'transparent';
-}
+const connectivityOptions: BeadingConnectivity[] = ['4', '8', 'smart'];
+const focusGridSizeOptions = [10, 20, 25, 30] as const;
+type FocusGridSize = (typeof focusGridSizeOptions)[number];
 
 function isPatternMode(value: string): value is PatternMode {
   return patternModes.includes(value as PatternMode);
 }
 
-type CellCoordinate = {
-  x: number;
-  y: number;
-};
-
-function sortCellsByHandedness<T extends CellCoordinate>(cells: T[], handedness: 'left' | 'right') {
-  return [...cells].sort((a, b) => {
-    if (a.y !== b.y) {
-      return a.y - b.y;
-    }
-    if (a.x !== b.x) {
-      return handedness === 'left' ? b.x - a.x : a.x - b.x;
-    }
-    return 0;
-  });
+function isConnectivity(value: unknown): value is BeadingConnectivity {
+  return typeof value === 'string' && connectivityOptions.includes(value as BeadingConnectivity);
 }
 
-function getNeighborKey(x: number, y: number, dx: number, dy: number) {
-  return `${x + dx},${y + dy}`;
-}
-
-function buildConnectedBlocks(cells: PatternCell[], handedness: 'left' | 'right') {
-  const cellMap = new Map<string, PatternCell>();
-  for (const cell of cells) {
-    cellMap.set(`${cell.x},${cell.y}`, cell);
-  }
-
-  const visited = new Set<string>();
-  const blocks: OrderedBlock[] = [];
-
-  for (const cell of cells) {
-    const seedKey = `${cell.x},${cell.y}`;
-    if (visited.has(seedKey)) continue;
-
-    const queue: PatternCell[] = [cell];
-    const connected: PatternCell[] = [];
-    visited.add(seedKey);
-
-    while (queue.length > 0) {
-      const current = queue.shift();
-      if (!current) continue;
-      connected.push(current);
-
-      const neighbors = [
-        cellMap.get(getNeighborKey(current.x, current.y, 0, -1)),
-        cellMap.get(getNeighborKey(current.x, current.y, 1, 0)),
-        cellMap.get(getNeighborKey(current.x, current.y, 0, 1)),
-        cellMap.get(getNeighborKey(current.x, current.y, -1, 0)),
-      ];
-
-      for (const neighbor of neighbors) {
-        if (!neighbor) continue;
-        const neighborKey = `${neighbor.x},${neighbor.y}`;
-        if (visited.has(neighborKey)) continue;
-        visited.add(neighborKey);
-        queue.push(neighbor);
-      }
-    }
-
-    const orderedConnected = sortCellsByHandedness(connected, handedness);
-    const anchor = orderedConnected[0] ?? cell;
-    blocks.push({
-      key: `${cell.colorId}-${cell.vendorCode}-${cell.hex}-${anchor.x},${anchor.y}`,
-      cells: orderedConnected,
-      anchorX: anchor.x,
-      anchorY: anchor.y,
-    });
-  }
-
-  return blocks.sort((a, b) => {
-    if (a.anchorX !== b.anchorX) return handedness === 'left' ? b.anchorX - a.anchorX : a.anchorX - b.anchorX;
-    if (a.anchorY !== b.anchorY) return a.anchorY - b.anchorY;
-    return 0;
-  });
+function isFocusGridSize(value: unknown): value is FocusGridSize {
+  return typeof value === 'number' && focusGridSizeOptions.includes(value as FocusGridSize);
 }
 
 export function FocusModePage() {
@@ -155,6 +71,8 @@ export function FocusModePage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
   const [patternMode, setPatternMode] = useState<PatternMode>('smart');
+  const [connectivity, setConnectivity] = useState<BeadingConnectivity>('smart');
+  const [rowAxis, setRowAxis] = useState<BeadingAxis>('row');
   const [toggles, setToggles] = useState<Record<ToggleKey, boolean>>({
     label: false,
     separator: true,
@@ -162,6 +80,7 @@ export function FocusModePage() {
   const [separatorInterval, setSeparatorInterval] = useState(10);
   const [separatorColor, setSeparatorColor] = useState(separatorColorOptions[0].value);
   const [handedness, setHandedness] = useState<'left' | 'right'>('left');
+  const [focusGridSize, setFocusGridSize] = useState<FocusGridSize>(10);
   const [activeColorKey, setActiveColorKey] = useState<string | null>(null);
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
   const [completedColorKeys, setCompletedColorKeys] = useState<string[]>([]);
@@ -181,34 +100,13 @@ export function FocusModePage() {
   useEffect(() => {
     console.debug('[FocusModePage] current project snapshot', {
       projectId,
-      paperState: state.paperState,
       beadingState: state.beadingState,
       hasPatternResult: Boolean(patternResult),
       viewMode: state.viewMode,
     });
-  }, [patternResult, projectId, state.beadingState, state.paperState, state.viewMode]);
+  }, [patternResult, projectId, state.beadingState, state.viewMode]);
   const hasPattern = Boolean(patternResult && patternResult.cells.length > 0);
-  const palette = useMemo(() => {
-    if (!patternResult) return [];
-
-    const paletteByKey = new Map<string, PaletteItem>();
-
-    for (const cell of patternResult.cells) {
-      if (cell.isExternal || !cell.vendorCode || !cell.hex || isTransparentCellHex(cell.hex)) continue;
-      const normalizedHex = cell.hex.startsWith('#') ? cell.hex : `#${cell.hex}`;
-      const key = `${cell.colorId}-${cell.vendorCode}-${normalizedHex}`;
-      const next = paletteByKey.get(key) ?? {
-        colorId: cell.colorId,
-        vendorCode: cell.vendorCode,
-        hex: normalizedHex,
-        count: 0,
-      };
-      next.count += 1;
-      paletteByKey.set(key, next);
-    }
-
-    return Array.from(paletteByKey.values()).sort((a, b) => b.count - a.count);
-  }, [patternResult]);
+  const palette = useMemo<BeadingPaletteItem[]>(() => (patternResult ? buildPalette(patternResult) : []), [patternResult]);
 
   const totalPatternCells = useMemo(() => {
     if (!patternResult) return 0;
@@ -220,7 +118,7 @@ export function FocusModePage() {
     if (!patternResult) return keys;
     for (const cell of patternResult.cells) {
       if (cell.isExternal || !cell.vendorCode || !cell.hex || isTransparentCellHex(cell.hex)) continue;
-      keys.add(`${cell.x},${cell.y}`);
+      keys.add(getCellCoordKey(cell));
     }
     return keys;
   }, [patternResult]);
@@ -236,29 +134,44 @@ export function FocusModePage() {
   const completedPatternCells = normalizedCompletedCellKeys.length;
   const overallProgress = totalPatternCells > 0 ? completedPatternCells / totalPatternCells : 0;
   const overallProgressPercent = Math.min(100, Math.round(overallProgress * 100));
-  const completedColorCount = completedColorKeys.length;
   const totalColorCount = palette.length;
 
-  const orderedColorEntries = useMemo(() => {
-    if (!patternResult) return [] as { colorKey: string; blocks: OrderedBlock[]; cells: PatternCell[] }[];
+  const beadingPlan = useMemo(() => {
+    if (!patternResult) return null;
+    return buildBeadingPlan(patternResult, {
+      mode: patternMode,
+      handedness,
+      connectivity,
+      axis: rowAxis,
+      regionSize: 10,
+    });
+  }, [connectivity, handedness, patternMode, patternResult, rowAxis]);
 
-    const cellsByColor = new Map<string, PatternCell[]>();
+  const planBlocks = beadingPlan?.blocks ?? [];
+  const colorCellsByKey = useMemo(() => {
+    const cellsByKey = new Map<string, Set<string>>();
+    if (!patternResult) return cellsByKey;
     for (const cell of patternResult.cells) {
       if (cell.isExternal || !cell.vendorCode || !cell.hex || isTransparentCellHex(cell.hex)) continue;
       const colorKey = getCellKey(cell);
-      const bucket = cellsByColor.get(colorKey) ?? [];
-      bucket.push(cell);
-      cellsByColor.set(colorKey, bucket);
+      const bucket = cellsByKey.get(colorKey) ?? new Set<string>();
+      bucket.add(getCellCoordKey(cell));
+      cellsByKey.set(colorKey, bucket);
     }
+    return cellsByKey;
+  }, [patternResult]);
 
-    const colorOrder = [...palette].sort((a, b) => b.count - a.count);
-    return colorOrder.map((item) => {
-      const colorKey = `${item.colorId}-${item.vendorCode}-${item.hex}`;
-      const cells = sortCellsByHandedness(cellsByColor.get(colorKey) ?? [], handedness);
-      const blocks = buildConnectedBlocks(cells as PatternCell[], handedness);
-      return { colorKey, blocks, cells: cells as PatternCell[] };
-    });
-  }, [handedness, palette, patternResult]);
+  const computedCompletedColorKeys = useMemo(() => {
+    const completed = new Set(normalizedCompletedCellKeys);
+    const keys: string[] = [];
+    for (const [colorKey, cellKeys] of colorCellsByKey.entries()) {
+      if (cellKeys.size > 0 && Array.from(cellKeys).every((key) => completed.has(key))) {
+        keys.push(colorKey);
+      }
+    }
+    return keys;
+  }, [colorCellsByKey, normalizedCompletedCellKeys]);
+  const completedColorCount = computedCompletedColorKeys.length;
 
   useEffect(() => {
     if (!patternResult || palette.length === 0) {
@@ -269,7 +182,7 @@ export function FocusModePage() {
       return;
     }
 
-    const validColorKeys = new Set(orderedColorEntries.map((item) => item.colorKey));
+    const validColorKeys = new Set(palette.map((item) => `${item.colorId}-${item.vendorCode}-${item.hex}`));
     setCompletedColorKeys((current) => current.filter((key) => validColorKeys.has(key)));
     setCompletedCellKeys((current) => current.filter((key) => patternCellKeySet.has(key)));
 
@@ -277,7 +190,14 @@ export function FocusModePage() {
       setActiveColorKey(null);
       setActiveCellKey(null);
     }
-  }, [activeColorKey, orderedColorEntries, palette, patternCellKeySet, patternResult]);
+  }, [activeColorKey, palette, patternCellKeySet, patternResult]);
+
+  useEffect(() => {
+    if (!patternResult || activeCellKey || planBlocks.length === 0) return;
+    const firstBlock = planBlocks[0];
+    setActiveColorKey(firstBlock.colorKey);
+    setActiveCellKey(firstBlock.cells[0] ? getCellCoordKey(firstBlock.cells[0]) : null);
+  }, [activeCellKey, patternResult, planBlocks]);
 
   useEffect(() => {
     restoredProgressProjectRef.current = null;
@@ -292,14 +212,17 @@ export function FocusModePage() {
     if (!progress) return;
 
     skipNextProgressSaveRef.current = true;
-    const validColorKeys = new Set(orderedColorEntries.map((item) => item.colorKey));
+    const validColorKeys = new Set(palette.map((item) => `${item.colorId}-${item.vendorCode}-${item.hex}`));
     setPatternMode(isPatternMode(progress.mode) ? progress.mode : 'smart');
+    setConnectivity(isConnectivity(progress.connectivity) ? progress.connectivity : 'smart');
+    setRowAxis(progress.axis === 'column' ? 'column' : 'row');
+    setFocusGridSize(isFocusGridSize(progress.focusGridSize) ? progress.focusGridSize : 10);
     setHandedness(progress.handedness === 'right' ? 'right' : 'left');
     setActiveColorKey(progress.activeColorKey && validColorKeys.has(progress.activeColorKey) ? progress.activeColorKey : null);
     setActiveCellKey(progress.activeCellKey && patternCellKeySet.has(progress.activeCellKey) ? progress.activeCellKey : null);
     setCompletedColorKeys(progress.completedColorKeys.filter((key) => validColorKeys.has(key)));
     setCompletedCellKeys(progress.completedCellKeys.filter((key) => patternCellKeySet.has(key)));
-  }, [isHydrating, orderedColorEntries, patternCellKeySet, patternResult, projectId, state.beadingProgress]);
+  }, [isHydrating, palette, patternCellKeySet, patternResult, projectId, state.beadingProgress]);
 
   useEffect(() => {
     if (!projectId || isHydrating || !patternResult || totalPatternCells === 0) return;
@@ -326,11 +249,14 @@ export function FocusModePage() {
       const progress: WorkshopBeadingProgress = {
         activeColorKey,
         activeCellKey,
-        completedColorKeys: Array.from(new Set(completedColorKeys)),
+        completedColorKeys: computedCompletedColorKeys,
         completedCellKeys: normalizedCompletedCellKeys,
         percent: overallProgressPercent,
         mode: patternMode,
         handedness,
+        connectivity,
+        axis: rowAxis,
+        focusGridSize,
         updatedAt,
       };
 
@@ -352,40 +278,51 @@ export function FocusModePage() {
   }, [
     activeCellKey,
     activeColorKey,
-    completedColorKeys,
+    computedCompletedColorKeys,
+    connectivity,
     handedness,
+    focusGridSize,
     isHydrating,
     normalizedCompletedCellKeys,
     overallProgressPercent,
     patternMode,
     patternResult,
     projectId,
+    rowAxis,
     totalPatternCells,
   ]);
 
-  const currentColor = useMemo(
-    () => palette.find((item) => `${item.colorId}-${item.vendorCode}-${item.hex}` === activeColorKey) ?? null,
-    [activeColorKey, palette],
-  );
-
-  const activeColorEntry = useMemo(
-    () => orderedColorEntries.find((item) => item.colorKey === activeColorKey) ?? null,
-    [orderedColorEntries, activeColorKey],
-  );
-
   const currentBlockIndex = useMemo(() => {
-    if (!activeColorEntry || !activeCellKey) return -1;
-    return activeColorEntry.blocks.findIndex((block) => block.cells.some((cell) => `${cell.x},${cell.y}` === activeCellKey));
-  }, [activeCellKey, activeColorEntry]);
+    if (!activeCellKey) return -1;
+    return planBlocks.findIndex((block) => block.cells.some((cell) => getCellCoordKey(cell) === activeCellKey));
+  }, [activeCellKey, planBlocks]);
 
-  const activeBlockCount = activeColorEntry?.blocks.length ?? 0;
-  const currentBlock = currentBlockIndex >= 0 ? activeColorEntry?.blocks[currentBlockIndex] ?? null : null;
+  const currentBlock = currentBlockIndex >= 0 ? planBlocks[currentBlockIndex] ?? null : null;
+  const activeGroup = useMemo(
+    () => beadingPlan?.groups.find((group) => group.key === currentBlock?.groupKey) ?? null,
+    [beadingPlan, currentBlock],
+  );
+  const activeGroupBlockIndex = useMemo(() => {
+    if (!activeGroup || !currentBlock) return -1;
+    return activeGroup.blocks.findIndex((block) => block.key === currentBlock.key);
+  }, [activeGroup, currentBlock]);
+  const activeBlockCount = activeGroup?.blocks.length ?? planBlocks.length;
   const activeBlockCells = currentBlock?.cells ?? [];
+  const effectiveActiveColorKey = currentBlock?.colorKey ?? activeColorKey;
+  const currentColor = useMemo(
+    () => palette.find((item) => `${item.colorId}-${item.vendorCode}-${item.hex}` === effectiveActiveColorKey) ?? null,
+    [effectiveActiveColorKey, palette],
+  );
+  const nextBlock = currentBlockIndex >= 0 ? planBlocks[currentBlockIndex + 1] ?? null : null;
+  const nextColor = useMemo(
+    () => palette.find((item) => `${item.colorId}-${item.vendorCode}-${item.hex}` === nextBlock?.colorKey) ?? null,
+    [nextBlock, palette],
+  );
   const focusWindowAnchor = handedness === 'left' ? 'top-right' : 'top-left';
   const focusWindowBounds = useMemo(() => {
     if (!patternResult || activeBlockCells.length === 0) return null;
-    return getFocusWindowBounds(patternResult, activeBlockCells, 10, focusWindowAnchor);
-  }, [activeBlockCells, focusWindowAnchor, patternResult]);
+    return getFocusWindowBounds(patternResult, activeBlockCells, focusGridSize, focusWindowAnchor);
+  }, [activeBlockCells, focusGridSize, focusWindowAnchor, patternResult]);
   const focusQuadrant = useMemo(() => {
     if (!patternResult || activeBlockCells.length === 0) return null;
     return getQuadrant(patternResult, activeBlockCells);
@@ -418,7 +355,7 @@ export function FocusModePage() {
     const canvas = mainCanvasRef.current;
     if (!patternResult || !canvas) return;
 
-    if (!activeColorKey || !activeBlockCells.length || !effectiveFocusWindowBounds || !focusRulerPosition) {
+    if (!effectiveActiveColorKey || !activeBlockCells.length || !effectiveFocusWindowBounds || !focusRulerPosition) {
       const width = Math.max(240, Math.min(720, patternResult.width * 18));
       const height = Math.max(240, Math.min(720, patternResult.height * 18));
       canvas.width = width;
@@ -444,48 +381,49 @@ export function FocusModePage() {
       canvas,
       pattern: patternResult,
       blockCells: activeBlockCells,
-      activeColorKey,
+      activeColorKey: effectiveActiveColorKey,
       windowBounds: effectiveFocusWindowBounds,
       rulerPosition: focusRulerPosition,
       completedCellKeys,
       tileSize: 28,
       rulerThickness: 18,
     });
-  }, [activeBlockCells, activeColorKey, completedCellKeys, effectiveFocusWindowBounds, focusRulerPosition, patternResult, separatorColor, separatorInterval, toggles.separator]);
+  }, [activeBlockCells, completedCellKeys, effectiveActiveColorKey, effectiveFocusWindowBounds, focusRulerPosition, patternResult, separatorColor, separatorInterval, toggles.separator]);
+
+  useEffect(() => {
+    setFocusWindowOverride(null);
+  }, [focusGridSize]);
 
   const completedCellsBeforeCurrentBlock = useMemo(() => {
-    if (!activeColorEntry || currentBlockIndex < 0) return 0;
+    if (!activeGroup || currentBlockIndex < 0 || activeGroupBlockIndex < 0) return 0;
     if (activeCellKey && currentBlock) {
-      const currentBlockCellIndex = currentBlock.cells.findIndex((cell) => `${cell.x},${cell.y}` === activeCellKey);
+      const currentBlockCellIndex = currentBlock.cells.findIndex((cell) => getCellCoordKey(cell) === activeCellKey);
       if (currentBlockCellIndex >= 0) {
-        return activeColorEntry.blocks.slice(0, currentBlockIndex).reduce((sum, block) => sum + block.cells.length, 0) + currentBlockCellIndex;
+        return activeGroup.blocks.slice(0, activeGroupBlockIndex).reduce((sum, block) => sum + block.cells.length, 0) + currentBlockCellIndex;
       }
     }
-    return activeColorEntry.blocks.slice(0, currentBlockIndex).reduce((sum, block) => sum + block.cells.length, 0);
-  }, [activeCellKey, activeColorEntry, currentBlock, currentBlockIndex]);
-  const activeBlockProgress = activeColorEntry && activeColorEntry.cells.length > 0 ? completedCellsBeforeCurrentBlock / activeColorEntry.cells.length : 0;
-  const remainingCellsCount = activeColorEntry ? Math.max(activeColorEntry.cells.length - completedCellsBeforeCurrentBlock, 0) : 0;
-
-  const activeColorIndex = activeColorKey ? orderedColorEntries.findIndex((item) => item.colorKey === activeColorKey) : -1;
-  const isCurrentColorCompleted = activeColorKey ? completedColorKeys.includes(activeColorKey) : false;
+    return activeGroup.blocks.slice(0, activeGroupBlockIndex).reduce((sum, block) => sum + block.cells.length, 0);
+  }, [activeCellKey, activeGroup, activeGroupBlockIndex, currentBlock, currentBlockIndex]);
+  const remainingCellsCount = activeGroup ? Math.max(activeGroup.cells.length - completedCellsBeforeCurrentBlock, 0) : 0;
+  const completedCellSet = useMemo(() => new Set(normalizedCompletedCellKeys), [normalizedCompletedCellKeys]);
 
   const currentStepLabel = useMemo(() => {
-    if (!activeColorEntry) return '请选择一个色号';
-    if (!activeCellKey || currentBlockIndex < 0) return `当前色号，共 ${activeBlockCount} 块`;
-    return `第 ${currentBlockIndex + 1} / ${activeBlockCount} 块`;
-  }, [activeBlockCount, activeCellKey, activeColorEntry, currentBlockIndex]);
+    if (!activeGroup) return '请选择一个色号';
+    if (!activeCellKey || activeGroupBlockIndex < 0) return `${activeGroup.label}，共 ${activeBlockCount} 块`;
+    return `${activeGroup.label} · 第 ${activeGroupBlockIndex + 1} / ${activeBlockCount} 块`;
+  }, [activeBlockCount, activeCellKey, activeGroup, activeGroupBlockIndex]);
 
   const activateColor = (colorKey: string) => {
-    const nextEntry = orderedColorEntries.find((item) => item.colorKey === colorKey) ?? null;
-    const firstBlock = nextEntry?.blocks[0] ?? null;
+    const firstPendingBlock = planBlocks.find((block) => block.colorKey === colorKey && block.cells.some((cell) => !completedCellSet.has(getCellCoordKey(cell))));
+    const firstBlock = firstPendingBlock ?? planBlocks.find((block) => block.colorKey === colorKey) ?? null;
     setFocusWindowOverride(null);
     setActiveColorKey(colorKey);
-    setActiveCellKey(firstBlock ? `${firstBlock.cells[0]?.x},${firstBlock.cells[0]?.y}` : null);
+    setActiveCellKey(firstBlock?.cells[0] ? getCellCoordKey(firstBlock.cells[0]) : null);
   };
 
-  const markBlockCompleted = (block: OrderedBlock | null) => {
-    if (!activeColorEntry || !block) return;
-    const blockCellKeys = block.cells.map((cell) => `${cell.x},${cell.y}`);
+  const markBlockCompleted = (block: BeadingBlock | null) => {
+    if (!block) return;
+    const blockCellKeys = block.cells.map(getCellCoordKey);
     setCompletedCellKeys((current) => {
       const next = new Set(current);
       for (const key of blockCellKeys) next.add(key);
@@ -494,7 +432,7 @@ export function FocusModePage() {
   };
 
   const gotoBlock = (direction: 'prev' | 'next') => {
-    if (!activeColorEntry || activeColorEntry.blocks.length === 0) return;
+    if (planBlocks.length === 0) return;
 
     const currentIndex = currentBlockIndex >= 0 ? currentBlockIndex : -1;
     const nextIndex = direction === 'next' ? currentIndex + 1 : currentIndex - 1;
@@ -503,40 +441,11 @@ export function FocusModePage() {
       markBlockCompleted(currentBlock);
     }
 
-    if (nextIndex >= 0 && nextIndex < activeColorEntry.blocks.length) {
-      const nextBlock = activeColorEntry.blocks[nextIndex];
+    if (nextIndex >= 0 && nextIndex < planBlocks.length) {
+      const nextBlock = planBlocks[nextIndex];
       setFocusWindowOverride(null);
-      setActiveCellKey(`${nextBlock.cells[0]?.x},${nextBlock.cells[0]?.y}`);
-      return;
-    }
-
-    const currentColorIndex = activeColorKey
-      ? orderedColorEntries.findIndex((item) => item.colorKey === activeColorKey)
-      : -1;
-
-    if (direction === 'next') {
-      if (currentColorIndex >= 0) {
-        const currentColorKey = orderedColorEntries[currentColorIndex]?.colorKey;
-        if (currentColorKey) {
-          setCompletedColorKeys((current) => (current.includes(currentColorKey) ? current : [...current, currentColorKey]));
-        }
-      }
-      const nextColor = orderedColorEntries[currentColorIndex + 1];
-      if (nextColor) {
-        const firstBlock = nextColor.blocks[0] ?? null;
-        setFocusWindowOverride(null);
-        setActiveColorKey(nextColor.colorKey);
-        setActiveCellKey(firstBlock ? `${firstBlock.cells[0]?.x},${firstBlock.cells[0]?.y}` : null);
-      }
-      return;
-    }
-
-    const prevColor = orderedColorEntries[currentColorIndex - 1];
-    if (prevColor) {
-      const prevBlock = prevColor.blocks[prevColor.blocks.length - 1] ?? null;
-      setFocusWindowOverride(null);
-      setActiveColorKey(prevColor.colorKey);
-      setActiveCellKey(prevBlock ? `${prevBlock.cells[0]?.x},${prevBlock.cells[0]?.y}` : null);
+      setActiveColorKey(nextBlock.colorKey);
+      setActiveCellKey(nextBlock.cells[0] ? getCellCoordKey(nextBlock.cells[0]) : null);
     }
   };
 
@@ -554,8 +463,8 @@ export function FocusModePage() {
     drawPatternPreview({
       canvas,
       pattern: patternResult,
-      activeColorKey,
-      activeBlockCellKeys: currentBlock?.cells.map((cell) => `${cell.x},${cell.y}`) ?? [],
+      activeColorKey: effectiveActiveColorKey,
+      activeBlockCellKeys: currentBlock?.cells.map(getCellCoordKey) ?? [],
       completedCellKeys,
       activeOpacity: 0.5,
       completedOverlayColor: '#86EFAC',
@@ -564,12 +473,12 @@ export function FocusModePage() {
         interval: separatorInterval,
         color: separatorColor,
       },
-      viewport: activeColorKey ? effectiveFocusWindowBounds : null,
+      viewport: effectiveActiveColorKey ? effectiveFocusWindowBounds : null,
     });
     const dataUrl = canvas.toDataURL('image/png');
     previewImageDataUrlRef.current = dataUrl;
     setFloatPreviewDataUrl(dataUrl);
-  }, [activeCellKey, activeColorEntry, activeColorKey, completedCellKeys, currentBlock, effectiveFocusWindowBounds, patternResult, separatorColor, separatorInterval, toggles.separator]);
+  }, [activeCellKey, completedCellKeys, currentBlock, effectiveActiveColorKey, effectiveFocusWindowBounds, patternResult, separatorColor, separatorInterval, toggles.separator]);
 
   const handlePreviewPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = {
@@ -601,7 +510,7 @@ export function FocusModePage() {
   };
 
   const handleFocusPanStart = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!activeColorKey || !effectiveFocusWindowBounds) return;
+    if (!effectiveActiveColorKey || !effectiveFocusWindowBounds) return;
     setFocusPan({
       isDragging: true,
       startClientX: event.clientX,
@@ -613,11 +522,14 @@ export function FocusModePage() {
   };
 
   const handleFocusPanMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!activeColorKey || !focusPan || !effectiveFocusWindowBounds || !panBounds || !mainCanvasRef.current || !patternResult) return;
+    if (!effectiveActiveColorKey || !focusPan || !effectiveFocusWindowBounds || !panBounds || !mainCanvasRef.current || !patternResult) return;
     const canvas = mainCanvasRef.current;
     const tileSize = 28;
-    const deltaX = Math.round((event.clientX - focusPan.startClientX) / tileSize);
-    const deltaY = Math.round((event.clientY - focusPan.startClientY) / tileSize);
+    const rulerThickness = 18;
+    const rect = canvas.getBoundingClientRect();
+    const visibleTileSize = Math.max(1, Math.min(rect.width, rect.height) / (effectiveFocusWindowBounds.size + rulerThickness / tileSize));
+    const deltaX = Math.round((event.clientX - focusPan.startClientX) / visibleTileSize);
+    const deltaY = Math.round((event.clientY - focusPan.startClientY) / visibleTileSize);
     const nextStartX = Math.max(panBounds.minX, Math.min(panBounds.maxX, focusPan.originX - deltaX));
     const nextStartY = Math.max(panBounds.minY, Math.min(panBounds.maxY, focusPan.originY - deltaY));
     const nextWindowBounds = {
@@ -630,12 +542,12 @@ export function FocusModePage() {
       canvas,
       pattern: patternResult,
       blockCells: activeBlockCells,
-      activeColorKey,
+      activeColorKey: effectiveActiveColorKey,
       windowBounds: nextWindowBounds,
       rulerPosition: focusRulerPosition ?? undefined,
       completedCellKeys,
       tileSize,
-      rulerThickness: 18,
+      rulerThickness,
     });
   };
 
@@ -649,7 +561,7 @@ export function FocusModePage() {
   };
 
   const moveFocusWindow = (axis: 'x' | 'y') => {
-    if (!activeColorKey || !effectiveFocusWindowBounds || !panBounds) return;
+    if (!effectiveActiveColorKey || !effectiveFocusWindowBounds || !panBounds) return;
     const step = effectiveFocusWindowBounds.size;
     const currentStartX = effectiveFocusWindowBounds.startX;
     const currentStartY = effectiveFocusWindowBounds.startY;
@@ -669,8 +581,8 @@ export function FocusModePage() {
     setFocusWindowOverride({ startX: nextStartX, startY: nextStartY });
   };
 
-  const canMoveFocusX = Boolean(activeColorKey && panBounds && panBounds.maxX > panBounds.minX);
-  const canMoveFocusY = Boolean(activeColorKey && panBounds && panBounds.maxY > panBounds.minY);
+  const canMoveFocusX = Boolean(effectiveActiveColorKey && panBounds && panBounds.maxX > panBounds.minX);
+  const canMoveFocusY = Boolean(effectiveActiveColorKey && panBounds && panBounds.maxY > panBounds.minY);
   const returnTo =
     typeof location.state === 'object' &&
     location.state &&
@@ -687,7 +599,7 @@ export function FocusModePage() {
       <header className={styles.titlebar}>
         <div className={styles.titlebarLeft}>
           <button type="button" className={styles.backButton} onClick={handleBack} aria-label="返回上一页">
-            ←
+            <img src={GO_BACK_ICON} alt="" />
           </button>
           <div className={styles.titlebarText}>
             <h1>专注模式</h1>
@@ -729,13 +641,13 @@ export function FocusModePage() {
             <div className={styles.currentColorName}>{currentColor ? `#${currentColor.hex.replace('#', '')}` : '图纸加载后显示当前颜色'}</div>
             <div className={styles.currentColorCount}>{currentColor ? `${currentColor.count} 粒` : '—'}</div>
             <div className={styles.currentColorCount}>{currentStepLabel}</div>
-            {activeColorEntry ? <div className={styles.currentColorCount}>当前色块剩余 {remainingCellsCount} 颗</div> : null}
+            {activeGroup ? <div className={styles.currentColorCount}>当前分组剩余 {remainingCellsCount} 颗</div> : null}
           </div>
           <div className={styles.currentColorArrow}>→</div>
           <div className={styles.nextColorCard}>
             <div className={styles.nextColorLabel}>NEXT</div>
-            <div className={styles.nextColorDot} style={{ background: palette[activeColorIndex + 1]?.hex ?? currentColor?.hex ?? '#D8B4E2' }} />
-            <div className={styles.nextColorCode}>{palette[activeColorIndex + 1]?.vendorCode ?? '完成'}</div>
+            <div className={styles.nextColorDot} style={{ background: nextColor?.hex ?? currentColor?.hex ?? '#D8B4E2' }} />
+            <div className={styles.nextColorCode}>{nextColor?.vendorCode ?? '完成'}</div>
           </div>
         </div>
       </section>
@@ -770,9 +682,11 @@ export function FocusModePage() {
           {palette.length > 0 ? (
             palette.map((item) => {
               const colorKey = `${item.colorId}-${item.vendorCode}-${item.hex}`;
-              const isActive = activeColorKey === colorKey;
-              const isCompleted = activeColorKey === colorKey ? isCurrentColorCompleted : completedColorKeys.includes(colorKey);
-              const ringProgress = isCompleted ? 1 : isActive ? Math.max(0, Math.min(1, activeBlockProgress)) : 0;
+              const isActive = effectiveActiveColorKey === colorKey;
+              const colorCellKeys = colorCellsByKey.get(colorKey);
+              const completedCellsForColor = colorCellKeys ? Array.from(colorCellKeys).filter((key) => completedCellSet.has(key)).length : 0;
+              const ringProgress = colorCellKeys && colorCellKeys.size > 0 ? completedCellsForColor / colorCellKeys.size : 0;
+              const isCompleted = ringProgress >= 1;
               return (
                 <button
                   key={`${item.vendorCode}-${item.hex}`}
@@ -893,7 +807,66 @@ export function FocusModePage() {
             </section>
 
             <section>
+              <div className={styles.settingsSectionTitle}>🧩 分块规则</div>
+              <div className={styles.handednessRow}>
+                <div className={styles.toggleInfo}>
+                  <div className={styles.toggleName}>相邻连接</div>
+                  <div className={styles.toggleDesc}>控制同色豆子如何合并成块</div>
+                </div>
+                <div className={styles.handednessSwitch} role="group" aria-label="相邻连接">
+                  {(['smart', '4', '8'] as BeadingConnectivity[]).map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={`${styles.handednessOption} ${connectivity === item ? styles.isOn : ''}`}
+                      onClick={() => setConnectivity(item)}
+                      aria-label={`${item} 连通`}
+                    >
+                      {item === 'smart' ? '智能' : `${item}向`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className={styles.handednessRow}>
+                <div className={styles.toggleInfo}>
+                  <div className={styles.toggleName}>逐行方向</div>
+                  <div className={styles.toggleDesc}>逐行模式下按行或按列推进</div>
+                </div>
+                <div className={styles.handednessSwitch} role="group" aria-label="逐行方向">
+                  <button type="button" className={`${styles.handednessOption} ${rowAxis === 'row' ? styles.isOn : ''}`} onClick={() => setRowAxis('row')} aria-label="按行">
+                    按行
+                  </button>
+                  <button type="button" className={`${styles.handednessOption} ${rowAxis === 'column' ? styles.isOn : ''}`} onClick={() => setRowAxis('column')} aria-label="按列">
+                    按列
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section>
               <div className={styles.settingsSectionTitle}>🖼️ 显示设置</div>
+              <div className={styles.handednessRow}>
+                <div className={styles.toggleInfo}>
+                  <div className={styles.toggleName}>页面格数</div>
+                  <div className={styles.toggleDesc}>控制主区域一次显示多少个格子</div>
+                </div>
+                <div className={`${styles.handednessSwitch} ${styles.gridSizeSwitch}`} role="group" aria-label="页面格数">
+                  {focusGridSizeOptions.map((item) => (
+                    <button
+                      key={item}
+                      type="button"
+                      className={`${styles.handednessOption} ${styles.gridSizeOption} ${focusGridSize === item ? styles.isOn : ''}`}
+                      onClick={() => setFocusGridSize(item)}
+                      aria-label={`${item} x ${item}`}
+                      aria-pressed={focusGridSize === item}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className={styles.toggleRow}>
                 <div className={styles.toggleInfo}>
                   <div className={styles.toggleName}>显示色号标记</div>

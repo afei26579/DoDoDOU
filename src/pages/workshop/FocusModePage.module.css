@@ -51,7 +51,8 @@
 .titlebarLeft, .titlebarCenter, .titlebarRight { display: flex; align-items: center; }
 .titlebarLeft { gap: 10px; min-width: 0; flex: 0 0 auto; }
 .titlebarCenter { flex: 1; min-width: 0; flex-direction: column; gap: 8px; align-items: stretch; padding: 0 12px; }
-.backButton { width: 34px; height: 34px; border: 0; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, #d8b4e2, #c4a8d4); color: #fff; box-shadow: 0 3px 10px rgba(216, 180, 226, 0.45); font-size: 18px; flex: 0 0 auto; }
+.backButton { width: 54px; height: 54px; border: 0; border-radius: 10px; display: grid; place-items: center; background: transparent; color: #fff; box-shadow: none; font-size: 18px; flex: 0 0 auto; padding: 0; }
+.backButton img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
 .titlebarText h1, .placeholderCard h2 { margin: 0; }
 .loadingBadge, .settingsButton, .colorProgressChip { border-radius: 999px; font-size: 12px; font-weight: 700; }
 .settingsButton { width: 40px; height: 40px; border: 0; display: grid; place-items: center; background: #f4efe9; color: #5d534a; flex: 0 0 auto; }
@@ -125,6 +126,8 @@
 .handednessSwitch { display: inline-flex; gap: 6px; padding: 4px; border-radius: 999px; background: #f4efe9; }
 .handednessOption { min-width: 56px; height: 30px; border: 0; border-radius: 999px; background: transparent; color: #9b8e84; font-size: 12px; font-weight: 700; padding: 0 10px; }
 .handednessOption.isOn { background: #d8b4e2; color: #fff; }
+.gridSizeSwitch { flex-shrink: 0; }
+.gridSizeOption { min-width: 42px; padding: 0 8px; }
 .toggleRow:last-child { border-bottom: none; }
 .toggleInfo { flex: 1; }
 .toggleName { font-size: 13px; font-weight: 700; color: #5d534a; }

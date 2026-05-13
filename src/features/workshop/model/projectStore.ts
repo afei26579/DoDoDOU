@@ -9,13 +9,13 @@ import type {
 } from './types';
 
 const DB_NAME = 'dodoudou-workshop';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_NAME = 'projects';
+const DRAFT_STORE_NAME = 'editor-drafts';
 const MEMORY_CACHE = new Map<string, WorkshopProjectRecord>();
 
-export type WorkshopProjectKind = 'upload' | 'draft' | 'pattern' | 'progress';
+export type WorkshopProjectKind = 'upload' | 'pattern' | 'progress';
 export type WorkshopProjectStatus = 'editing' | 'ready' | 'paused' | 'completed';
-export type WorkshopPaperState = 'draft' | 'completed';
 export type WorkshopBeadingState = 'idle' | 'progressing' | 'completed';
 
 export type WorkshopProjectProgress = {
@@ -29,7 +29,6 @@ export type WorkshopProjectRecord = {
   title: string;
   kind: WorkshopProjectKind;
   status: WorkshopProjectStatus;
-  paperState: WorkshopPaperState;
   beadingState: WorkshopBeadingState;
   uploadedImage: UploadedImage | null;
   cropTransform: CropTransform;
@@ -53,7 +52,6 @@ export type WorkshopProjectCard = {
   title: string;
   kind: WorkshopProjectKind;
   status: WorkshopProjectStatus;
-  paperState: WorkshopPaperState;
   beadingState: WorkshopBeadingState;
   coverUrl?: string | null;
   previewUrl?: string | null;
@@ -71,7 +69,6 @@ export type WorkshopProjectCard = {
 
 export type WorkshopProjectGroups = {
   recent: WorkshopProjectCard[];
-  drafts: WorkshopProjectCard[];
   patterns: WorkshopProjectCard[];
   progressing: WorkshopProjectCard[];
 };
@@ -92,7 +89,6 @@ function createDefaultRecord(projectId: string): WorkshopProjectRecord {
     title: '未命名作品',
     kind: 'upload',
     status: 'editing',
-    paperState: 'draft',
     beadingState: 'idle',
     uploadedImage: null,
     cropTransform: { scale: 1, x: 0, y: 0 },
@@ -151,10 +147,17 @@ function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
   const defaultRecord = createDefaultRecord(record.projectId);
   const createdAt = normalizeTimestamp(record.createdAt, defaultRecord.createdAt);
   const updatedAt = normalizeTimestamp(record.updatedAt, createdAt);
+  const legacyKind = (record as Omit<WorkshopProjectRecord, 'kind'> & { kind?: string }).kind;
+  const kind: WorkshopProjectKind =
+    legacyKind === 'progress'
+      ? 'progress'
+      : record.patternResult || record.editorState || legacyKind === 'pattern' || legacyKind === 'draft'
+        ? 'pattern'
+        : 'upload';
   return {
     ...defaultRecord,
     ...record,
-    paperState: record.paperState ?? defaultRecord.paperState,
+    kind,
     beadingState: record.beadingState ?? defaultRecord.beadingState,
     uploadedImage: record.uploadedImage ?? null,
     patternResult: record.patternResult ?? null,
@@ -199,7 +202,6 @@ export function toProjectCard(record: WorkshopProjectRecord): WorkshopProjectCar
     title: record.title,
     kind: record.kind,
     status: record.status,
-    paperState: record.paperState,
     beadingState: record.beadingState,
     coverUrl: record.coverUrl ?? record.uploadedImage?.dataUrl ?? null,
     previewUrl: record.previewUrl ?? null,
@@ -217,8 +219,7 @@ export function groupWorkshopProjects(records: WorkshopProjectRecord[]): Worksho
 
   return {
     recent: byOpened,
-    drafts: cards.filter((item) => item.paperState === 'draft'),
-    patterns: cards.filter((item) => item.paperState === 'completed' && item.beadingState !== 'progressing'),
+    patterns: cards.filter((item) => Boolean(item.pattern) && item.beadingState !== 'progressing'),
     progressing: cards.filter((item) => item.beadingState === 'progressing'),
   };
 }
@@ -230,6 +231,9 @@ function getDb() {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'projectId' });
+      }
+      if (!db.objectStoreNames.contains(DRAFT_STORE_NAME)) {
+        db.createObjectStore(DRAFT_STORE_NAME, { keyPath: 'draftId' });
       }
     };
     request.onerror = () => reject(request.error);

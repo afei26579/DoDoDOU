@@ -23,7 +23,6 @@ function toFlowState(record: WorkshopProjectRecord | null): WorkshopFlowState {
     config: record.config,
     patternResult: record.patternResult,
     viewMode: record.viewMode,
-    paperState: record.paperState,
     beadingState: record.beadingState,
     beadingProgress: record.beadingProgress,
     isGenerating: false,
@@ -62,10 +61,9 @@ export function useWorkshopFlow(projectId: string | null) {
   const persist = (patch: Partial<WorkshopFlowState>) => {
     if (!projectId) return;
     const lastOpenedAt = new Date().toISOString();
-    const nextPaperState = patch.paperState ?? (patch.patternResult ? 'completed' : defaultWorkshopFlowState.paperState);
     const nextBeadingState = patch.beadingState ?? (patch.patternResult ? 'idle' : defaultWorkshopFlowState.beadingState);
-    const nextKind = patch.patternResult ? 'pattern' : nextPaperState === 'draft' ? 'draft' : patch.uploadedImage ? 'upload' : 'upload';
-    const nextStatus = nextPaperState === 'draft' ? 'editing' : patch.patternResult ? 'ready' : patch.uploadedImage ? 'editing' : 'editing';
+    const nextKind = patch.patternResult ? 'pattern' : patch.uploadedImage ? 'upload' : 'upload';
+    const nextStatus = patch.patternResult ? 'ready' : 'editing';
     void saveWorkshopProject(projectId, {
       title: patch.uploadedImage ? getProjectTitle(patch.uploadedImage) : undefined,
       uploadedImage: patch.uploadedImage,
@@ -76,7 +74,6 @@ export function useWorkshopFlow(projectId: string | null) {
       beadingProgress: patch.beadingProgress,
       kind: nextKind,
       status: nextStatus,
-      paperState: nextPaperState,
       beadingState: nextBeadingState,
       coverUrl: patch.uploadedImage?.dataUrl,
       previewUrl: patch.patternResult ? null : patch.uploadedImage?.dataUrl,
@@ -98,7 +95,6 @@ export function useWorkshopFlow(projectId: string | null) {
             cropTransform: defaultCropTransform,
             patternResult: null,
             viewMode: 'image' as const,
-            paperState: 'completed' as const,
             beadingState: 'idle' as const,
             beadingProgress: null,
           };
@@ -145,7 +141,6 @@ export function useWorkshopFlow(projectId: string | null) {
             ...current,
             patternResult: result,
             viewMode: result ? ('pattern' as const) : current.viewMode,
-            paperState: result ? ('completed' as const) : current.paperState,
             beadingState: 'idle' as const,
             beadingProgress: null,
           };

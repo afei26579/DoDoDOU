@@ -1,7 +1,8 @@
 import type { WorkshopEditorState } from './types';
 
 const DB_NAME = 'dodoudou-workshop';
-const DB_VERSION = 1;
+const DB_VERSION = 3;
+const PROJECT_STORE_NAME = 'projects';
 const STORE_NAME = 'editor-drafts';
 const MEMORY_CACHE = new Map<string, WorkshopDraftRecord>();
 
@@ -23,6 +24,9 @@ function getDb() {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
+      if (!db.objectStoreNames.contains(PROJECT_STORE_NAME)) {
+        db.createObjectStore(PROJECT_STORE_NAME, { keyPath: 'projectId' });
+      }
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'draftId' });
       }

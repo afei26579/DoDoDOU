@@ -105,7 +105,6 @@ export function WorkshopHomePage({
             config: flowState.config,
             patternResult: null,
             viewMode: 'image',
-            paperState: 'completed',
             beadingState: 'idle',
           });
 
@@ -143,7 +142,6 @@ export function WorkshopHomePage({
             viewMode: 'pattern',
             kind: 'pattern',
             status: 'ready',
-            paperState: 'completed',
             beadingState: 'idle',
             lastOpenedAt: new Date().toISOString(),
           });

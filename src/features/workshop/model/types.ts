@@ -53,7 +53,6 @@ export type PatternResult = {
 };
 
 export type WorkshopViewMode = 'image' | 'pattern';
-export type WorkshopPaperState = 'draft' | 'completed';
 export type WorkshopBeadingState = 'idle' | 'progressing' | 'completed';
 
 export type WorkshopEditorState = {
@@ -70,6 +69,9 @@ export type WorkshopBeadingProgress = {
   percent: number;
   mode: string;
   handedness: 'left' | 'right';
+  connectivity?: '4' | '8' | 'smart';
+  axis?: 'row' | 'column';
+  focusGridSize?: 10 | 20 | 25 | 30;
   updatedAt: string;
 };
 
@@ -79,7 +81,6 @@ export type WorkshopFlowState = {
   config: WorkshopConfig;
   patternResult: PatternResult | null;
   viewMode: WorkshopViewMode;
-  paperState: WorkshopPaperState;
   beadingState: WorkshopBeadingState;
   beadingProgress: WorkshopBeadingProgress | null;
   isGenerating: boolean;

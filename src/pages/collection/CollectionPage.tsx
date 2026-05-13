@@ -21,13 +21,11 @@ function formatPatternSummary(item: GalleryItemCard) {
 
 function formatMyProjectSummary(project: WorkshopProjectCard) {
   const progressText = project.progress ? `${project.progress.percent}%` : null;
-  const detail = project.paperState === 'draft'
-    ? '草稿'
-    : project.beadingState === 'progressing'
-      ? '拼豆进行中'
-      : project.kind === 'pattern' && project.pattern
-        ? `${project.pattern.width}×${project.pattern.height} · ${project.pattern.paletteCount} 色`
-        : '图纸';
+  const detail = project.beadingState === 'progressing'
+    ? '拼豆进行中'
+    : project.pattern
+      ? `${project.pattern.width}×${project.pattern.height} · ${project.pattern.paletteCount} 色`
+      : '图纸';
   return progressText ? `${detail} · ${progressText}` : detail;
 }
 
@@ -104,7 +102,6 @@ export function CollectionPage() {
 
   const myGroups = useMemo(() => groupWorkshopProjects(myItems), [myItems]);
   const myRecentItems = myGroups.recent.slice(0, 4);
-  const myDrafts = myGroups.drafts.slice(0, 4);
   const myPatterns = myGroups.patterns.slice(0, 4);
   const myProgressing = myGroups.progressing.slice(0, 4);
 
@@ -167,32 +164,6 @@ export function CollectionPage() {
                       </div>
                     </article>
                   ))}
-                </div>
-              </section>
-
-              <section>
-                <div className="collection-my-section__header">
-                  <h4>草稿</h4>
-                  <span>{myDrafts.length} 项</span>
-                </div>
-                <div className="collection-my-list">
-                  {myDrafts.length > 0 ? myDrafts.map((item) => (
-                    <article
-                      key={item.id}
-                      className="collection-my-card"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => navigate(`/workshop/editor/${encodeURIComponent(item.id)}`)}
-                    >
-                      <div className="collection-my-card__media" aria-hidden="true">
-                        {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
-                      </div>
-                      <div className="collection-my-card__body">
-                        <strong>{item.title}</strong>
-                        <p>{item.status === 'editing' ? '编辑中' : item.status === 'ready' ? '可继续编辑' : '草稿'}</p>
-                      </div>
-                    </article>
-                  )) : <div className="collection-empty collection-empty--inline">暂无草稿，上传一张图片即可开始创作。</div>}
                 </div>
               </section>
 

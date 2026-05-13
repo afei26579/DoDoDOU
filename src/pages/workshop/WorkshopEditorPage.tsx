@@ -5,7 +5,6 @@ import { WorkshopPreviewPanel } from './components/WorkshopPreviewPanel';
 import { DownloadSettingsModal } from './DownloadSettingsModal';
 import { ensureWorkshopProject, getWorkshopProject, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import {
-  deleteWorkshopDraft,
   getWorkshopDraft,
   saveWorkshopDraft,
 } from '../../features/workshop/model/draftStore';
@@ -50,12 +49,33 @@ type PointerPoint = {
   clientY: number;
 };
 
-const TOOL_ITEMS: Array<{ id: Tool; label: string; icon: string }> = [
-  { id: 'brush', label: '画笔', icon: '✏️' },
-  { id: 'eraser', label: '橡皮', icon: '🧹' },
-  { id: 'fill', label: '填充', icon: '🪣' },
-  { id: 'picker', label: '取色', icon: '💉' },
-  { id: 'pan', label: '平移', icon: '✋' },
+type PaintSession = {
+  grid: string[][];
+  tool: 'brush' | 'eraser';
+  color: string;
+  size: number;
+  changed: boolean;
+  lastCell: { row: number; col: number };
+};
+
+const ICONS = {
+  goback: '/assets/system_icons/goback.png',
+  undo: '/assets/pngs/01_undo_v2.png',
+  redo: '/assets/pngs/02_redo_v2.png',
+  clear: '/assets/pngs/03_clean_brush_v2.png',
+  brush: '/assets/pngs/04_paintbrush_no_border.png',
+  eraser: '/assets/pngs/05_eraser_no_border.png',
+  fill: '/assets/pngs/06_paint_bucket_no_border.png',
+  picker: '/assets/pngs/07_eyedropper_no_border.png',
+  pan: '/assets/pngs/move_no_border.png',
+} as const;
+
+const TOOL_ITEMS: Array<{ id: Tool; label: string; icon?: string; iconSrc?: string }> = [
+  { id: 'brush', label: '画笔', iconSrc: ICONS.brush },
+  { id: 'eraser', label: '橡皮', iconSrc: ICONS.eraser },
+  { id: 'fill', label: '填充', iconSrc: ICONS.fill },
+  { id: 'picker', label: '取色', iconSrc: ICONS.picker },
+  { id: 'pan', label: '平移', iconSrc: ICONS.pan   },
 ];
 
 const DEFAULT_COLORS = ['#000000', '#FFFFFF', '#FF6600', '#FFDAC1', '#D8B4E2'];
@@ -104,12 +124,6 @@ function writeLocalEditorDraft(projectId: string, state: WorkshopEditorState) {
   }
 }
 
-function clearLocalEditorDraft(projectId: string) {
-  if (typeof window === 'undefined') return;
-
-  window.localStorage.removeItem(getLocalDraftKey(projectId));
-}
-
 function makeRecentColors(currentColor: string, recentColors: string[]) {
   return [currentColor, ...recentColors.filter((item) => item !== currentColor)].slice(0, 8);
 }
@@ -140,6 +154,55 @@ function cloneGrid(grid: string[][]) {
 
 function cloneHistory(history: string[][][]) {
   return history.map((snap) => snap.map((row) => [...row]));
+}
+
+function paintCellBlock(
+  targetGrid: string[][],
+  row: number,
+  col: number,
+  paintTool: PaintSession['tool'],
+  color: string,
+  size: number,
+) {
+  const rowCount = targetGrid.length;
+  const colCount = targetGrid[0]?.length ?? 0;
+  const half = Math.floor(size / 2);
+  let changed = false;
+
+  for (let dr = -half; dr < size - half; dr += 1) {
+    for (let dc = -half; dc < size - half; dc += 1) {
+      const r = row + dr;
+      const c = col + dc;
+
+      if (r < 0 || r >= rowCount || c < 0 || c >= colCount) continue;
+
+      const nextColor = paintTool === 'eraser' ? '' : color;
+      if (targetGrid[r][c] === nextColor) continue;
+
+      targetGrid[r][c] = nextColor;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+function getInterpolatedCells(from: { row: number; col: number }, to: { row: number; col: number }) {
+  const rowDelta = to.row - from.row;
+  const colDelta = to.col - from.col;
+  const steps = Math.max(Math.abs(rowDelta), Math.abs(colDelta));
+  const cells: Array<{ row: number; col: number }> = [];
+
+  if (steps === 0) return [to];
+
+  for (let step = 1; step <= steps; step += 1) {
+    cells.push({
+      row: Math.round(from.row + (rowDelta * step) / steps),
+      col: Math.round(from.col + (colDelta * step) / steps),
+    });
+  }
+
+  return cells;
 }
 
 function createFreshEditorState(grid: string[][]): WorkshopEditorState {
@@ -217,6 +280,8 @@ export function WorkshopEditorPage() {
   const toolbarRef = useRef<HTMLDivElement | null>(null);
   const canvasStageRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const paintSessionRef = useRef<PaintSession | null>(null);
+  const globalPaintCleanupRef = useRef<(() => void) | null>(null);
   const [toolbarHeight, setToolbarHeight] = useState(120);
   const [canvasLayout, setCanvasLayout] = useState({
     width: 0,
@@ -257,8 +322,6 @@ export function WorkshopEditorPage() {
     center: ZoomPoint;
   } | null>(null);
   const touchZoomPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [drawnSet, setDrawnSet] = useState<Set<string>>(new Set());
   const [projectReady, setProjectReady] = useState(false);
   const [historyState, setHistoryState] = useState<HistoryState>({ index: 0, length: 1 });
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
@@ -267,7 +330,7 @@ export function WorkshopEditorPage() {
   const currentRecentColors = makeRecentColors(currentColor, recentColors);
   const downloadPatternResult = gridToPatternResult(grid, downloadBrand);
 
-  const persistEditorSnapshot = async (nextPaperState: 'draft' | 'completed') => {
+  const persistEditorSnapshot = async () => {
     if (!projectId) {
       navigate(-1);
       return;
@@ -284,9 +347,8 @@ export function WorkshopEditorPage() {
       saveWorkshopProject(projectId, {
         editorState,
         patternResult,
-        kind: nextPaperState === 'completed' ? 'pattern' : 'draft',
-        status: nextPaperState === 'completed' ? 'ready' : 'editing',
-        paperState: nextPaperState,
+        kind: 'pattern',
+        status: 'ready',
         previewUrl: null,
         lastOpenedAt: new Date().toISOString(),
       }),
@@ -296,7 +358,7 @@ export function WorkshopEditorPage() {
 
   const handleBack = async () => {
     try {
-      await persistEditorSnapshot('draft');
+      await persistEditorSnapshot();
     } catch (error) {
       console.error('[WorkshopEditorPage] back save failed', error);
     } finally {
@@ -304,14 +366,15 @@ export function WorkshopEditorPage() {
     }
   };
 
-  const finishEditing = async () => {
+  const handleOpenFocusMode = async () => {
+    if (!projectId) return;
+
     try {
-      await persistEditorSnapshot('completed');
+      await persistEditorSnapshot();
+      navigate(`/workshop/focus/${projectId}`);
     } catch (error) {
-      console.error('[WorkshopEditorPage] finish editing failed', error);
-    } finally {
-      clearLocalEditorDraft(projectId ?? '');
-      navigate(-1);
+      console.error('[WorkshopEditorPage] open focus mode save failed', error);
+      showToast('保存失败，请稍后再试');
     }
   };
 
@@ -354,15 +417,13 @@ export function WorkshopEditorPage() {
       }
 
       const currentProject = await getWorkshopProject(projectId).catch(() => null);
-      const shouldRestoreDraft = currentProject?.paperState === 'draft';
-      const draft = shouldRestoreDraft ? await getWorkshopDraft(projectId).catch(() => null) : null;
+      const draft = await getWorkshopDraft(projectId).catch(() => null);
       const localDraft = readLocalEditorDraft(projectId);
-      const restoredState = shouldRestoreDraft ? draft?.state ?? localDraft : null;
+      const restoredState = currentProject?.editorState ?? draft?.state ?? localDraft;
       const restoredGrid = restoredState?.grid?.length ? cloneGrid(restoredState.grid) : null;
       await ensureWorkshopProject(projectId, {
-        kind: 'draft',
+        kind: 'pattern',
         status: 'editing',
-        paperState: 'draft',
         beadingState: 'idle',
         lastOpenedAt: new Date().toISOString(),
       });
@@ -372,8 +433,6 @@ export function WorkshopEditorPage() {
 
       console.log('[WorkshopEditorPage] project status snapshot', {
         projectId,
-        sourcePaperState: currentProject?.paperState ?? null,
-        paperState: project?.paperState ?? null,
         beadingState: project?.beadingState ?? null,
         status: project?.status ?? null,
         kind: project?.kind ?? null,
@@ -415,9 +474,8 @@ export function WorkshopEditorPage() {
         await saveWorkshopProject(projectId, {
           editorState: freshEditorState,
           patternResult: gridToPatternResult(freshEditorState.grid, defaultWorkshopConfig.brand),
-          kind: 'draft',
-          status: 'editing',
-          paperState: 'draft',
+          kind: 'pattern',
+          status: 'ready',
           lastOpenedAt: new Date().toISOString(),
         });
         await saveWorkshopDraft(projectId, { state: freshEditorState });
@@ -476,6 +534,7 @@ export function WorkshopEditorPage() {
     return () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      globalPaintCleanupRef.current?.();
     };
   }, []);
 
@@ -494,9 +553,8 @@ export function WorkshopEditorPage() {
         saveWorkshopProject(projectId, {
           editorState,
           patternResult: gridToPatternResult(editorState.grid, defaultWorkshopConfig.brand),
-          kind: 'draft',
-          status: 'editing',
-          paperState: 'draft',
+          kind: 'pattern',
+          status: 'ready',
           lastOpenedAt: new Date().toISOString(),
         }),
       ]);
@@ -601,6 +659,76 @@ export function WorkshopEditorPage() {
     persistEditorState(nextGrid, trimmedHistory, nextIndex);
   };
 
+  const continuePaintStroke = (pointerId: number, clientX: number, clientY: number) => {
+    const drag = dragRef.current;
+    const paintSession = paintSessionRef.current;
+    if (!drag || drag.pointerId !== pointerId || drag.kind !== 'paint' || !paintSession) return;
+
+    const cell = toCellPoint(clientX, clientY, canvasRef.current, cols, rows);
+    if (!cell) return;
+
+    const key = `${cell.row},${cell.col}`;
+    if (drag.lastCell === key) return;
+
+    drag.lastCell = key;
+
+    let changed = false;
+    for (const nextCell of getInterpolatedCells(paintSession.lastCell, cell)) {
+      changed = paintCellBlock(
+        paintSession.grid,
+        nextCell.row,
+        nextCell.col,
+        paintSession.tool,
+        paintSession.color,
+        paintSession.size,
+      ) || changed;
+    }
+
+    paintSession.lastCell = cell;
+    paintSession.changed = paintSession.changed || changed;
+    if (changed) setGrid(cloneGrid(paintSession.grid));
+    drag.moved = true;
+  };
+
+  const finishPaintStroke = (pointerId: number) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== pointerId || drag.kind !== 'paint') return;
+
+    const paintSession = paintSessionRef.current;
+    if (paintSession?.changed) {
+      commitGrid(cloneGrid(paintSession.grid));
+    }
+    paintSessionRef.current = null;
+    globalPaintCleanupRef.current?.();
+    globalPaintCleanupRef.current = null;
+  };
+
+  const bindGlobalPaintEvents = (pointerId: number) => {
+    globalPaintCleanupRef.current?.();
+
+    const handleMove = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) return;
+      event.preventDefault();
+      continuePaintStroke(event.pointerId, event.clientX, event.clientY);
+    };
+
+    const handleEnd = (event: PointerEvent) => {
+      if (event.pointerId !== pointerId) return;
+      finishPaintStroke(event.pointerId);
+      dragRef.current = null;
+      pinchRef.current = null;
+    };
+
+    window.addEventListener('pointermove', handleMove, { passive: false });
+    window.addEventListener('pointerup', handleEnd);
+    window.addEventListener('pointercancel', handleEnd);
+    globalPaintCleanupRef.current = () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleEnd);
+      window.removeEventListener('pointercancel', handleEnd);
+    };
+  };
+
   const undo = () => {
     if (historyIndexRef.current <= 0) return;
 
@@ -670,14 +798,14 @@ export function WorkshopEditorPage() {
       return (
         <>
           <div className={styles.toolInfoTag}>
-            <span className={styles.tagIcon}>✏️</span>
+            <img className={styles.tagIcon} src={ICONS.brush} alt="" />
             <span className={styles.tagText}>画笔</span>
           </div>
           <div className={styles.toolSep} />
           <div className={styles.paramGroup}>
             <div className={styles.paramLabel}>粗细</div>
             <div className={styles.sizeDots}>
-              {[1, 2, 3, 4, 5].map((size) => {
+              {[1, 2, 3].map((size) => {
                 const active = brushSize === size;
                 const dotSize = 7 + size * 4;
 
@@ -737,14 +865,14 @@ export function WorkshopEditorPage() {
       return (
         <>
           <div className={styles.toolInfoTag}>
-            <span className={styles.tagIcon}>🧹</span>
+            <img className={styles.tagIcon} src={ICONS.eraser} alt="" />
             <span className={styles.tagText}>橡皮</span>
           </div>
           <div className={styles.toolSep} />
           <div className={styles.paramGroup}>
             <div className={styles.paramLabel}>大小</div>
             <div className={styles.sizeDots}>
-              {[1, 2, 3, 4, 5].map((size) => {
+              {[1, 2, 3].map((size) => {
                 const active = eraserSize === size;
                 const dotSize = 7 + size * 4;
 
@@ -770,17 +898,6 @@ export function WorkshopEditorPage() {
               })}
             </div>
           </div>
-          <div className={styles.toolSep} />
-          <div className={styles.eraserPreviewWrap}>
-            <div className={styles.paramLabel}>预览</div>
-            <div
-              className={styles.eraserPreview}
-              style={{
-                width: Math.min(56, eraserSize * 14 + 6),
-                height: Math.min(56, eraserSize * 14 + 6),
-              }}
-            />
-          </div>
         </>
       );
     }
@@ -789,7 +906,7 @@ export function WorkshopEditorPage() {
       return (
         <>
           <div className={styles.toolInfoTag}>
-            <span className={styles.tagIcon}>🪣</span>
+            <img className={styles.tagIcon} src={ICONS.fill} alt="" />
             <span className={styles.tagText}>填充</span>
           </div>
           <div className={styles.toolSep} />
@@ -827,7 +944,7 @@ export function WorkshopEditorPage() {
       return (
         <>
           <div className={styles.toolInfoTag}>
-            <span className={styles.tagIcon}>💉</span>
+            <img className={styles.tagIcon} src={ICONS.picker} alt="" />
             <span className={styles.tagText}>取色</span>
           </div>
           <div className={styles.toolSep} />
@@ -843,7 +960,7 @@ export function WorkshopEditorPage() {
     return (
       <>
         <div className={styles.toolInfoTag}>
-          <span className={styles.tagIcon}>✋</span>
+          <img className={styles.tagIcon} src={ICONS.pan} alt="" />
           <span className={styles.tagText}>平移</span>
         </div>
         <div className={styles.toolSep} />
@@ -900,6 +1017,12 @@ export function WorkshopEditorPage() {
       touchZoomPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
       if (touchZoomPointersRef.current.size >= 2) {
+        const paintSession = paintSessionRef.current;
+        if (paintSession?.changed) {
+          commitGrid(cloneGrid(paintSession.grid));
+        }
+        globalPaintCleanupRef.current?.();
+        globalPaintCleanupRef.current = null;
         const [a, b] = Array.from(touchZoomPointersRef.current.values());
         const dx = b.x - a.x;
         const dy = b.y - a.y;
@@ -912,8 +1035,8 @@ export function WorkshopEditorPage() {
             y: (a.y + b.y) / 2,
           },
         };
-        setIsDrawing(false);
-        setDrawnSet(new Set());
+        paintSessionRef.current = null;
+        dragRef.current = null;
         return;
       }
     }
@@ -935,25 +1058,20 @@ export function WorkshopEditorPage() {
       return;
     }
 
-    const nextGrid = cloneGrid(grid);
     const size = tool === 'eraser' ? eraserSize : brushSize;
-    const half = Math.floor(size / 2);
-
-    for (let dr = -half; dr < size - half; dr += 1) {
-      for (let dc = -half; dc < size - half; dc += 1) {
-        const r = cell.row + dr;
-        const c = cell.col + dc;
-
-        if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
-
-        nextGrid[r][c] = tool === 'eraser' ? '' : currentColor;
-      }
-    }
-
-    commitGrid(nextGrid);
-    setIsDrawing(true);
-    setDrawnSet(new Set([`${cell.row},${cell.col}`]));
+    const nextGrid = cloneGrid(grid);
+    const changed = paintCellBlock(nextGrid, cell.row, cell.col, tool, currentColor, size);
+    paintSessionRef.current = {
+      grid: nextGrid,
+      tool,
+      color: currentColor,
+      size,
+      changed,
+      lastCell: cell,
+    };
+    setGrid(nextGrid);
     beginDrag(event, 'paint');
+    bindGlobalPaintEvents(event.pointerId);
   };
 
   const handleCanvasPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -979,8 +1097,8 @@ export function WorkshopEditorPage() {
           y: centerY - (centerY - pinchRef.current.startOffset.y) * scaleRatio,
         });
         setScale(nextScale);
+        return;
       }
-      return;
     }
 
     const drag = dragRef.current;
@@ -996,7 +1114,6 @@ export function WorkshopEditorPage() {
       return;
     }
 
-    if (!drag || drag.pointerId !== event.pointerId) return;
     if (!drag || drag.pointerId !== event.pointerId) return;
 
     const dx = event.clientX - drag.startX;
@@ -1020,21 +1137,7 @@ export function WorkshopEditorPage() {
       return;
     }
 
-    if (!isDrawing) return;
-
-    const cell = toCellPoint(event.clientX, event.clientY, canvasRef.current, cols, rows);
-    if (!cell) return;
-
-    const key = `${cell.row},${cell.col}`;
-    if (drag.lastCell === key || drawnSet.has(key)) return;
-
-    drag.lastCell = key;
-    setDrawnSet((current) => new Set(current).add(key));
-
-    const nextGrid = cloneGrid(grid);
-    nextGrid[cell.row][cell.col] = tool === 'eraser' ? '' : currentColor;
-    commitGrid(nextGrid);
-    drag.moved = true;
+    continuePaintStroke(event.pointerId, event.clientX, event.clientY);
   };
 
   const handleCanvasPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -1048,9 +1151,9 @@ export function WorkshopEditorPage() {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
 
+    if (drag.kind === 'paint') finishPaintStroke(event.pointerId);
+
     dragRef.current = null;
-    setIsDrawing(false);
-    setDrawnSet(new Set());
     pinchRef.current = null;
 
     try {
@@ -1165,48 +1268,13 @@ export function WorkshopEditorPage() {
             title="返回上一页"
             aria-label="返回上一页"
           >
-            ←
+            <img src={ICONS.goback} alt="" />
           </button>
           <div className={styles.titlebarText}>
-            <h1>落笔生花</h1>
+            <h1>图纸编辑</h1>
           </div>
         </div>
         <div className={styles.titlebarActions}>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            onClick={undo}
-            disabled={historyState.index <= 0}
-            title="撤销"
-          >
-            ↩
-          </button>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            onClick={redo}
-            disabled={historyState.index >= historyState.length - 1}
-            title="重做"
-          >
-            ↪
-          </button>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            onClick={clearCanvas}
-            title="清空画布"
-          >
-            🗑
-          </button>
-          <button
-            type="button"
-            className={styles.primaryBtn}
-            onClick={finishEditing}
-            disabled={!projectId}
-            title="完成并退出"
-          >
-            ✓ 完成
-          </button>
           <button
             type="button"
             className={styles.primaryBtn}
@@ -1217,7 +1285,16 @@ export function WorkshopEditorPage() {
             disabled={!grid.length}
             title="导出"
           >
-            💾 导出
+            下载
+          </button>
+          <button
+            type="button"
+            className={styles.primaryBtn}
+            onClick={handleOpenFocusMode}
+            disabled={!projectId || !grid.length}
+            title="进入拼豆模式"
+          >
+            拼豆
           </button>
         </div>
       </header>
@@ -1242,6 +1319,43 @@ export function WorkshopEditorPage() {
             className={styles.canvas}
             style={canvasTransformStyle}
           />
+        </div>
+
+        <div
+          className={styles.canvasActions}
+          onPointerDown={(event) => event.stopPropagation()}
+          onPointerMove={(event) => event.stopPropagation()}
+          onPointerUp={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className={styles.canvasActionBtn}
+            onClick={undo}
+            disabled={historyState.index <= 0}
+            title="撤销"
+            aria-label="撤销"
+          >
+            <img src={ICONS.undo} alt="" />
+          </button>
+          <button
+            type="button"
+            className={styles.canvasActionBtn}
+            onClick={redo}
+            disabled={historyState.index >= historyState.length - 1}
+            title="重做"
+            aria-label="重做"
+          >
+            <img src={ICONS.redo} alt="" />
+          </button>
+          <button
+            type="button"
+            className={styles.canvasActionBtn}
+            onClick={clearCanvas}
+            title="清空画布"
+            aria-label="清空画布"
+          >
+            <img src={ICONS.clear} alt="" />
+          </button>
         </div>
 
         <WorkshopPreviewPanel
@@ -1275,8 +1389,9 @@ export function WorkshopEditorPage() {
                 className={`${styles.toolBtn} ${tool === item.id ? styles.toolActive : ''}`}
                 onClick={() => setTool(item.id)}
                 title={item.label}
+                aria-label={item.label}
               >
-                {item.icon}
+                {item.iconSrc ? <img src={item.iconSrc} alt="" /> : item.icon}
               </button>
             ))}
             <div className={styles.toolSep} />
@@ -1287,19 +1402,6 @@ export function WorkshopEditorPage() {
                 onChange={(event) => applyColor(event.target.value)}
               />
             </label>
-            <div className={styles.toolSep} />
-            <div className={styles.recentRow}>
-              {currentRecentColors.map((hex) => (
-                <button
-                  key={hex}
-                  type="button"
-                  className={styles.recentDot}
-                  style={{ background: hex }}
-                  onClick={() => applyColor(hex)}
-                  title={hex}
-                />
-              ))}
-            </div>
           </div>
           <div className={styles.toolbarContent}>{renderToolRow2()}</div>
         </section>
