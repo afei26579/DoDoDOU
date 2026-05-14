@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "check": "tsc -b --pretty false",
+    "color-system:build": "node scripts/build-color-system.mjs",
+    "color-system:validate": "node scripts/validate-color-system.mjs",
     "gallery:server": "node server/gallery-server.mjs",
     "dev:all": "node scripts/dev-all.mjs",
     "prisma:generate": "prisma generate",

@@ -19,7 +19,7 @@ import { drawPatternFocusZoomView, getFocusPanBounds, getFocusWindowBounds, getQ
 import { drawPatternPreview } from '../../lib/pattern/preview';
 import styles from './FocusModePage.module.css';
 
-const GO_BACK_ICON = '/assets/system_icons/goback.png';
+const GO_BACK_ICON = '/assets/system_icons/go_back.png';
 
 type ToggleKey = 'label' | 'separator';
 

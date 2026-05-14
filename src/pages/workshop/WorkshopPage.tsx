@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CropTransform, WorkshopFlowState } from '../../features/workshop/model/types';
+import { getBeadBrandLabel } from '../../lib/pattern/brand';
 import { createCropCanvas, loadImage } from '../../lib/pattern/crop';
 import { WorkshopGenerateButton } from './components/WorkshopGenerateButton';
 import { WorkshopHero } from './components/WorkshopHero';
@@ -85,7 +86,7 @@ export function WorkshopPage({
 
   const tagLabel = useMemo(() => {
     if (activeTag === 'size') return `${config.canvasSize} × ${config.canvasSize}`;
-    if (activeTag === 'brand') return config.brand;
+    if (activeTag === 'brand') return getBeadBrandLabel(config.brand);
     if (activeTag === 'style') return config.style;
     return `${config.colorMergeThreshold}`;
   }, [activeTag, config.brand, config.canvasSize, config.colorMergeThreshold, config.style]);
@@ -247,7 +248,7 @@ export function WorkshopPage({
   };
 
   return (
-    <main className={`workshop-page ${isHome ? 'workshop-page--home' : ''}`}>
+    <main className={`workshop-page workshop-page--${mode} ${isHome ? 'workshop-page--home' : ''}`}>
       <WorkshopHero projectId={projectId} />
       <WorkshopPreviewArea
         mode={mode}
@@ -272,7 +273,7 @@ export function WorkshopPage({
         />
       ) : (
         <>
-          <section className={`workshop-toolbar-surface workshop-toolbar-surface--${mode} card-surface`} aria-label="工具栏">
+          <section className={`workshop-toolbar-surface workshop-toolbar-surface--${mode}`} aria-label="工具栏">
             <WorkshopToolbar
               mode={mode}
               hasImage={Boolean(uploadedImage)}
@@ -293,7 +294,7 @@ export function WorkshopPage({
 
           {mode === 'result' ? (
             <>
-              <section className="workshop-panel card-surface" aria-label="图纸操作">
+              <section className="workshop-panel workshop-panel--result card-surface" aria-label="图纸操作">
                 <div className="workshop-panel__result-content">
                   {patternResult ? <WorkshopResultStats patternResult={patternResult} onOpenStats={() => setIsStatsSheetOpen(true)} /> : null}
                   <WorkshopGenerateButton

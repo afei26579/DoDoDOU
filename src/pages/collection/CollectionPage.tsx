@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchGalleryList } from '../../features/gallery/model/api';
-import type { GalleryItemCard } from '../../features/gallery/model/types';
+import type { GalleryItemCard, GallerySortKey } from '../../features/gallery/model/types';
 import {
   groupWorkshopProjects,
   listWorkshopProjects,
@@ -9,8 +9,48 @@ import {
   type WorkshopProjectRecord,
 } from '../../features/workshop/model/projectStore';
 
-const collectionFilters = ['全部', '最新', '最热', '我的'] as const;
+const collectionFilters = [
+  { label: '全部', tab: 'all', iconSrc: '/assets/system_icons/all.png', activeIconSrc: '/assets/system_icons/all_active.png' },
+  { label: '最新', tab: 'latest', iconSrc: '/assets/system_icons/latest.png', activeIconSrc: '/assets/system_icons/latest_active.png' },
+  { label: '最热', tab: 'hot', iconSrc: '/assets/system_icons/hot.png', activeIconSrc: '/assets/system_icons/hot_active.png' },
+  { label: '我的', tab: 'my', iconSrc: '/assets/system_icons/my.png', activeIconSrc: '/assets/system_icons/my_active.png' },
+] as const;
 const collectionCardBackgrounds = ['#F9F0FF', '#F0FBF6', '#FFF8F0', '#FFF0F6', '#EDF2FF'];
+const FAVORITE_GALLERY_ITEM_IDS_KEY = 'dodoudou.favoriteGalleryItemIds';
+
+type CollectionFilter = (typeof collectionFilters)[number]['label'];
+
+function getFilterFromParams(searchParams: URLSearchParams): CollectionFilter {
+  const tab = searchParams.get('tab');
+  const order = searchParams.get('order');
+  if (tab === 'my') return '我的';
+  if (tab === 'latest') return '最新';
+  if (tab === 'hot') return '最热';
+  if (tab === 'all') return '全部';
+  if (order === 'latest' || order === 'lastest') return '最新';
+  if (order === 'hot') return '最热';
+  return '全部';
+}
+
+function getSortFromFilter(filter: CollectionFilter): GallerySortKey {
+  if (filter === '我的') return 'recommended';
+  return 'latest';
+}
+
+function getGalleryTimestamp(item: GalleryItemCard) {
+  return item.publishedAt ?? item.createdAt;
+}
+
+function sortGalleryItems(items: GalleryItemCard[], filter: CollectionFilter, favoriteItemIds: Set<string>) {
+  return [...items].sort((a, b) => {
+    if (filter === '全部' || filter === '最热') {
+      const favoriteDiff = Number(favoriteItemIds.has(b.id)) - Number(favoriteItemIds.has(a.id));
+      if (favoriteDiff !== 0) return favoriteDiff;
+    }
+
+    return getGalleryTimestamp(b).localeCompare(getGalleryTimestamp(a));
+  });
+}
 
 function formatPatternSummary(item: GalleryItemCard) {
   const summary = item.patternSummary;
@@ -29,6 +69,20 @@ function getPatternMeta(item: GalleryItemCard) {
   };
 }
 
+function readFavoriteGalleryItemIds() {
+  if (typeof window === 'undefined') return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(FAVORITE_GALLERY_ITEM_IDS_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeFavoriteGalleryItemIds(ids: string[]) {
+  window.localStorage.setItem(FAVORITE_GALLERY_ITEM_IDS_KEY, JSON.stringify(ids));
+}
+
 function formatMyProjectSummary(project: WorkshopProjectCard) {
   const progressText = project.progress ? `${project.progress.percent}%` : null;
   const detail = project.beadingState === 'progressing'
@@ -41,17 +95,23 @@ function formatMyProjectSummary(project: WorkshopProjectCard) {
 
 export function CollectionPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<GalleryItemCard[]>([]);
   const [myItems, setMyItems] = useState<WorkshopProjectRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [myLoading, setMyLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<(typeof collectionFilters)[number]>('全部');
+  const [favoriteItemIds, setFavoriteItemIds] = useState<string[]>(() => readFavoriteGalleryItemIds());
+  const [sortFavoriteItemIds] = useState<string[]>(() => readFavoriteGalleryItemIds());
+  const [patternsExpanded, setPatternsExpanded] = useState(false);
+  const [beadingExpanded, setBeadingExpanded] = useState(false);
+  const activeFilter = useMemo(() => getFilterFromParams(searchParams), [searchParams]);
+  const gallerySort = useMemo(() => getSortFromFilter(activeFilter), [activeFilter]);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetchGalleryList({ pageSize: 24, sort: 'latest' })
+    fetchGalleryList({ pageSize: 24, sort: gallerySort })
       .then((response) => {
         if (!alive) return;
         setItems(response.items);
@@ -69,7 +129,7 @@ export function CollectionPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [gallerySort]);
 
   useEffect(() => {
     let alive = true;
@@ -93,121 +153,252 @@ export function CollectionPage() {
   }, []);
 
   const myGroups = useMemo(() => groupWorkshopProjects(myItems), [myItems]);
-  const myRecentItems = myGroups.recent.slice(0, 4);
-  const myPatterns = myGroups.patterns.slice(0, 4);
-  const myProgressing = myGroups.progressing.slice(0, 4);
+  const myRecentItems = myGroups.recent.slice(0, 5);
+  const myPatterns = myGroups.patterns;
+  const myProgressing = myGroups.progressing;
+  const favoriteItemIdSet = useMemo(() => new Set(favoriteItemIds), [favoriteItemIds]);
+  const sortFavoriteItemIdSet = useMemo(() => new Set(sortFavoriteItemIds), [sortFavoriteItemIds]);
+  const visibleGalleryItems = useMemo(() => sortGalleryItems(items, activeFilter, sortFavoriteItemIdSet), [activeFilter, items, sortFavoriteItemIdSet]);
+  const visibleGalleryColumns = useMemo(() => {
+    const columns: GalleryItemCard[][] = [[], []];
+    visibleGalleryItems.forEach((item, index) => {
+      columns[index % 2].push(item);
+    });
+    return columns;
+  }, [visibleGalleryItems]);
+  const favoriteItems = useMemo(() => items.filter((item) => favoriteItemIdSet.has(item.id)), [favoriteItemIdSet, items]);
+  const myPatternCards = useMemo(() => [
+    ...favoriteItems.map((item, index) => ({
+      id: `favorite-${item.id}`,
+      title: item.title,
+      summary: formatPatternSummary(item),
+      meta: getPatternMeta(item),
+      imageUrl: item.coverUrl,
+      href: `/collection/${encodeURIComponent(item.id)}`,
+      badge: '收藏',
+      background: collectionCardBackgrounds[index % collectionCardBackgrounds.length],
+    })),
+    ...myPatterns.map((item, index) => ({
+      id: `pattern-${item.id}`,
+      title: item.title,
+      summary: formatMyProjectSummary(item),
+      meta: {
+        size: item.pattern ? `${item.pattern.width}×${item.pattern.height}` : '图纸',
+        colors: item.pattern ? `${item.pattern.paletteCount}色` : '',
+        beads: item.pattern ? `${item.pattern.beadCount}颗` : '',
+      },
+      imageUrl: item.previewUrl ?? item.coverUrl ?? '',
+      href: `/workshop/result/${encodeURIComponent(item.id)}`,
+      badge: '我的',
+      background: collectionCardBackgrounds[(favoriteItems.length + index) % collectionCardBackgrounds.length],
+    })),
+  ], [favoriteItems, myPatterns]);
+  const visiblePatternCards = patternsExpanded ? myPatternCards : myPatternCards.slice(0, 2);
+  const visibleBeadingItems = beadingExpanded ? myProgressing : myProgressing.slice(0, 3);
+
+  const toggleFavorite = (itemId: string) => {
+    setFavoriteItemIds((current) => {
+      const next = current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId];
+      writeFavoriteGalleryItemIds(next);
+      return next;
+    });
+  };
+
+  const renderGalleryCard = (item: GalleryItemCard, index: number) => {
+    const meta = getPatternMeta(item);
+    const isFavorite = favoriteItemIdSet.has(item.id);
+    return (
+      <article
+        key={item.id}
+        className="collection-card"
+        role="button"
+        tabIndex={0}
+        onClick={() => navigate(`/collection/${encodeURIComponent(item.id)}`)}
+      >
+        <div className="collection-card__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }}>
+          {item.coverUrl ? (
+            <img
+              className="collection-card__image"
+              src={item.coverUrl}
+              alt=""
+              width={item.coverWidth}
+              height={item.coverHeight}
+            />
+          ) : null}
+          <button
+            type="button"
+            className={`collection-card__favorite ${isFavorite ? 'is-active' : ''}`}
+            aria-label={isFavorite ? '取消收藏图纸' : '收藏图纸'}
+            aria-pressed={isFavorite}
+            onClick={(event) => {
+              event.stopPropagation();
+              toggleFavorite(item.id);
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M12 21s-8.5-6.7-8.5-12.2C3.5 6.2 5.5 4 8 4c1.7 0 3.1.9 4 2.2C12.9 4.9 14.3 4 16 4c2.5 0 4.5 2.2 4.5 4.8C20.5 14.3 12 21 12 21Z" />
+            </svg>
+          </button>
+          <span className="collection-card__status">{item.sourceType === 'official' ? '官方' : '社区'}</span>
+        </div>
+        <div className="collection-card__body">
+          <h3 className="collection-card__title">{item.title}</h3>
+          <div className="collection-card__meta" aria-label={formatPatternSummary(item)}>
+            <span className="collection-card__pill collection-card__pill--size">{meta.size}</span>
+            <span className="collection-card__pill collection-card__pill--color">{meta.colors}</span>
+            <span className="collection-card__pill collection-card__pill--count">{meta.beads}</span>
+          </div>
+        </div>
+      </article>
+    );
+  };
 
   return (
     <main className="collection-page">
-      <section className="collection-hero" aria-label="画册问候">
+      <section className="page-hero" aria-label="画册问候">
         <h2>记录每一份创作的温暖</h2>
-        <div className="collection-hero__avatar" aria-hidden="true">
-          <span>☁</span>
-        </div>
       </section>
 
       <section className="collection-filters" aria-label="作品筛选">
         {collectionFilters.map((filter) => (
           <button
-            key={filter}
+            key={filter.tab}
             type="button"
-            className={`filter-chip ${activeFilter === filter ? 'is-active' : ''}`}
-            onClick={() => setActiveFilter(filter)}
+            aria-label={filter.label}
+            className={`filter-chip ${activeFilter === filter.label ? 'is-active' : ''}`}
+            onClick={() => {
+              setSearchParams({ tab: filter.tab });
+            }}
           >
-            {filter}
+            <img
+              className="filter-chip__icon"
+              src={activeFilter === filter.label ? filter.activeIconSrc : filter.iconSrc}
+              alt=""
+              aria-hidden="true"
+            />
           </button>
         ))}
       </section>
 
       {activeFilter === '我的' ? (
         <section className="collection-my-library" aria-label="我的作品">
-          <div className="section-heading-row">
-            <h3>我的</h3>
-          </div>
+         
 
           {myLoading ? <div className="collection-empty">正在读取本地作品…</div> : null}
 
-          {!myLoading && myItems.length === 0 ? (
-            <div className="collection-empty">这里会显示你保存的图纸、草稿和最近进度。</div>
+          {!myLoading && myItems.length === 0 && favoriteItems.length === 0 ? (
+            <div className="collection-empty">这里会显示你保存的图纸、草稿、收藏和最近进度。</div>
           ) : null}
 
-          {!myLoading && myItems.length > 0 ? (
+          {!myLoading && (myItems.length > 0 || favoriteItems.length > 0) ? (
             <div className="collection-my-sections">
               <section>
                 <div className="collection-my-section__header">
                   <h4>最近打开</h4>
                   <span>{myRecentItems.length} 项</span>
                 </div>
-                <div className="collection-my-list">
-                  {myRecentItems.map((item) => (
-                    <article
-                      key={item.id}
-                      className="collection-my-card"
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => navigate(`/workshop/editor/${encodeURIComponent(item.id)}`)}
-                    >
-                      <div className="collection-my-card__media" aria-hidden="true">
-                        {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
-                      </div>
-                      <div className="collection-my-card__body">
-                        <strong>{item.title}</strong>
-                        <p>{formatMyProjectSummary(item)}</p>
-                      </div>
-                    </article>
-                  ))}
+                <div className="collection-recent-row">
+                  {myRecentItems.length > 0 ? myRecentItems.map((item, index) => {
+                    const isBeading = item.beadingState === 'progressing';
+                    const progress = item.progress?.percent ?? 0;
+                    return (
+                      <article
+                        key={item.id}
+                        className={`collection-recent-card ${isBeading ? 'collection-recent-card--beading' : 'collection-recent-card--pattern'}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => navigate(isBeading ? `/workshop/focus/${encodeURIComponent(item.id)}` : `/workshop/editor/${encodeURIComponent(item.id)}`)}
+                      >
+                        <div className="collection-recent-card__media" aria-hidden="true">
+                          {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
+                          <span className={`collection-recent-card__badge ${isBeading ? 'is-beading' : 'is-pattern'}`}>{isBeading ? '拼豆' : '图纸'}</span>
+                        </div>
+                        <div className="collection-recent-card__body">
+                          <strong>{item.title}</strong>
+                          {isBeading ? (
+                            <>
+                              <div className="collection-progress-track" aria-hidden="true">
+                                <span style={{ width: `${progress}%` }} />
+                              </div>
+                              <p>{progress >= 100 ? '已完成' : `${progress}%`}</p>
+                            </>
+                          ) : null}
+                        </div>
+                      </article>
+                    );
+                  }) : <div className="collection-empty collection-empty--inline">最近打开的图纸会出现在这里。</div>}
                 </div>
               </section>
 
               <section>
                 <div className="collection-my-section__header">
-                  <h4>图纸</h4>
-                  <span>{myPatterns.length} 项</span>
+                  <h4>我的图纸</h4>
+                  {myPatternCards.length > 2 ? (
+                    <button type="button" className="collection-my-section__more" onClick={() => setPatternsExpanded((value) => !value)}>
+                      {patternsExpanded ? '收起' : '更多'}
+                    </button>
+                  ) : <span>{myPatternCards.length} 项</span>}
                 </div>
                 <div className="collection-my-list">
-                  {myPatterns.length > 0 ? myPatterns.map((item) => (
+                  {visiblePatternCards.length > 0 ? visiblePatternCards.map((item) => (
                     <article
                       key={item.id}
                       className="collection-my-card"
                       role="button"
                       tabIndex={0}
-                      onClick={() => navigate(`/workshop/result/${encodeURIComponent(item.id)}`)}
+                      onClick={() => navigate(item.href)}
                     >
-                      <div className="collection-my-card__media" aria-hidden="true">
-                        {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
+                      <div className="collection-my-card__media" style={{ background: item.background }} aria-hidden="true">
+                        {item.imageUrl ? <img src={item.imageUrl} alt="" /> : null}
+                        <span className={`collection-my-card__badge ${item.badge === '收藏' ? 'is-saved' : 'is-mine'}`}>{item.badge}</span>
                       </div>
                       <div className="collection-my-card__body">
                         <strong>{item.title}</strong>
-                        <p>{formatMyProjectSummary(item)}</p>
+                        <div className="collection-card__meta" aria-label={item.summary}>
+                          <span className="collection-card__pill collection-card__pill--size">{item.meta.size}</span>
+                          {item.meta.colors ? <span className="collection-card__pill collection-card__pill--color">{item.meta.colors}</span> : null}
+                          {item.meta.beads ? <span className="collection-card__pill collection-card__pill--count">{item.meta.beads}</span> : null}
+                        </div>
                       </div>
                     </article>
-                  )) : <div className="collection-empty collection-empty--inline">完成图纸生成后，它会出现在这里。</div>}
+                  )) : <div className="collection-empty collection-empty--inline">收藏或生成图纸后，它会出现在这里。</div>}
                 </div>
               </section>
 
               <section>
                 <div className="collection-my-section__header">
-                  <h4>拼豆进行中</h4>
-                  <span>{myProgressing.length} 项</span>
+                  <h4>我的拼豆</h4>
+                  {myProgressing.length > 3 ? (
+                    <button type="button" className="collection-my-section__more" onClick={() => setBeadingExpanded((value) => !value)}>
+                      {beadingExpanded ? '收起' : '更多'}
+                    </button>
+                  ) : <span>{myProgressing.length} 项</span>}
                 </div>
-                <div className="collection-my-list">
-                  {myProgressing.length > 0 ? myProgressing.map((item) => (
+                <div className="collection-progress-list">
+                  {visibleBeadingItems.length > 0 ? visibleBeadingItems.map((item, index) => {
+                    const progress = item.progress?.percent ?? 0;
+                    return (
                     <article
                       key={item.id}
-                      className="collection-my-card"
+                      className="collection-progress-item"
                       role="button"
                       tabIndex={0}
                       onClick={() => navigate(`/workshop/focus/${encodeURIComponent(item.id)}`)}
                     >
-                      <div className="collection-my-card__media" aria-hidden="true">
+                      <div className="collection-progress-item__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }} aria-hidden="true">
                         {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
                       </div>
-                      <div className="collection-my-card__body">
+                      <div className="collection-progress-item__body">
                         <strong>{item.title}</strong>
                         <p>{formatMyProjectSummary(item)}</p>
+                        <div className="collection-progress-track" aria-hidden="true">
+                          <span style={{ width: `${progress}%` }} />
+                        </div>
                       </div>
+                      <span className="collection-progress-item__percent">{progress}%</span>
                     </article>
-                  )) : <div className="collection-empty collection-empty--inline">开始专注拼豆后，这里会显示进行中的项目。</div>}
+                    );
+                  }) : <div className="collection-empty collection-empty--inline">开始专注拼豆后，这里会显示进行中的项目。</div>}
                 </div>
               </section>
             </div>
@@ -220,51 +411,15 @@ export function CollectionPage() {
           {loading ? <div className="collection-empty">正在加载画册…</div> : null}
           {error ? <div className="collection-empty">{error}</div> : null}
           {!loading && !error ? (
-            items.map((item, index) => {
-              const meta = getPatternMeta(item);
-              return (
-                <article
-                  key={item.id}
-                  className="collection-card"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => navigate(`/collection/${encodeURIComponent(item.id)}`)}
-                >
-                  <div className="collection-card__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }} aria-hidden="true">
-                    {item.coverUrl ? (
-                      <img
-                        className="collection-card__image"
-                        src={item.coverUrl}
-                        alt=""
-                        width={item.coverWidth}
-                        height={item.coverHeight}
-                      />
-                    ) : null}
-                    <button type="button" className="collection-card__favorite" aria-label="收藏图纸" tabIndex={-1}>
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                        <path d="M12 21s-8.5-6.7-8.5-12.2C3.5 6.2 5.5 4 8 4c1.7 0 3.1.9 4 2.2C12.9 4.9 14.3 4 16 4c2.5 0 4.5 2.2 4.5 4.8C20.5 14.3 12 21 12 21Z" />
-                      </svg>
-                    </button>
-                    <span className="collection-card__status">{item.sourceType === 'official' ? '官方' : '社区'}</span>
-                  </div>
-                  <div className="collection-card__body">
-                    <h3 className="collection-card__title">{item.title}</h3>
-                    <div className="collection-card__meta" aria-label={formatPatternSummary(item)}>
-                      <span className="collection-card__pill collection-card__pill--size">{meta.size}</span>
-                      <span className="collection-card__pill collection-card__pill--color">{meta.colors}</span>
-                      <span className="collection-card__pill collection-card__pill--count">{meta.beads}</span>
-                    </div>
-                  </div>
-                </article>
-              );
-            })
+            visibleGalleryColumns.map((column, columnIndex) => (
+              <div key={columnIndex} className="collection-masonry__column">
+                {column.map((item, itemIndex) => renderGalleryCard(item, itemIndex * 2 + columnIndex))}
+              </div>
+            ))
           ) : null}
         </section>
       ) : null}
 
-      <button className="collection-fab" aria-label="新建作品">
-        ＋
-      </button>
     </main>
   );
 }

@@ -10,12 +10,12 @@ import {
 } from '../../features/workshop/model/draftStore';
 import type { PatternResult, WorkshopEditorState, WorkshopConfig } from '../../features/workshop/model/types';
 import { defaultWorkshopConfig } from '../../features/workshop/model/defaults';
-import { getVendorCode } from '../../lib/pattern/color-system';
+import { buildPalette, getVendorCode } from '../../lib/pattern/color-system';
+import { beadBrandKeys, getBeadBrandLabel } from '../../lib/pattern/brand';
 import {
   createEmptyGrid,
   floodFill,
   paintGridToCanvas,
-  PALETTE,
   toCellPoint,
 } from './editor/WorkshopEditor.utils';
 
@@ -59,7 +59,7 @@ type PaintSession = {
 };
 
 const ICONS = {
-  goback: '/assets/system_icons/goback.png',
+  goback: '/assets/system_icons/go_back.png',
   undo: '/assets/pngs/01_undo_v2.png',
   redo: '/assets/pngs/02_redo_v2.png',
   clear: '/assets/pngs/03_clean_brush_v2.png',
@@ -326,9 +326,11 @@ export function WorkshopEditorPage() {
   const [historyState, setHistoryState] = useState<HistoryState>({ index: 0, length: 1 });
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [downloadBrand, setDownloadBrand] = useState<WorkshopConfig['brand']>(defaultWorkshopConfig.brand);
+  const [editorBrand, setEditorBrand] = useState<WorkshopConfig['brand']>(defaultWorkshopConfig.brand);
 
   const currentRecentColors = makeRecentColors(currentColor, recentColors);
   const downloadPatternResult = gridToPatternResult(grid, downloadBrand);
+  const editorPalette = buildPalette(editorBrand);
 
   const persistEditorSnapshot = async () => {
     if (!projectId) {
@@ -341,12 +343,17 @@ export function WorkshopEditorPage() {
       history: cloneHistory(historyRef.current),
       historyIndex: historyIndexRef.current,
     };
-    const patternResult = gridToPatternResult(editorState.grid, defaultWorkshopConfig.brand);
+    const patternResult = gridToPatternResult(editorState.grid, editorBrand);
 
     await Promise.all([
       saveWorkshopProject(projectId, {
         editorState,
         patternResult,
+        config: {
+          ...defaultWorkshopConfig,
+          brand: editorBrand,
+          canvasSize: Math.max(editorState.grid.length, editorState.grid[0]?.length ?? 0),
+        },
         kind: 'pattern',
         status: 'ready',
         previewUrl: null,
@@ -430,6 +437,9 @@ export function WorkshopEditorPage() {
 
       const project = await getWorkshopProject(projectId).catch(() => null);
       if (!alive) return;
+      const projectBrand = project?.config?.brand ?? defaultWorkshopConfig.brand;
+      setEditorBrand(projectBrand);
+      setDownloadBrand(projectBrand);
 
       console.log('[WorkshopEditorPage] project status snapshot', {
         projectId,
@@ -473,7 +483,12 @@ export function WorkshopEditorPage() {
       if (projectId) {
         await saveWorkshopProject(projectId, {
           editorState: freshEditorState,
-          patternResult: gridToPatternResult(freshEditorState.grid, defaultWorkshopConfig.brand),
+          patternResult: gridToPatternResult(freshEditorState.grid, projectBrand),
+          config: {
+            ...(project?.config ?? defaultWorkshopConfig),
+            brand: projectBrand,
+            canvasSize: Math.max(freshEditorState.grid.length, freshEditorState.grid[0]?.length ?? 0),
+          },
           kind: 'pattern',
           status: 'ready',
           lastOpenedAt: new Date().toISOString(),
@@ -552,7 +567,12 @@ export function WorkshopEditorPage() {
         saveWorkshopDraft(projectId, { state: editorState }),
         saveWorkshopProject(projectId, {
           editorState,
-          patternResult: gridToPatternResult(editorState.grid, defaultWorkshopConfig.brand),
+          patternResult: gridToPatternResult(editorState.grid, editorBrand),
+          config: {
+            ...defaultWorkshopConfig,
+            brand: editorBrand,
+            canvasSize: Math.max(editorState.grid.length, editorState.grid[0]?.length ?? 0),
+          },
           kind: 'pattern',
           status: 'ready',
           lastOpenedAt: new Date().toISOString(),
@@ -1279,7 +1299,7 @@ export function WorkshopEditorPage() {
             type="button"
             className={styles.primaryBtn}
             onClick={() => {
-              setDownloadBrand(defaultWorkshopConfig.brand);
+              setDownloadBrand(editorBrand);
               setDownloadModalOpen(true);
             }}
             disabled={!grid.length}
@@ -1420,23 +1440,42 @@ export function WorkshopEditorPage() {
                 ×
               </button>
             </header>
-            <div className={styles.paletteGrid}>
-              {PALETTE.map((hex) => (
+            <div className={styles.brandTabs} role="tablist" aria-label="品牌色卡">
+              {beadBrandKeys.map((brandKey) => (
                 <button
-                  key={hex}
+                  key={brandKey}
+                  type="button"
+                  className={`${styles.brandTab} ${editorBrand === brandKey ? styles.brandTabActive : ''}`}
+                  onClick={() => {
+                    setEditorBrand(brandKey);
+                    setDownloadBrand(brandKey);
+                  }}
+                >
+                  {getBeadBrandLabel(brandKey)}
+                </button>
+              ))}
+            </div>
+            <div className={styles.paletteGrid}>
+              {editorPalette.map((color) => (
+                <button
+                  key={`${color.hex}-${color.vendorCode}`}
                   type="button"
                   className={styles.paletteSwatch}
-                  style={{ background: hex }}
+                  style={{ background: color.hex }}
+                  title={`${getBeadBrandLabel(editorBrand)} ${color.vendorCode}`}
+                  aria-label={`${getBeadBrandLabel(editorBrand)} ${color.vendorCode}`}
                   onClick={() => {
-                    applyColor(hex);
+                    applyColor(color.hex);
                     setPaletteOpen(false);
                   }}
                   onTouchEnd={(event) => {
                     event.preventDefault();
-                    applyColor(hex);
+                    applyColor(color.hex);
                     setPaletteOpen(false);
                   }}
-                />
+                >
+                  <span>{color.vendorCode}</span>
+                </button>
               ))}
             </div>
           </section>

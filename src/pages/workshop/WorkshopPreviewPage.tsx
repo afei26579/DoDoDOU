@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { DownloadSettingsModal } from './DownloadSettingsModal';
-import type { PatternResult } from '../../features/workshop/model/types';
+import type { ColorSystem, PatternResult } from '../../features/workshop/model/types';
 
 type WorkshopPreviewPageProps = {
   onOpenEditor: () => void;
   onOpenFocusMode: () => void;
-  brand: 'MARD' | 'COCO' | '漫漫' | '盼盼' | '咪小窝';
+  brand: ColorSystem;
   patternResult: PatternResult | null;
 };
 

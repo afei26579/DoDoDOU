@@ -7,6 +7,7 @@ import type {
   WorkshopEditorState,
   WorkshopViewMode,
 } from './types';
+import { normalizeBeadBrandKey } from '../../../lib/pattern/brand';
 
 const DB_NAME = 'dodoudou-workshop';
 const DB_VERSION = 3;
@@ -17,6 +18,7 @@ const MEMORY_CACHE = new Map<string, WorkshopProjectRecord>();
 export type WorkshopProjectKind = 'upload' | 'pattern' | 'progress';
 export type WorkshopProjectStatus = 'editing' | 'ready' | 'paused' | 'completed';
 export type WorkshopBeadingState = 'idle' | 'progressing' | 'completed';
+export type WorkshopProjectSourceType = 'blank' | 'upload' | 'gallery';
 
 export type WorkshopProjectProgress = {
   percent: number;
@@ -30,6 +32,8 @@ export type WorkshopProjectRecord = {
   kind: WorkshopProjectKind;
   status: WorkshopProjectStatus;
   beadingState: WorkshopBeadingState;
+  sourceType: WorkshopProjectSourceType;
+  sourceItemId: string | null;
   uploadedImage: UploadedImage | null;
   cropTransform: CropTransform;
   config: WorkshopConfig;
@@ -53,6 +57,8 @@ export type WorkshopProjectCard = {
   kind: WorkshopProjectKind;
   status: WorkshopProjectStatus;
   beadingState: WorkshopBeadingState;
+  sourceType: WorkshopProjectSourceType;
+  sourceItemId: string | null;
   coverUrl?: string | null;
   previewUrl?: string | null;
   progress: WorkshopProjectProgress | null;
@@ -90,6 +96,8 @@ function createDefaultRecord(projectId: string): WorkshopProjectRecord {
     kind: 'upload',
     status: 'editing',
     beadingState: 'idle',
+    sourceType: 'blank',
+    sourceItemId: null,
     uploadedImage: null,
     cropTransform: { scale: 1, x: 0, y: 0 },
     config: getDefaultConfig(),
@@ -154,11 +162,20 @@ function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
       : record.patternResult || record.editorState || legacyKind === 'pattern' || legacyKind === 'draft'
         ? 'pattern'
         : 'upload';
+  const config = {
+    ...defaultRecord.config,
+    ...record.config,
+    brand: normalizeBeadBrandKey(record.config?.brand),
+  };
+
   return {
     ...defaultRecord,
     ...record,
+    config,
     kind,
     beadingState: record.beadingState ?? defaultRecord.beadingState,
+    sourceType: record.sourceType ?? defaultRecord.sourceType,
+    sourceItemId: record.sourceItemId ?? null,
     uploadedImage: record.uploadedImage ?? null,
     patternResult: record.patternResult ?? null,
     viewMode: record.viewMode ?? defaultRecord.viewMode,
@@ -203,6 +220,8 @@ export function toProjectCard(record: WorkshopProjectRecord): WorkshopProjectCar
     kind: record.kind,
     status: record.status,
     beadingState: record.beadingState,
+    sourceType: record.sourceType,
+    sourceItemId: record.sourceItemId,
     coverUrl: record.coverUrl ?? record.uploadedImage?.dataUrl ?? null,
     previewUrl: record.previewUrl ?? null,
     progress,
@@ -288,6 +307,19 @@ export async function listWorkshopProjects() {
       resolve(records);
     };
   });
+}
+
+export async function findWorkshopProjectBySource(sourceType: WorkshopProjectSourceType, sourceItemId: string) {
+  const records = await listWorkshopProjects();
+  const exactMatch = records.find((record) => record.sourceType === sourceType && record.sourceItemId === sourceItemId);
+  if (exactMatch) return exactMatch;
+
+  if (sourceType === 'gallery') {
+    const stableProjectId = `gallery-${sourceItemId}`;
+    return records.find((record) => record.projectId === stableProjectId || record.projectId.startsWith(`${stableProjectId}-`)) ?? null;
+  }
+
+  return null;
 }
 
 export async function getWorkshopProject(projectId: string) {

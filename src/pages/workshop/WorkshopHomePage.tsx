@@ -106,6 +106,8 @@ export function WorkshopHomePage({
             patternResult: null,
             viewMode: 'image',
             beadingState: 'idle',
+            sourceType: 'upload',
+            sourceItemId: null,
           });
 
           await onUploadImage();
@@ -143,6 +145,8 @@ export function WorkshopHomePage({
             kind: 'pattern',
             status: 'ready',
             beadingState: 'idle',
+            sourceType: 'upload',
+            sourceItemId: null,
             lastOpenedAt: new Date().toISOString(),
           });
 

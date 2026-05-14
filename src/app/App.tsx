@@ -79,6 +79,8 @@ export function App() {
       patternResult: null,
       viewMode: 'image',
       beadingState: 'idle',
+      sourceType: 'upload',
+      sourceItemId: null,
     });
     navigate(`/workshop/create/${projectId}`);
   };

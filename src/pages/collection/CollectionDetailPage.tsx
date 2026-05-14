@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchGalleryDetail } from '../../features/gallery/model/api';
 import type { GalleryItemDetail } from '../../features/gallery/model/types';
-import { saveWorkshopProject } from '../../features/workshop/model/projectStore';
+import { findWorkshopProjectBySource, markWorkshopProjectOpened, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import type { PatternResult } from '../../features/workshop/model/types';
 import { downloadPatternImage, renderDownloadPatternCanvas } from '../../lib/pattern/download';
 
-const GO_BACK_ICON = '/assets/system_icons/goback.png';
+const GO_BACK_ICON = '/assets/system_icons/go_back.png';
 
 function toPatternResult(item: GalleryItemDetail): PatternResult | null {
   const payload = item.pattern?.patternPayload;
@@ -22,7 +22,7 @@ function toPatternResult(item: GalleryItemDetail): PatternResult | null {
 }
 
 function createGalleryProjectId(itemId: string) {
-  return `gallery-${itemId}-${Date.now()}`;
+  return `gallery-${itemId}`;
 }
 
 export function CollectionDetailPage() {
@@ -83,8 +83,21 @@ export function CollectionDetailPage() {
 
   const saveAsWorkshopProject = async () => {
     if (!item || !patternResult) return null;
+    const existingProject = await findWorkshopProjectBySource('gallery', item.id);
+    if (existingProject) {
+      await saveWorkshopProject(existingProject.projectId, {
+        sourceType: 'gallery',
+        sourceItemId: item.id,
+      });
+      await markWorkshopProjectOpened(existingProject.projectId);
+      return existingProject.projectId;
+    }
+
     const projectId = createGalleryProjectId(item.id);
     await saveWorkshopProject(projectId, {
+      title: item.title,
+      sourceType: 'gallery',
+      sourceItemId: item.id,
       uploadedImage: null,
       cropTransform: { scale: 1, x: 0, y: 0, rotate: 0 },
       config: item.pattern.config,
@@ -93,6 +106,7 @@ export function CollectionDetailPage() {
       kind: 'pattern',
       status: 'ready',
       beadingState: 'idle',
+      lastOpenedAt: new Date().toISOString(),
     });
     return projectId;
   };

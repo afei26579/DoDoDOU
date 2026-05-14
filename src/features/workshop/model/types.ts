@@ -1,4 +1,6 @@
-export type ColorSystem = 'MARD' | 'COCO' | '漫漫' | '盼盼' | '咪小窝';
+import type { BeadBrandKey } from '../../../lib/pattern/brand';
+
+export type ColorSystem = BeadBrandKey;
 
 export type WorkshopStyle = '写实' | '动漫' | '极简';
 

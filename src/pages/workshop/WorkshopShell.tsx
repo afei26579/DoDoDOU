@@ -190,6 +190,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       kind: 'upload',
       status: 'editing',
       beadingState: 'idle',
+      sourceType: 'upload',
+      sourceItemId: null,
       lastOpenedAt: new Date().toISOString(),
     });
 

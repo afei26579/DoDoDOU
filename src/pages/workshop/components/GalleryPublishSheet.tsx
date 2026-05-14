@@ -33,6 +33,10 @@ function buildPreviewDataUrl(patternResult: PatternResult) {
   return canvas.toDataURL('image/png');
 }
 
+function makePublishIdPart(value: string) {
+  return value.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'project';
+}
+
 export function GalleryPublishSheet({
   open,
   titleSeed,
@@ -52,7 +56,7 @@ export function GalleryPublishSheet({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = useMemo(() => Boolean(title.trim() && patternResult && uploadedImage), [patternResult, title, uploadedImage]);
+  const canSubmit = useMemo(() => Boolean(title.trim() && patternResult), [patternResult, title]);
 
   useEffect(() => {
     if (!open || !patternResult) return;
@@ -64,19 +68,22 @@ export function GalleryPublishSheet({
   if (!open) return null;
 
   const handleSubmit = async () => {
-    if (!patternResult || !uploadedImage) return;
+    if (!patternResult) return;
     setSubmitting(true);
     setError(null);
     try {
       const cover = generatePatternCover(patternResult);
+      const publishStamp = Date.now();
+      const sourceProjectId = makePublishIdPart(projectId ?? String(publishStamp));
       const response = await publishGalleryItem({
+        itemId: `item-${sourceProjectId}-${publishStamp}`,
         title: title.trim(),
         description: description.trim() || undefined,
         authorId: 'local-official',
-        sourceType: 'official',
+        sourceType: 'community',
         tags: splitTags(tags),
-        coverAssetId: `cover-${projectId ?? Date.now()}`,
-        previewAssetId: `preview-${projectId ?? Date.now()}`,
+        coverAssetId: `cover-${sourceProjectId}-${publishStamp}`,
+        previewAssetId: `preview-${sourceProjectId}-${publishStamp}`,
         coverUrl: cover.dataUrl || coverUrl,
         previewUrl,
         coverWidth: cover.width,
@@ -95,9 +102,9 @@ export function GalleryPublishSheet({
           },
           sourceMetadata: {
             projectId: projectId ?? undefined,
-            uploadedImageName: uploadedImage.name,
-            uploadedImageType: uploadedImage.type,
-            uploadedImageSize: uploadedImage.size,
+            uploadedImageName: uploadedImage?.name,
+            uploadedImageType: uploadedImage?.type,
+            uploadedImageSize: uploadedImage?.size,
           },
         },
       });

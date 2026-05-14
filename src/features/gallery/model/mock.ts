@@ -141,7 +141,7 @@ function slugify(value: string) {
 
 export function makePublishedResponse(payload: PublishGalleryPayload): PublishGalleryResponse {
   return {
-    itemId: `${slugify(payload.title)}-${Date.now()}`,
+    itemId: payload.itemId ?? `${slugify(payload.title)}-${Date.now()}`,
     status: 'published',
     publishedAt: new Date().toISOString(),
   };

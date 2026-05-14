@@ -2,6 +2,11 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchGalleryList } from '../../features/gallery/model/api';
 import type { GalleryItemCard } from '../../features/gallery/model/types';
+import {
+  groupWorkshopProjects,
+  listWorkshopProjects,
+  type WorkshopProjectCard,
+} from '../../features/workshop/model/projectStore';
 
 type DiscoveryPageProps = {
   onUploadImage: (image: { name: string; type: string; size: number; dataUrl: string }) => void;
@@ -71,6 +76,7 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [inspirationItems, setInspirationItems] = useState<GalleryItemCard[]>([]);
+  const [continueBeadingItems, setContinueBeadingItems] = useState<WorkshopProjectCard[]>([]);
 
   const handleImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -109,9 +115,40 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
     };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+
+    const loadContinueItems = () => {
+      listWorkshopProjects()
+        .then((projects) => {
+          if (!alive) return;
+          setContinueBeadingItems(groupWorkshopProjects(projects).progressing.slice(0, 2));
+        })
+        .catch(() => {
+          if (!alive) return;
+          setContinueBeadingItems([]);
+        });
+    };
+
+    loadContinueItems();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') loadContinueItems();
+    };
+
+    window.addEventListener('focus', loadContinueItems);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      alive = false;
+      window.removeEventListener('focus', loadContinueItems);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
   return (
     <main className="discovery-page">
-      <section className="home-hero" aria-label="首页问候">
+      <section className="page-hero" aria-label="首页问候">
         <h2>今天想拼点什么？</h2>
       </section>
 
@@ -147,22 +184,56 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
 
       
 
-      <section className="section-block" aria-label="新手入门">
+      <section className="section-block" aria-label={continueBeadingItems.length > 0 ? '继续拼豆' : '新手入门'}>
         <div className="section-heading-row">
-          <h3>新手入门</h3>
+          <h3>{continueBeadingItems.length > 0 ? '继续拼豆' : '新手入门'}</h3>
         </div>
 
-        <div className="beginner-guide">
-          {beginnerSteps.map((item) => (
-            <div key={item.step} className="beginner-guide__item">
-              <span className="beginner-guide__badge">{item.step}</span>
-              <div>
-                <strong>{item.title}</strong>
-                <p>{item.description}</p>
+        {continueBeadingItems.length > 0 ? (
+          <div className="collection-progress-list continue-beading-list">
+            {continueBeadingItems.map((item) => {
+              const progress = item.progress?.percent ?? 0;
+              return (
+                <article
+                  key={item.id}
+                  className="collection-progress-item continue-beading-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/workshop/focus/${encodeURIComponent(item.id)}`)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    navigate(`/workshop/focus/${encodeURIComponent(item.id)}`);
+                  }}
+                >
+                  <div className="collection-progress-item__media continue-beading-card__media" aria-hidden="true">
+                    {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
+                  </div>
+                  <div className="collection-progress-item__body continue-beading-card__body">
+                    <strong>{item.title}</strong>
+                    <p>{item.pattern ? `${item.pattern.width}×${item.pattern.height} · ${item.pattern.paletteCount} 色` : '拼豆进行中'}</p>
+                    <div className="collection-progress-track continue-beading-card__progress" aria-label={`进度 ${progress}%`}>
+                      <span style={{ width: `${progress}%` }} />
+                    </div>
+                  </div>
+                  <span className="collection-progress-item__percent continue-beading-card__percent">{progress}%</span>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="beginner-guide">
+            {beginnerSteps.map((item) => (
+              <div key={item.step} className="beginner-guide__item">
+                <span className="beginner-guide__badge">{item.step}</span>
+                <div>
+                  <strong>{item.title}</strong>
+                  <p>{item.description}</p>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="section-block" aria-label="灵感画廊">

@@ -144,7 +144,7 @@ app.post('/api/gallery/publish', async (req, res) => {
     return res.status(400).json({ message: 'Missing required fields' });
   }
 
-  const id = `${toSlug(payload.title)}-${Date.now()}`;
+  const id = payload.itemId || `${toSlug(payload.title)}-${Date.now()}`;
   const now = new Date();
 
   const result = await prisma.$transaction(async (tx) => {

@@ -1,8 +1,8 @@
 import type { CSSProperties } from 'react';
 import type { WorkshopFlowState } from '../../../features/workshop/model/types';
+import { beadBrandKeys, getBeadBrandLabel } from '../../../lib/pattern/brand';
 import type { ParameterTagId } from './WorkshopParameterTabs';
 
-const brandOptions = ['MARD', 'COCO', '漫漫', '盼盼', '咪小窝'] as const;
 const styleOptions = ['写实', '动漫', '极简'] as const;
 const SIZE_MIN = 24;
 const SIZE_MAX = 200;
@@ -97,9 +97,9 @@ export function WorkshopParameterPanel({ activeTag, config, onConfigChange }: Wo
     return (
       <div className="workshop-control">
         <div className="workshop-pill-row">
-          {brandOptions.map((brand) => (
+          {beadBrandKeys.map((brand) => (
             <button key={brand} className={`workshop-pill ${config.brand === brand ? 'is-active' : ''}`} type="button" onClick={() => onConfigChange({ brand })}>
-              {brand}
+              {getBeadBrandLabel(brand)}
             </button>
           ))}
         </div>

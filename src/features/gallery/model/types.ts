@@ -175,6 +175,7 @@ export type GalleryDetailResponse = {
 };
 
 export type PublishGalleryPayload = {
+  itemId?: string;
   title: string;
   description?: string;
   authorId: string;
