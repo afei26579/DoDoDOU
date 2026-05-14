@@ -4,6 +4,7 @@ import { navItems, type NavItemId } from './navigation';
 import { BottomNav } from './components/BottomNav';
 import { CollectionDetailPage } from '../pages/collection/CollectionDetailPage';
 import { CollectionPage } from '../pages/collection/CollectionPage';
+import { BeadInventoryPage } from '../pages/beads/BeadInventoryPage';
 import { DiscoveryPage } from '../pages/discovery/DiscoveryPage';
 import { FocusModePage } from '../pages/workshop/FocusModePage';
 import { WorkshopEditorPage } from '../pages/workshop/WorkshopEditorPage';
@@ -24,6 +25,7 @@ const routeToTab: Partial<Record<string, NavItemId>> = {
   '/workshop/editor/:projectId': 'workshop',
   '/workshop/focus': 'workshop',
   '/workshop/focus/:projectId': 'workshop',
+  '/workshop/inventory': 'workshop',
   '/collection': 'collection',
   '/collection/detail': 'collection',
 };
@@ -140,6 +142,7 @@ export function App() {
 
           <Route path="/workshop/editor/:projectId" element={<WorkshopEditorPage />} />
           <Route path="/workshop/focus/:projectId" element={<FocusModePage />} />
+          <Route path="/workshop/inventory" element={<BeadInventoryPage />} />
           <Route path="/collection" element={<CollectionPage />} />
           <Route path="/collection/:itemId" element={<CollectionDetailPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

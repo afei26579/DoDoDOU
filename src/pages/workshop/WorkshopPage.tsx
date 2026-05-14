@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CropTransform, WorkshopFlowState } from '../../features/workshop/model/types';
+import type { CropTransform, PatternResult, WorkshopFlowState } from '../../features/workshop/model/types';
 import { getBeadBrandLabel } from '../../lib/pattern/brand';
 import { createCropCanvas, loadImage } from '../../lib/pattern/crop';
 import { WorkshopGenerateButton } from './components/WorkshopGenerateButton';
@@ -35,6 +35,8 @@ type WorkshopPageProps = {
   onOpenFocusMode?: () => void;
   onCreateCanvas?: () => void;
   onImportPattern?: () => void;
+  onOpenInventory?: () => void;
+  onPatternResultChange?: (patternResult: PatternResult) => void;
   isHome: boolean;
   backgroundRemovalNotice?: string | null;
 };
@@ -61,6 +63,8 @@ export function WorkshopPage({
   onOpenFocusMode,
   onCreateCanvas,
   onImportPattern,
+  onOpenInventory,
+  onPatternResultChange,
   isHome,
   backgroundRemovalNotice,
 }: WorkshopPageProps) {
@@ -270,6 +274,7 @@ export function WorkshopPage({
           onAiInspiration={() => {}}
           onCreateCanvas={onCreateCanvas ?? (() => {})}
           onImportPattern={onImportPattern ?? (() => {})}
+          onOpenInventory={onOpenInventory ?? (() => {})}
         />
       ) : (
         <>
@@ -357,7 +362,13 @@ export function WorkshopPage({
       )}
 
       {mode === 'result' && patternResult && isStatsSheetOpen ? (
-        <WorkshopResultStatsSheet patternResult={patternResult} onClose={() => setIsStatsSheetOpen(false)} />
+        <WorkshopResultStatsSheet
+          patternResult={patternResult}
+          brand={config.brand}
+          onClose={() => setIsStatsSheetOpen(false)}
+          onOpenInventory={onOpenInventory}
+          onPatternResultChange={onPatternResultChange}
+        />
       ) : null}
 
 

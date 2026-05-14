@@ -32,6 +32,19 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
+function syncBubbleCanvas(previewCanvas: HTMLCanvasElement | null, bubbleCanvas: HTMLCanvasElement | null) {
+  if (!previewCanvas || !bubbleCanvas || previewCanvas.width === 0 || previewCanvas.height === 0) return;
+
+  const ctx = bubbleCanvas.getContext('2d');
+  if (!ctx) return;
+
+  bubbleCanvas.width = 32;
+  bubbleCanvas.height = 32;
+  ctx.imageSmoothingEnabled = false;
+  ctx.clearRect(0, 0, bubbleCanvas.width, bubbleCanvas.height);
+  ctx.drawImage(previewCanvas, 0, 0, bubbleCanvas.width, bubbleCanvas.height);
+}
+
 export function WorkshopPreviewPanel({ previewCanvasRef, bubbleCanvasRef }: PreviewPanelProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -45,6 +58,12 @@ export function WorkshopPreviewPanel({ previewCanvasRef, bubbleCanvasRef }: Prev
       x: clamp(current.x, 0, Math.max(0, window.innerWidth - BUBBLE_SIZE - 14)),
       y: clamp(current.y, TITLEBAR_H, Math.max(TITLEBAR_H, window.innerHeight - BUBBLE_SIZE - 14)),
     }));
+
+    const frame = window.requestAnimationFrame(() => {
+      syncBubbleCanvas(previewCanvasRef.current, bubbleCanvasRef.current);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
   }, [open]);
 
   const beginDrag = (event: ReactPointerEvent<HTMLElement>, kind: DragKind, originX: number, originY: number) => {
@@ -139,7 +158,7 @@ export function WorkshopPreviewPanel({ previewCanvasRef, bubbleCanvasRef }: Prev
           title="点击展开预览"
         >
           <canvas ref={bubbleCanvasRef} id="bubble-thumb" className={styles.bubbleCanvas} width={32} height={32} />
-          <span id="bubble-label" className={styles.bubbleLabel}>预览</span>
+         
         </button>
       ) : null}
     </>

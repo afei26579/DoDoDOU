@@ -66,6 +66,10 @@ export function WorkshopHomePage({
     patternInputRef.current?.click();
   };
 
+  const handleOpenInventory = () => {
+    navigate('/workshop/inventory');
+  };
+
   return (
     <>
       <input
@@ -172,6 +176,7 @@ export function WorkshopHomePage({
         onViewPattern={() => {}}
         onCreateCanvas={handleCreateCanvas}
         onImportPattern={handleImportPattern}
+        onOpenInventory={handleOpenInventory}
       />
     </>
   );

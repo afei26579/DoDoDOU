@@ -9,6 +9,7 @@ export type AppRoute =
   | 'workshop'
   | 'workshop-create'
   | 'workshop-result'
+  | 'bead-inventory'
   | 'collection';
 
 export const routePathMap: Record<AppRoute, string> = {
@@ -22,5 +23,6 @@ export const routePathMap: Record<AppRoute, string> = {
   workshop: '/workshop',
   'workshop-create': '/workshop/create/:projectId',
   'workshop-result': '/workshop/result/:projectId',
+  'bead-inventory': '/workshop/inventory',
   collection: '/collection',
 };

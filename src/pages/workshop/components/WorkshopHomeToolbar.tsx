@@ -3,6 +3,7 @@ type WorkshopHomeToolbarProps = {
   onAiInspiration: () => void;
   onCreateCanvas: () => void;
   onImportPattern: () => void;
+  onOpenInventory: () => void;
 };
 
 export function WorkshopHomeToolbar({
@@ -10,6 +11,7 @@ export function WorkshopHomeToolbar({
   onAiInspiration,
   onCreateCanvas,
   onImportPattern,
+  onOpenInventory,
 }: WorkshopHomeToolbarProps) {
   return (
     <section className="workshop-home-entry" aria-label="创作入口">
@@ -51,6 +53,20 @@ export function WorkshopHomeToolbar({
         <span className="workshop-home-import__copy">
           <strong>导入图纸</strong>
           <span>分享码 · 文件导入</span>
+        </span>
+        <span className="workshop-home-import__arrow" aria-hidden="true">›</span>
+      </button>
+
+      <button
+        type="button"
+        className="workshop-home-import workshop-home-import--inventory"
+        onClick={onOpenInventory}
+        disabled={isGenerating}
+      >
+        <span className="workshop-home-import__icon" aria-hidden="true">▣</span>
+        <span className="workshop-home-import__copy">
+          <strong>我的库存</strong>
+          <span>色号数量 · 缺口检查</span>
         </span>
         <span className="workshop-home-import__arrow" aria-hidden="true">›</span>
       </button>

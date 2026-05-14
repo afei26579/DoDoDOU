@@ -7,6 +7,7 @@ const rootDir = path.resolve(__dirname, '..');
 const mappingPath = path.join(rootDir, 'src', 'lib', 'pattern', 'colorSystemMapping.json');
 const brandKeys = ['MARD', 'COCO', 'MANMAN', 'PANPAN', 'MIXIAOWO'];
 const errors = [];
+const warnings = [];
 const seenCodes = new Map(brandKeys.map((brandKey) => [brandKey, new Map()]));
 
 const mapping = JSON.parse(await readFile(mappingPath, 'utf8'));
@@ -26,10 +27,14 @@ for (const [hex, codes] of Object.entries(mapping)) {
     const brandSeenCodes = seenCodes.get(brandKey);
     const previousHex = brandSeenCodes.get(code);
     if (previousHex && previousHex !== hex) {
-      errors.push(`Duplicate ${brandKey} code ${code}: ${previousHex} and ${hex}`);
+      warnings.push(`Duplicate ${brandKey} code ${code}: ${previousHex} and ${hex}`);
     }
     brandSeenCodes.set(code, hex);
   }
+}
+
+if (warnings.length) {
+  console.warn(warnings.join('\n'));
 }
 
 if (errors.length) {

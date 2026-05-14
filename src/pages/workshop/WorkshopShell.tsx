@@ -240,6 +240,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         onViewPattern={() => navigate(`/workshop/result/${projectId ?? createProjectId()}`)}
         onOpenEditor={() => navigate(`/workshop/editor/${projectId ?? createProjectId()}`)}
         onOpenFocusMode={() => navigate(`/workshop/focus/${projectId ?? createProjectId()}`)}
+        onOpenInventory={() => navigate('/workshop/inventory')}
+        onPatternResultChange={actions.setPatternResult}
         onUploadToGallery={() => setIsPublishOpen(true)}
         backgroundRemovalNotice={backgroundRemovalNotice}
       />
