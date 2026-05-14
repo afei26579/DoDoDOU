@@ -15,6 +15,19 @@ type WorkshopToolbarProps = {
   onUploadToGallery?: () => void;
 };
 
+const TOOL_ICONS = {
+  enlarge: '/assets/system_icons/enlarge.png',
+  shrink: '/assets/system_icons/shrink.png',
+  reset: '/assets/system_icons/reset.png',
+  crop: '/assets/system_icons/crop.png',
+  reUpload: '/assets/system_icons/re_upload.png',
+  preview: '/assets/system_icons/preview.png',
+  returnOriginal: '/assets/system_icons/return.png',
+  regenerate: '/assets/system_icons/regenerate.png',
+  autoCrop: '/assets/system_icons/remove_bg.png',
+  uploadDrawing: '/assets/system_icons/up_drawing.png',
+} as const;
+
 export function WorkshopToolbar({
   mode,
   hasImage,
@@ -34,19 +47,19 @@ export function WorkshopToolbar({
   if (!hasImage) return null;
 
   const createTools = [
-    { label: '放大', icon: '↗', onClick: onCropZoomIn },
-    { label: '缩小', icon: '↙', onClick: onCropZoomOut },
-    { label: '重置', icon: '↺', onClick: onCropReset },
-    { label: '裁剪', icon: '⌗', onClick: onViewCropPreview },
-    { label: '重新上传', icon: '↟', onClick: onReuploadImage },
-    ...(patternResultExists ? [{ label: '查看图纸', icon: '▣', onClick: onViewPattern }] : []),
+    { label: '放大', iconSrc: TOOL_ICONS.enlarge, onClick: onCropZoomIn },
+    { label: '缩小', iconSrc: TOOL_ICONS.shrink, onClick: onCropZoomOut },
+    { label: '重置', iconSrc: TOOL_ICONS.reset, onClick: onCropReset },
+    { label: '裁剪', iconSrc: TOOL_ICONS.crop, onClick: onViewCropPreview },
+    { label: '重新上传', iconSrc: TOOL_ICONS.reUpload, onClick: onReuploadImage },
+    ...(patternResultExists ? [{ label: '查看图纸', iconSrc: TOOL_ICONS.preview, onClick: onViewPattern }] : []),
   ];
 
   const resultTools = [
-    { label: '返回原图', icon: '◀', onClick: onBackToOriginal },
-    { label: '重新生成', icon: '↻', onClick: onRegenerate },
-    { label: '自动裁剪', icon: '⌗', onClick: onAutoCropPattern },
-    ...(onUploadToGallery ? [{ label: '上传图纸', icon: '↟', onClick: onUploadToGallery }] : []),
+    { label: '返回原图', iconSrc: TOOL_ICONS.returnOriginal, onClick: onBackToOriginal },
+    { label: '重新生成', iconSrc: TOOL_ICONS.regenerate, onClick: onRegenerate },
+    { label: '自动裁剪', iconSrc: TOOL_ICONS.autoCrop, onClick: onAutoCropPattern },
+    ...(onUploadToGallery ? [{ label: '上传图纸', iconSrc: TOOL_ICONS.uploadDrawing, onClick: onUploadToGallery }] : []),
   ];
 
   const tools = mode === 'create' ? createTools : resultTools;
@@ -62,8 +75,7 @@ export function WorkshopToolbar({
           onClick={item.onClick}
           disabled={isGenerating}
         >
-          <span className="workshop-canvas__tool-icon" aria-hidden="true">{item.icon}</span>
-          <span className="workshop-canvas__tool-label">{item.label}</span>
+          <img className="workshop-canvas__tool-icon" src={item.iconSrc} alt="" aria-hidden="true" />
         </button>
       ))}
     </div>
