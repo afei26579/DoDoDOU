@@ -399,7 +399,6 @@ export function WorkshopEditorPage() {
   const [toast, setToast] = useState('');
   const [toolbarPos, setToolbarPos] = useState({ x: 0, y: 0 });
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
-  const [resetViewOpen, setResetViewOpen] = useState(false);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const hasUserAdjustedViewRef = useRef(false);
