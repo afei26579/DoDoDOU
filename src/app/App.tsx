@@ -6,7 +6,7 @@ import { CollectionDetailPage } from '../pages/collection/CollectionDetailPage';
 import { CollectionPage } from '../pages/collection/CollectionPage';
 import { BeadInventoryPage } from '../pages/beads/BeadInventoryPage';
 import { DiscoveryPage } from '../pages/discovery/DiscoveryPage';
-import { FocusModePage } from '../pages/workshop/FocusModePage';
+import { FocusModePage } from '../pages/workshop/focus/FocusModePage';
 import { WorkshopEditorPage } from '../pages/workshop/WorkshopEditorPage';
 import { WorkshopHomePage } from '../pages/workshop/WorkshopHomePage';
 import { WorkshopShell } from '../pages/workshop/WorkshopShell';
