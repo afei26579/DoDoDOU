@@ -1,38 +1,37 @@
+import { useState } from 'react';
 import styles from './FocusModePage.module.css';
 
+const GO_BACK_ICON = '/assets/system_icons/go_back.png';
+
 type FocusTopbarProps = {
-  title: string;
-  meta: string;
-  locked: boolean;
-  showRuler: boolean;
+  zoomLocked: boolean;
   wakeActive: boolean;
-  isHydrating: boolean;
   onBack: () => void;
   onToggleWake: () => void;
-  onToggleRuler: () => void;
   onToggleLock: () => void;
   onOpenSettings: () => void;
+  shaking: boolean;
 };
 
 export function FocusTopbar({
-  title,
-  meta,
-  locked,
-  showRuler,
+  zoomLocked,
   wakeActive,
-  isHydrating,
   onBack,
   onToggleWake,
-  onToggleRuler,
   onToggleLock,
   onOpenSettings,
+  shaking,
 }: FocusTopbarProps) {
   return (
     <section className={styles.topbar} aria-label="顶部设置">
-      <button type="button" className={styles.projectPill} onClick={onBack} aria-label="返回图纸结果页">
-        <span className={styles.projectIcon} aria-hidden="true">‹</span>
-        <span className={styles.projectMain}>{title}</span>
-        <span className={styles.projectSub}>{isHydrating ? '加载中' : meta}</span>
+      <button
+        type="button"
+        className={styles.backButton}
+        onClick={onBack}
+        aria-label="返回"
+        title="返回"
+      >
+        <img src={GO_BACK_ICON} alt="" />
       </button>
 
       <div className={styles.topActions}>
@@ -47,18 +46,9 @@ export function FocusTopbar({
         </button>
         <button
           type="button"
-          className={`${styles.iconButton} ${showRuler ? styles.active : ''}`}
-          aria-label="显示坐标尺"
-          title="显示坐标尺"
-          onClick={onToggleRuler}
-        >
-          ⌗
-        </button>
-        <button
-          type="button"
-          className={`${styles.iconButton} ${locked ? styles.active : ''}`}
-          aria-label="防误触锁定"
-          title="防误触锁定"
+          className={`${styles.iconButton} ${styles.lockButton} ${zoomLocked ? styles.active : ''} ${shaking ? styles.shake : ''}`}
+          aria-label="锁定缩放"
+          title="锁定缩放"
           onClick={onToggleLock}
         >
           🔒

@@ -125,7 +125,7 @@ export function FocusModePage() {
   const [handedness, setHandedness] = useState<'left' | 'right'>('right');
   const [showRuler, setShowRuler] = useState(true);
   const [showGuide, setShowGuide] = useState(true);
-  const [locked, setLocked] = useState(false);
+  const [zoomLocked, setZoomLocked] = useState(false);
   const [wakeActive, setWakeActive] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [toast, setToast] = useState('');
@@ -135,6 +135,7 @@ export function FocusModePage() {
   const [activeColorKey, setActiveColorKey] = useState<string | null>(null);
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
   const [completedCellKeys, setCompletedCellKeys] = useState<string[]>([]);
+  const [lockShaking, setLockShaking] = useState(false);
 
   const cells = useMemo(() => (patternResult ? normalizeCells(patternResult) : []), [patternResult]);
   const cellByCoordKey = useMemo(() => new Map(cells.map((cell) => [cell.coordKey, cell])), [cells]);
@@ -192,8 +193,6 @@ export function FocusModePage() {
   const currentPosition = currentCell && patternResult
     ? `R${currentCell.y + 1} · C${getDisplayColumn(patternResult, handedness, currentCell.x)}`
     : '等待定位';
-  const projectTitle = getProjectTitle(state.uploadedImage?.name);
-  const projectMeta = patternResult ? `${patternResult.width}×${patternResult.height} · ${progressPercent}%` : '等待图纸';
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -356,6 +355,7 @@ export function FocusModePage() {
       currentCellKey: activeCellKey,
       completedCellKeys: completedCellKeySet,
       showGuide,
+      handedness,
       width: boardSize.width,
       height: boardSize.height,
       clip: getCanvasClipArea(boardSize.height),
@@ -421,11 +421,18 @@ export function FocusModePage() {
     });
   }, [boardSize.height, boardSize.width]);
 
+  // 触发锁定按钮震动
+  const triggerLockShake = useCallback(() => {
+    setLockShaking(true);
+    setTimeout(() => setLockShaking(false), 400);
+  }, []);
+
   const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (locked || !viewport) return;
+    if (!viewport) return;
 
+    // 单指拖动始终允许
     if (pointersRef.current.size === 1) {
       tapStartRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
       dragStartRef.current = { x: event.clientX, y: event.clientY, tx: viewport.tx, ty: viewport.ty };
@@ -433,8 +440,14 @@ export function FocusModePage() {
       return;
     }
 
+    // 双指缩放：锁定时触发震动并阻止
     if (pointersRef.current.size === 2) {
       tapStartRef.current = null;
+      if (zoomLocked) {
+        triggerLockShake();
+        dragStartRef.current = null;
+        return;
+      }
       const points = Array.from(pointersRef.current.values());
       const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
       pinchStartRef.current = {
@@ -459,15 +472,20 @@ export function FocusModePage() {
     if (tapStart && tapStart.id === event.pointerId && Math.hypot(event.clientX - tapStart.x, event.clientY - tapStart.y) > 8) {
       tapStart.moved = true;
     }
-    if (locked) return;
 
+    // 单指拖动始终允许
     if (pointersRef.current.size === 1 && dragStartRef.current) {
       const start = dragStartRef.current;
       setViewport((current) => current ? { ...current, tx: start.tx + event.clientX - start.x, ty: start.ty + event.clientY - start.y } : current);
       return;
     }
 
+    // 双指缩放：锁定时触发震动并阻止
     if (pointersRef.current.size === 2 && pinchStartRef.current) {
+      if (zoomLocked) {
+        triggerLockShake();
+        return;
+      }
       const points = Array.from(pointersRef.current.values());
       const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
       const mid = {
@@ -489,7 +507,7 @@ export function FocusModePage() {
   const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const wasSinglePointer = pointersRef.current.size === 1;
     const tapStart = tapStartRef.current;
-    const tapCandidate = !locked && wasSinglePointer && tapStart?.id === event.pointerId && !tapStart.moved;
+    const tapCandidate = wasSinglePointer && tapStart?.id === event.pointerId && !tapStart.moved;
     pointersRef.current.delete(event.pointerId);
 
     if (pointersRef.current.size === 0) {
@@ -511,12 +529,16 @@ export function FocusModePage() {
     if (!canvas) return;
     const handleWheel = (event: WheelEvent) => {
       event.preventDefault();
-      if (locked) return;
+      // 锁定缩放时触发震动
+      if (zoomLocked) {
+        triggerLockShake();
+        return;
+      }
       zoomAt(event.deltaY < 0 ? 1.12 : 0.9, event.clientX, event.clientY);
     };
     canvas.addEventListener('wheel', handleWheel, { passive: false });
     return () => canvas.removeEventListener('wheel', handleWheel);
-  }, [locked, zoomAt]);
+  }, [zoomAt, zoomLocked]);
 
   const goToBlock = (direction: 'previous' | 'next') => {
     if (planBlocks.length === 0) return;
@@ -545,9 +567,7 @@ export function FocusModePage() {
 
   const toggleWakeLock = async () => {
     const wakeNavigator = navigator as Navigator & {
-      wakeLock?: {
-        request: (type: 'screen') => Promise<WakeLockSentinelLike>;
-      };
+      wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> };
     };
 
     try {
@@ -598,7 +618,7 @@ export function FocusModePage() {
   };
 
   return (
-    <main className={`${styles.page} ${locked ? styles.locked : ''}`} aria-label="拼豆专注模式">
+    <main className={styles.page} aria-label="拼豆专注模式">
       <div className={styles.canvasWrap}>
         <canvas
           ref={canvasRef}
@@ -612,20 +632,16 @@ export function FocusModePage() {
       </div>
 
       <FocusTopbar
-        title={projectTitle}
-        meta={projectMeta}
-        locked={locked}
-        showRuler={showRuler}
+        zoomLocked={zoomLocked}
         wakeActive={wakeActive}
-        isHydrating={isHydrating}
         onBack={handleBack}
         onToggleWake={toggleWakeLock}
-        onToggleRuler={() => setShowRuler((current) => !current)}
         onToggleLock={() => {
-          setLocked((current) => !current);
-          showToast(locked ? '已关闭防误触' : '已开启防误触');
+          setZoomLocked((current) => !current);
+          showToast(zoomLocked ? '已关闭缩放锁定' : '已开启缩放锁定');
         }}
         onOpenSettings={() => setSettingsOpen(true)}
+        shaking={lockShaking}
       />
 
       <FocusRulers data={rulerData} handedness={handedness} visible={showRuler && hasPattern} sideRulerRef={sideRulerRef} />

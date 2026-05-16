@@ -62,48 +62,42 @@
   pointer-events: none;
 }
 
-.projectPill {
-  pointer-events: auto;
-  min-width: 0;
-  max-width: calc(100vw - 214px);
-  height: 42px;
-  padding: 0 14px 0 10px;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid var(--focus-border);
-  border-radius: 999px;
-  box-shadow: var(--focus-shadow-card);
-  backdrop-filter: blur(16px);
-  font-weight: 800;
-  font-size: 13px;
-  color: var(--focus-text);
-  white-space: nowrap;
-}
-
-.projectIcon {
-  width: 24px;
-  height: 24px;
-  border-radius: 9px;
+.backButton {
+  width: 54px;
+  height: 54px;
+  border: 0;
+  border-radius: 10px;
   display: grid;
   place-items: center;
-  background: var(--focus-primary-light);
-  color: #7b4fa0;
-  flex-shrink: 0;
-  font-size: 22px;
-  line-height: 1;
+  background: transparent;
+  box-shadow: none;
+  flex: 0 0 auto;
+  padding: 0;
+  pointer-events: auto;
 }
 
-.projectMain {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.backButton img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
 }
 
-.projectSub {
-  color: var(--focus-muted);
-  font-size: 11px;
-  font-weight: 700;
+.lockButton {
+  transition: transform 0.1s ease;
+}
+
+.shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px) rotate(-3deg); }
+  40% { transform: translateX(4px) rotate(3deg); }
+  60% { transform: translateX(-3px) rotate(-2deg); }
+  80% { transform: translateX(3px) rotate(2deg); }
 }
 
 .topActions {
@@ -198,7 +192,7 @@
   background: rgba(255, 255, 255, 0.74);
   border: 1px solid rgba(93, 83, 74, 0.1);
   border-left: 0;
-  border-radius: 0 12px 12px 0;
+  border-radius: 0;
   box-shadow: 4px 0 16px rgba(93, 83, 74, 0.05);
   backdrop-filter: blur(14px);
   overflow: hidden;
@@ -213,7 +207,7 @@
   left: auto;
   border-left: 1px solid rgba(93, 83, 74, 0.1);
   border-right: 0;
-  border-radius: 12px 0 0 12px;
+  border-radius: 0;
   box-shadow: -4px 0 16px rgba(93, 83, 74, 0.05);
 }
 

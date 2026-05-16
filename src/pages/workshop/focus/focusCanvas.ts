@@ -219,6 +219,7 @@ export function drawFocusCanvas(params: {
   currentCellKey: string | null;
   completedCellKeys: Set<string>;
   showGuide: boolean;
+  handedness: 'left' | 'right';
   width: number;
   height: number;
   clip: CanvasClipArea;
@@ -326,15 +327,65 @@ export function drawFocusCanvas(params: {
   }
 
   if (viewport.cellPx >= 4) {
+    // 虚线分割线：每5格，颜色 #C7DFF7
     ctx.save();
-    ctx.strokeStyle = 'rgba(180,143,204,.24)';
-    ctx.lineWidth = viewport.cellPx >= 16 ? 2 : 1;
+    ctx.strokeStyle = '#C7DFF7';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 10]);
     ctx.beginPath();
-    for (let column = Math.max(0, Math.ceil(visible.startCol / 10) * 10); column <= visible.endCol + 1; column += 10) {
-      const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
-      ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
-      ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
+
+    // 左手模式：从图纸最右侧开始，往左每5格画一条（不受视图滚动影响）
+    if (params.handedness === 'left') {
+      // 从 pattern.width - 5 开始，向左递减
+      for (let column = pattern.width - 5; column >= 0; column -= 5) {
+        const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
+        ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
+        ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
+      }
+    } else {
+      // 右手模式：从左上开始，往右每5格画一条
+      for (let column = Math.ceil(visible.startCol / 5) * 5; column <= visible.endCol + 1; column += 5) {
+        if (column >= 0 && column < pattern.width) {
+          const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
+          ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
+          ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
+        }
+      }
     }
+
+    // 横线：两种模式都从顶部开始往下画
+    const dashStartRow = Math.ceil(visible.startRow / 5) * 5;
+    for (let row = dashStartRow; row <= visible.endRow + 1; row += 5) {
+      const y = Math.round(viewport.ty + row * viewport.cellPx) + 0.5;
+      ctx.moveTo(viewport.tx + visible.startCol * viewport.cellPx, y);
+      ctx.lineTo(viewport.tx + (visible.endCol + 1) * viewport.cellPx, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // 实线分割线：每10格，加粗处理
+    ctx.save();
+    ctx.strokeStyle = 'rgba(180,143,204,.28)';
+    ctx.lineWidth = viewport.cellPx >= 16 ? 3 : 2;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+
+    // 左手模式：从图纸最右侧开始，往左每10格画一条
+    if (params.handedness === 'left') {
+      for (let column = pattern.width - 10; column >= 0; column -= 10) {
+        const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
+        ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
+        ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
+      }
+    } else {
+      // 右手模式：从左上开始，往右每10格画一条
+      for (let column = Math.max(0, Math.ceil(visible.startCol / 10) * 10); column <= visible.endCol + 1; column += 10) {
+        const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
+        ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
+        ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
+      }
+    }
+
     for (let row = Math.max(0, Math.ceil(visible.startRow / 10) * 10); row <= visible.endRow + 1; row += 10) {
       const y = Math.round(viewport.ty + row * viewport.cellPx) + 0.5;
       ctx.moveTo(viewport.tx + visible.startCol * viewport.cellPx, y);
