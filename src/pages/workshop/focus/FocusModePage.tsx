@@ -8,11 +8,11 @@ import {
   buildPalette,
   getCellCoordKey,
   getCellKey,
-  type BeadingAxis,
   type BeadingBlock,
-  type BeadingConnectivity,
   type BeadingPaletteItem,
   type PatternMode,
+  type BeadingConnectivity,
+  type BeadingAxis,
 } from '../../../lib/pattern/beadingPlan';
 import { FocusRulers } from './FocusRulers';
 import { FocusSettingsSheet } from './FocusSettingsSheet';
@@ -60,15 +60,15 @@ type WakeLockSentinelLike = {
   addEventListener: (type: 'release', listener: () => void) => void;
 };
 
-const patternModes: PatternMode[] = ['smart', 'color-block', 'edge-first', 'region-first', 'row-by-row'];
-const connectivityOptions: BeadingConnectivity[] = ['4', '8', 'smart'];
+const PATTERN_MODES: PatternMode[] = ['smart', 'color-block', 'edge-first', 'region-first', 'row-by-row'];
+const CONNECTIVITY_OPTIONS: BeadingConnectivity[] = ['4', '8', 'smart'];
 
 function isPatternMode(value: string): value is PatternMode {
-  return patternModes.includes(value as PatternMode);
+  return PATTERN_MODES.includes(value as PatternMode);
 }
 
 function isConnectivity(value: unknown): value is BeadingConnectivity {
-  return typeof value === 'string' && connectivityOptions.includes(value as BeadingConnectivity);
+  return typeof value === 'string' && CONNECTIVITY_OPTIONS.includes(value as BeadingConnectivity);
 }
 
 function isUsablePattern(pattern: PatternResult | null): pattern is PatternResult {
@@ -170,14 +170,6 @@ export function FocusModePage() {
     return planBlocks.findIndex((block) => block.cells.some((cell) => getCellCoordKey(cell) === activeCellKey));
   }, [activeCellKey, planBlocks]);
   const currentBlock = currentBlockIndex >= 0 ? planBlocks[currentBlockIndex] ?? null : null;
-  const activeGroup = useMemo(
-    () => beadingPlan?.groups.find((group) => group.key === currentBlock?.groupKey) ?? null,
-    [beadingPlan, currentBlock],
-  );
-  const activeGroupBlockIndex = useMemo(() => {
-    if (!activeGroup || !currentBlock) return -1;
-    return activeGroup.blocks.findIndex((block) => block.key === currentBlock.key);
-  }, [activeGroup, currentBlock]);
 
   const effectiveActiveColorKey = currentBlock?.colorKey ?? activeColorKey;
   const currentColor = useMemo(
