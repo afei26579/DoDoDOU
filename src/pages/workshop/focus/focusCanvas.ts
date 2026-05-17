@@ -1,4 +1,4 @@
-import type { PatternCell, PatternResult } from '../../../features/workshop/model/types';
+import type { PatternCell, PatternResult, WorkshopBoardLayout } from '../../../features/workshop/model/types';
 import { getCellCoordKey, getCellKey, isTransparentCellHex, normalizeHex } from '../../../lib/pattern/beadingPlan';
 
 export type FocusViewport = {
@@ -51,7 +51,9 @@ export function getCanvasClipArea(height: number) {
   return { top, bottom: Math.max(top + 80, bottom) };
 }
 
-export function getFitViewport(pattern: PatternResult, width: number, height: number): FocusViewport {
+export function getFitViewport(pattern: PatternResult, width: number, height: number, boardLayout?: WorkshopBoardLayout | null): FocusViewport {
+  const boardWidthCells = boardLayout?.boardWidth ?? pattern.width;
+  const boardHeightCells = boardLayout?.boardHeight ?? pattern.height;
   const top = 104;
   const bottom = 166;
   const side = 18;
@@ -62,12 +64,12 @@ export function getFitViewport(pattern: PatternResult, width: number, height: nu
     height: Math.max(80, height - top - bottom),
   };
   const pad = 12;
-  const fit = Math.min((area.width - pad * 2) / pattern.width, (area.height - pad * 2) / pattern.height);
+  const fit = Math.min((area.width - pad * 2) / boardWidthCells, (area.height - pad * 2) / boardHeightCells);
   const minCellPx = clamp(fit * 0.55, 0.7, 6);
   const maxCellPx = 72;
   const cellPx = clamp(fit, minCellPx, maxCellPx);
-  const boardWidth = pattern.width * cellPx;
-  const boardHeight = pattern.height * cellPx;
+  const boardWidth = boardWidthCells * cellPx;
+  const boardHeight = boardHeightCells * cellPx;
 
   return {
     cellPx,
@@ -94,12 +96,12 @@ export function isDrawableCell(cell: Pick<PatternCell, 'isExternal' | 'hex' | 'v
   return !cell.isExternal && Boolean(cell.vendorCode) && Boolean(cell.hex) && !isTransparentCellHex(cell.hex);
 }
 
-export function getVisibleRange(pattern: PatternResult, viewport: FocusViewport, width: number, clip: CanvasClipArea): VisibleRange {
+export function getVisibleRange(size: { width: number; height: number }, viewport: FocusViewport, width: number, clip: CanvasClipArea): VisibleRange {
   return {
-    startCol: clamp(Math.floor((-viewport.tx) / viewport.cellPx) - 1, 0, pattern.width - 1),
-    endCol: clamp(Math.ceil((width - viewport.tx) / viewport.cellPx) + 1, 0, pattern.width - 1),
-    startRow: clamp(Math.floor((clip.top - viewport.ty) / viewport.cellPx) - 1, 0, pattern.height - 1),
-    endRow: clamp(Math.ceil((clip.bottom - viewport.ty) / viewport.cellPx) + 1, 0, pattern.height - 1),
+    startCol: clamp(Math.floor((-viewport.tx) / viewport.cellPx) - 1, 0, size.width - 1),
+    endCol: clamp(Math.ceil((width - viewport.tx) / viewport.cellPx) + 1, 0, size.width - 1),
+    startRow: clamp(Math.floor((clip.top - viewport.ty) / viewport.cellPx) - 1, 0, size.height - 1),
+    endRow: clamp(Math.ceil((clip.bottom - viewport.ty) / viewport.cellPx) + 1, 0, size.height - 1),
   };
 }
 
@@ -110,8 +112,8 @@ export function screenToCell(viewport: FocusViewport, clientX: number, clientY: 
   };
 }
 
-export function getDisplayColumn(pattern: PatternResult, handedness: 'left' | 'right', physicalColumn: number) {
-  return handedness === 'right' ? physicalColumn + 1 : pattern.width - physicalColumn;
+export function getDisplayColumn(totalColumns: number, handedness: 'left' | 'right', physicalColumn: number) {
+  return handedness === 'right' ? physicalColumn + 1 : totalColumns - physicalColumn;
 }
 
 function getRulerStep(cellPx: number) {
@@ -128,6 +130,7 @@ function shouldShowLabel(index: number, step: number, currentIndex: number) {
 
 export function buildRulerData(params: {
   pattern: PatternResult;
+  boardLayout: WorkshopBoardLayout;
   viewport: FocusViewport;
   width: number;
   clip: CanvasClipArea;
@@ -136,17 +139,17 @@ export function buildRulerData(params: {
   currentCell: { x: number; y: number } | null;
   handedness: 'left' | 'right';
 }): RulerData {
-  const { pattern, viewport, width, clip, sideRulerTop, sideRulerHeight, currentCell, handedness } = params;
-  const range = getVisibleRange(pattern, viewport, width, clip);
+  const { boardLayout, viewport, width, clip, sideRulerTop, sideRulerHeight, currentCell, handedness } = params;
+  const range = getVisibleRange({ width: boardLayout.boardWidth, height: boardLayout.boardHeight }, viewport, width, clip);
   const step = getRulerStep(viewport.cellPx);
-  const currentDisplayColumn = currentCell ? getDisplayColumn(pattern, handedness, currentCell.x) : 1;
+  const currentDisplayColumn = currentCell ? getDisplayColumn(boardLayout.boardWidth, handedness, currentCell.x) : 1;
   const columns: RulerLabel[] = [];
   const rows: RulerLabel[] = [];
 
   for (let column = range.startCol; column <= range.endCol; column += 1) {
     const screenX = viewport.tx + (column + 0.5) * viewport.cellPx;
     if (screenX < -40 || screenX > width + 40) continue;
-    const displayColumn = getDisplayColumn(pattern, handedness, column);
+    const displayColumn = getDisplayColumn(boardLayout.boardWidth, handedness, column);
     const current = currentCell?.x === column;
     if (!shouldShowLabel(displayColumn - 1, step, currentDisplayColumn - 1)) continue;
     columns.push({
@@ -215,16 +218,19 @@ export function drawFocusCanvas(params: {
   pattern: PatternResult;
   cells: FocusBoardCell[];
   viewport: FocusViewport;
+  boardLayout: WorkshopBoardLayout;
   activeColorKey: string | null;
   currentCellKey: string | null;
   completedCellKeys: Set<string>;
+  selectedBlockCellKeys: Set<string>;
   showGuide: boolean;
+  placementMode: boolean;
   handedness: 'left' | 'right';
   width: number;
   height: number;
   clip: CanvasClipArea;
 }) {
-  const { canvas, pattern, cells, viewport, activeColorKey, currentCellKey, completedCellKeys, showGuide, width, height, clip } = params;
+  const { canvas, pattern, cells, viewport, boardLayout, activeColorKey, currentCellKey, completedCellKeys, selectedBlockCellKeys, showGuide, placementMode, width, height, clip } = params;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
@@ -247,11 +253,25 @@ export function drawFocusCanvas(params: {
   ctx.rect(0, clip.top, width, clip.bottom - clip.top);
   ctx.clip();
 
-  const boardWidth = pattern.width * viewport.cellPx;
-  const boardHeight = pattern.height * viewport.cellPx;
-  const visible = getVisibleRange(pattern, viewport, width, clip);
-  const visibleCells = cells.filter((cell) => cell.x >= visible.startCol && cell.x <= visible.endCol && cell.y >= visible.startRow && cell.y <= visible.endRow);
+  const boardWidth = boardLayout.boardWidth * viewport.cellPx;
+  const boardHeight = boardLayout.boardHeight * viewport.cellPx;
+  const patternX = boardLayout.patternOffsetX * viewport.cellPx;
+  const patternY = boardLayout.patternOffsetY * viewport.cellPx;
+  const patternWidth = pattern.width * viewport.cellPx;
+  const patternHeight = pattern.height * viewport.cellPx;
+  const visible = getVisibleRange({ width: boardLayout.boardWidth, height: boardLayout.boardHeight }, viewport, width, clip);
+  const visibleCells = cells.filter((cell) => {
+    const boardX = boardLayout.patternOffsetX + cell.x;
+    const boardY = boardLayout.patternOffsetY + cell.y;
+    return boardX >= visible.startCol && boardX <= visible.endCol && boardY >= visible.startRow && boardY <= visible.endRow;
+  });
   const currentCell = currentCellKey ? cells.find((cell) => cell.coordKey === currentCellKey) ?? null : null;
+  const currentBoardCell = currentCell
+    ? {
+        x: boardLayout.patternOffsetX + currentCell.x,
+        y: boardLayout.patternOffsetY + currentCell.y,
+      }
+    : null;
 
   ctx.save();
   ctx.shadowColor = 'rgba(216,180,226,.20)';
@@ -262,11 +282,11 @@ export function drawFocusCanvas(params: {
   ctx.fill();
   ctx.restore();
 
-  if (showGuide && currentCell) {
+  if (showGuide && currentBoardCell) {
     ctx.save();
     ctx.fillStyle = 'rgba(255,218,193,.22)';
-    ctx.fillRect(viewport.tx, viewport.ty + currentCell.y * viewport.cellPx, boardWidth, viewport.cellPx);
-    ctx.fillRect(viewport.tx + currentCell.x * viewport.cellPx, viewport.ty, viewport.cellPx, boardHeight);
+    ctx.fillRect(viewport.tx, viewport.ty + currentBoardCell.y * viewport.cellPx, boardWidth, viewport.cellPx);
+    ctx.fillRect(viewport.tx + currentBoardCell.x * viewport.cellPx, viewport.ty, viewport.cellPx, boardHeight);
     ctx.restore();
   }
 
@@ -274,8 +294,8 @@ export function drawFocusCanvas(params: {
   const drawCircle = viewport.cellPx >= 10;
 
   for (const cell of visibleCells) {
-    const x = viewport.tx + cell.x * viewport.cellPx;
-    const y = viewport.ty + cell.y * viewport.cellPx;
+    const x = viewport.tx + (boardLayout.patternOffsetX + cell.x) * viewport.cellPx;
+    const y = viewport.ty + (boardLayout.patternOffsetY + cell.y) * viewport.cellPx;
     const isSelectedColor = activeColorKey ? cell.colorKey === activeColorKey : true;
     const done = completedCellKeys.has(cell.coordKey);
     const drawable = isDrawableCell(cell);
@@ -337,7 +357,7 @@ export function drawFocusCanvas(params: {
     // 左手模式：从图纸最右侧开始，往左每5格画一条（不受视图滚动影响）
     if (params.handedness === 'left') {
       // 从 pattern.width - 5 开始，向左递减
-      for (let column = pattern.width - 5; column >= 0; column -= 5) {
+      for (let column = boardLayout.boardWidth - 5; column >= 0; column -= 5) {
         const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
         ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
         ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
@@ -345,7 +365,7 @@ export function drawFocusCanvas(params: {
     } else {
       // 右手模式：从左上开始，往右每5格画一条
       for (let column = Math.ceil(visible.startCol / 5) * 5; column <= visible.endCol + 1; column += 5) {
-        if (column >= 0 && column < pattern.width) {
+        if (column >= 0 && column < boardLayout.boardWidth) {
           const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
           ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
           ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
@@ -372,7 +392,7 @@ export function drawFocusCanvas(params: {
 
     // 左手模式：从图纸最右侧开始，往左每10格画一条
     if (params.handedness === 'left') {
-      for (let column = pattern.width - 10; column >= 0; column -= 10) {
+      for (let column = boardLayout.boardWidth - 10; column >= 0; column -= 10) {
         const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
         ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
         ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
@@ -395,9 +415,9 @@ export function drawFocusCanvas(params: {
     ctx.restore();
   }
 
-  if (currentCell) {
-    const x = viewport.tx + currentCell.x * viewport.cellPx;
-    const y = viewport.ty + currentCell.y * viewport.cellPx;
+  if (currentBoardCell) {
+    const x = viewport.tx + currentBoardCell.x * viewport.cellPx;
+    const y = viewport.ty + currentBoardCell.y * viewport.cellPx;
     ctx.save();
     ctx.strokeStyle = '#E8A87C';
     ctx.lineWidth = Math.max(3, Math.min(5, viewport.cellPx * 0.16));
@@ -410,6 +430,57 @@ export function drawFocusCanvas(params: {
     }
     ctx.restore();
   }
+
+  if (selectedBlockCellKeys.size > 0) {
+    ctx.save();
+    ctx.strokeStyle = '#4C2B6F';
+    ctx.lineWidth = Math.max(2.5, Math.min(6, viewport.cellPx * 0.18));
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.shadowColor = 'rgba(255,255,255,.72)';
+    ctx.shadowBlur = 7;
+    ctx.beginPath();
+
+    for (const cell of cells) {
+      if (!selectedBlockCellKeys.has(cell.coordKey)) continue;
+      const boardX = boardLayout.patternOffsetX + cell.x;
+      const boardY = boardLayout.patternOffsetY + cell.y;
+      const x = viewport.tx + boardX * viewport.cellPx;
+      const y = viewport.ty + boardY * viewport.cellPx;
+      const size = viewport.cellPx;
+      const topKey = `${cell.x},${cell.y - 1}`;
+      const rightKey = `${cell.x + 1},${cell.y}`;
+      const bottomKey = `${cell.x},${cell.y + 1}`;
+      const leftKey = `${cell.x - 1},${cell.y}`;
+
+      if (!selectedBlockCellKeys.has(topKey)) {
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + size, y);
+      }
+      if (!selectedBlockCellKeys.has(rightKey)) {
+        ctx.moveTo(x + size, y);
+        ctx.lineTo(x + size, y + size);
+      }
+      if (!selectedBlockCellKeys.has(bottomKey)) {
+        ctx.moveTo(x + size, y + size);
+        ctx.lineTo(x, y + size);
+      }
+      if (!selectedBlockCellKeys.has(leftKey)) {
+        ctx.moveTo(x, y + size);
+        ctx.lineTo(x, y);
+      }
+    }
+
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.strokeStyle = placementMode ? '#E8A87C' : 'rgba(232,168,124,.52)';
+  ctx.lineWidth = placementMode ? 3 : 2;
+  ctx.setLineDash(placementMode ? [8, 6] : []);
+  ctx.strokeRect(viewport.tx + patternX, viewport.ty + patternY, patternWidth, patternHeight);
+  ctx.restore();
 
   ctx.save();
   ctx.strokeStyle = 'rgba(93,83,74,.22)';

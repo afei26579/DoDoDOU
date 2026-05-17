@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import styles from './FocusModePage.module.css';
 
 const GO_BACK_ICON = '/assets/system_icons/go_back.png';
@@ -6,8 +5,10 @@ const GO_BACK_ICON = '/assets/system_icons/go_back.png';
 type FocusTopbarProps = {
   zoomLocked: boolean;
   wakeActive: boolean;
+  placementMode: boolean;
   onBack: () => void;
   onToggleWake: () => void;
+  onTogglePlacementMode: () => void;
   onToggleLock: () => void;
   onOpenSettings: () => void;
   shaking: boolean;
@@ -16,8 +17,10 @@ type FocusTopbarProps = {
 export function FocusTopbar({
   zoomLocked,
   wakeActive,
+  placementMode,
   onBack,
   onToggleWake,
+  onTogglePlacementMode,
   onToggleLock,
   onOpenSettings,
   shaking,
@@ -43,6 +46,16 @@ export function FocusTopbar({
           onClick={onToggleWake}
         >
           ☀
+        </button>
+        <button
+          type="button"
+          className={`${styles.iconButton} ${placementMode ? styles.active : ''}`}
+          aria-label="摆放图纸"
+          title="摆放图纸"
+          aria-pressed={placementMode}
+          onClick={onTogglePlacementMode}
+        >
+          ⊕
         </button>
         <button
           type="button"

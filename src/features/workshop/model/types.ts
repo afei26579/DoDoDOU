@@ -57,6 +57,17 @@ export type PatternResult = {
 export type WorkshopViewMode = 'image' | 'pattern';
 export type WorkshopBeadingState = 'idle' | 'progressing' | 'completed';
 
+export type WorkshopBoardLayout = {
+  boardWidth: number;
+  boardHeight: number;
+  patternOffsetX: number;
+  patternOffsetY: number;
+};
+
+export type WorkshopBeadingStrategy = 'smart' | 'nearest' | 'largest';
+export type WorkshopBeadingHorizontalDirection = 'smart' | 'left-to-right' | 'right-to-left';
+export type WorkshopBeadingVerticalDirection = 'smart' | 'top-to-bottom' | 'bottom-to-top';
+
 export type WorkshopEditorState = {
   grid: string[][];
   history: string[][][];
@@ -74,6 +85,10 @@ export type WorkshopBeadingProgress = {
   connectivity?: '4' | '8' | 'smart';
   axis?: 'row' | 'column';
   focusGridSize?: 10 | 20 | 25 | 30;
+  boardLayout?: WorkshopBoardLayout;
+  beadingStrategy?: WorkshopBeadingStrategy;
+  horizontalDirection?: WorkshopBeadingHorizontalDirection;
+  verticalDirection?: WorkshopBeadingVerticalDirection;
   updatedAt: string;
 };
 

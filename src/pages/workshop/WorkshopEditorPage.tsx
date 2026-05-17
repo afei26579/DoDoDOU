@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import styles from './WorkshopEditorPage.module.css';
 import { WorkshopPreviewPanel } from './components/WorkshopPreviewPanel';
 import { DownloadSettingsModal } from './DownloadSettingsModal';
+import { EditorSettingsSheet } from './editor/EditorSettingsSheet';
 import { ensureWorkshopProject, getWorkshopProject, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import {
   getWorkshopDraft,
@@ -399,6 +400,7 @@ export function WorkshopEditorPage() {
   const [toast, setToast] = useState('');
   const [toolbarPos, setToolbarPos] = useState({ x: 0, y: 0 });
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const hasUserAdjustedViewRef = useRef(false);
@@ -1437,6 +1439,39 @@ export function WorkshopEditorPage() {
     setClearConfirmOpen(false);
   };
 
+  const handleResizeGrid = (direction: 'top' | 'bottom' | 'left' | 'right', countStr: string) => {
+    const count = parseInt(countStr, 10);
+    if (isNaN(count) || count <= 0) return;
+
+    const currentGrid = grid;
+    let newGrid: string[][];
+
+    if (direction === 'top') {
+      const emptyRow = Array(currentGrid[0]?.length ?? cols).fill('');
+      newGrid = [...Array(count).fill(emptyRow).map(() => [...emptyRow]), ...currentGrid];
+    } else if (direction === 'bottom') {
+      const emptyRow = Array(currentGrid[0]?.length ?? cols).fill('');
+      newGrid = [...currentGrid, ...Array(count).fill(emptyRow).map(() => [...emptyRow])];
+    } else if (direction === 'left') {
+      newGrid = currentGrid.map((row) => [...Array(count).fill(''), ...row]);
+    } else {
+      newGrid = currentGrid.map((row) => [...row, ...Array(count).fill('')]);
+    }
+
+    // Update cols and rows based on direction
+    if (direction === 'top' || direction === 'bottom') {
+      setRows((prev) => prev + count);
+    } else {
+      setCols((prev) => prev + count);
+    }
+
+    commitGrid(newGrid);
+
+    const posLabel = direction === 'top' ? '顶部' : direction === 'bottom' ? '底部' : direction === 'left' ? '左侧' : '右侧';
+    const label = direction === 'top' || direction === 'bottom' ? '行' : '列';
+    setToast(`已在${posLabel}添加 ${count} ${label}`);
+  };
+
   useEffect(() => {
     const handlePageFlush = () => {
       if (saveTimerRef.current) {
@@ -1493,6 +1528,15 @@ export function WorkshopEditorPage() {
           </div>
         </div>
         <div className={styles.titlebarActions}>
+          <button
+            type="button"
+            className={styles.iconButton}
+            onClick={() => setSettingsOpen(true)}
+            title="设置"
+            aria-label="打开设置"
+          >
+            ⚙
+          </button>
           <button
             type="button"
             className={styles.primaryBtn}
@@ -1721,6 +1765,19 @@ export function WorkshopEditorPage() {
       ) : null}
 
       {toast ? <div className={styles.toast}>{toast}</div> : null}
+
+      <EditorSettingsSheet
+        open={settingsOpen}
+        brand={editorBrand}
+        cols={cols}
+        rows={rows}
+        onClose={() => setSettingsOpen(false)}
+        onBrandChange={(newBrand) => {
+          setEditorBrand(newBrand);
+          setDownloadBrand(newBrand);
+        }}
+        onResizeGrid={handleResizeGrid}
+      />
     </main>
   );
 }

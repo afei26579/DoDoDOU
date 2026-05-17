@@ -1,0 +1,226 @@
+/* 设置弹窗样式 - 参照 FocusSettingsSheet */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(93, 83, 74, 0.26);
+  z-index: 200;
+  animation: fadeIn 0.2s ease;
+}
+
+.sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border-radius: 24px 24px 0 0;
+  z-index: 201;
+  max-height: 85vh;
+  overflow-y: auto;
+  animation: slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  box-shadow: 0 -4px 32px rgba(216, 180, 226, 0.28);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 16px 12px;
+  border-bottom: 1px solid rgba(93, 83, 74, 0.1);
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #5d534a;
+  margin: 0;
+}
+
+.closeBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(93, 83, 74, 0.08);
+  border: none;
+  font-size: 18px;
+  color: #5d534a;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+}
+
+.closeBtn:hover {
+  background: rgba(93, 83, 74, 0.15);
+}
+
+.content {
+  padding: 16px;
+}
+
+.section {
+  margin-bottom: 24px;
+}
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #9c9188;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 12px 0;
+}
+
+/* 品牌选择 */
+.brandGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.brandBtn {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(93, 83, 74, 0.06);
+  border: 2px solid transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: #5d534a;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.brandBtn:hover {
+  background: rgba(216, 180, 226, 0.2);
+}
+
+.brandBtnActive {
+  background: #d8b4e2;
+  color: #ffffff;
+  border-color: #b48fcc;
+}
+
+.brandBtnActive:hover {
+  background: #b48fcc;
+}
+
+/* 尺寸调整 */
+.sizeInfo {
+  font-size: 14px;
+  color: #9c9188;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: rgba(93, 83, 74, 0.04);
+  border-radius: 8px;
+}
+
+.resizeGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.resizeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(93, 83, 74, 0.04);
+  border-radius: 12px;
+}
+
+.directionLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: #5d534a;
+  min-width: 70px;
+}
+
+.directionLabel svg {
+  color: #9c9188;
+}
+
+.input {
+  width: 56px;
+  padding: 6px 8px;
+  border: 1px solid rgba(93, 83, 74, 0.15);
+  border-radius: 8px;
+  font-size: 14px;
+  text-align: center;
+  color: #5d534a;
+  background: #ffffff;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #d8b4e2;
+  box-shadow: 0 0 0 2px rgba(216, 180, 226, 0.3);
+}
+
+.unit {
+  font-size: 13px;
+  color: #9c9188;
+  min-width: 20px;
+}
+
+.addBtn {
+  margin-left: auto;
+  padding: 6px 14px;
+  border-radius: 8px;
+  background: #d8b4e2;
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  color: #ffffff;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.addBtn:hover {
+  background: #b48fcc;
+}
+
+.addBtn:active {
+  transform: scale(0.97);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* 移动端适配 */
+@media (max-width: 520px) {
+  .brandGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .resizeRow {
+    padding: 10px;
+  }
+
+  .input {
+    width: 50px;
+  }
+
+  .directionLabel {
+    min-width: 60px;
+    font-size: 13px;
+  }
+}

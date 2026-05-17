@@ -3,8 +3,11 @@ import styles from './FocusModePage.module.css';
 
 type FocusToolbarProps = {
   currentColor: BeadingPaletteItem | null;
+  blockNumber: number;
+  totalBlocks: number;
   currentBlockCount: number;
-  currentPosition: string;
+  totalColorCount: number;
+  remainingColorCount: number;
   onPrevious: () => void;
   onNext: () => void;
   onCenter: () => void;
@@ -14,17 +17,22 @@ type FocusToolbarProps = {
 
 export function FocusToolbar({
   currentColor,
+  blockNumber,
+  totalBlocks,
   currentBlockCount,
-  currentPosition,
+  totalColorCount,
+  remainingColorCount,
   onPrevious,
   onNext,
   onCenter,
   previousDisabled,
   nextDisabled,
 }: FocusToolbarProps) {
-  const colorCode = currentColor?.vendorCode ?? '等待图纸';
-  const colorName = currentColor ? `#${currentColor.hex.replace('#', '')}` : '图纸加载后显示';
-  const countText = currentColor ? `共 ${currentColor.count} 颗 · 当前块 ${currentBlockCount} 颗` : currentPosition;
+  const colorCode = currentColor?.vendorCode ?? '--';
+  const blockText = currentColor ? `${blockNumber}/${totalBlocks} 块` : '--/-- 块';
+  const countText = currentColor
+    ? `当前块 ${currentBlockCount}颗，共${totalColorCount}颗，剩余${remainingColorCount}颗`
+    : '等待图纸';
 
   return (
     <section className={styles.bottomPanel} aria-label="底部工具栏">
@@ -35,10 +43,11 @@ export function FocusToolbar({
         </button>
 
         <button type="button" className={styles.colorFocus} aria-label="当前选中色号" onClick={onCenter} disabled={!currentColor}>
-          <span className={styles.toolbarSwatch} style={{ background: currentColor?.hex ?? '#D8B4E2' }} />
+          <span className={styles.toolbarSwatch} style={{ background: currentColor?.hex ?? '#D8B4E2' }}>
+            <span className={styles.toolbarSwatchCode}>{colorCode}</span>
+          </span>
           <span className={styles.toolbarCopy}>
-            <span className={styles.toolbarCode}>色号 {colorCode}</span>
-            <span className={styles.toolbarName}>{colorName}</span>
+            <span className={styles.toolbarCode}>{blockText}</span>
             <span className={styles.toolbarCount}>{countText}</span>
           </span>
         </button>
