@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import type { BeadingPaletteItem } from '../../../lib/pattern/beadingPlan';
 import styles from './FocusModePage.module.css';
 
@@ -8,6 +9,7 @@ type FocusToolbarProps = {
   currentBlockCount: number;
   totalColorCount: number;
   remainingColorCount: number;
+  colorProgress: number;
   onPrevious: () => void;
   onNext: () => void;
   onCenter: () => void;
@@ -22,6 +24,7 @@ export function FocusToolbar({
   currentBlockCount,
   totalColorCount,
   remainingColorCount,
+  colorProgress,
   onPrevious,
   onNext,
   onCenter,
@@ -33,6 +36,10 @@ export function FocusToolbar({
   const countText = currentColor
     ? `当前块 ${currentBlockCount}颗，共${totalColorCount}颗，剩余${remainingColorCount}颗`
     : '等待图纸';
+  const swatchStyle = {
+    '--swatch-color': currentColor?.hex ?? '#D8B4E2',
+    '--swatch-progress': `${Math.max(0, Math.min(1, colorProgress)) * 360}deg`,
+  } as CSSProperties;
 
   return (
     <section className={styles.bottomPanel} aria-label="底部工具栏">
@@ -43,7 +50,7 @@ export function FocusToolbar({
         </button>
 
         <button type="button" className={styles.colorFocus} aria-label="当前选中色号" onClick={onCenter} disabled={!currentColor}>
-          <span className={styles.toolbarSwatch} style={{ background: currentColor?.hex ?? '#D8B4E2' }}>
+          <span className={styles.toolbarSwatch} style={swatchStyle}>
             <span className={styles.toolbarSwatchCode}>{colorCode}</span>
           </span>
           <span className={styles.toolbarCopy}>

@@ -357,14 +357,28 @@
   width: 46px;
   height: 46px;
   border-radius: 50%;
-  border: 4px solid rgba(255, 255, 255, 0.9);
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  background:
+    conic-gradient(#7b4fa0 var(--swatch-progress, 0deg), rgba(93, 83, 74, 0.14) 0deg);
   box-shadow: inset 0 0 0 1px rgba(93, 83, 74, 0.1), 0 2px 8px rgba(93, 83, 74, 0.12);
   display: grid;
   place-items: center;
   overflow: hidden;
+  position: relative;
+}
+
+.toolbarSwatch::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: var(--swatch-color, #d8b4e2);
+  box-shadow: inset 0 0 0 1px rgba(93, 83, 74, 0.1);
 }
 
 .toolbarSwatchCode {
+  position: relative;
+  z-index: 1;
   max-width: 38px;
   padding: 2px 3px;
   border-radius: 999px;

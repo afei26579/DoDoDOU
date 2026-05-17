@@ -112,6 +112,41 @@ export function screenToCell(viewport: FocusViewport, clientX: number, clientY: 
   };
 }
 
+function drawRectProgress(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  progress: number,
+) {
+  const clamped = clamp(progress, 0, 1);
+  if (clamped <= 0 || width <= 0 || height <= 0) return;
+
+  const perimeter = (width + height) * 2;
+  let remaining = perimeter * clamped;
+  const segments = [
+    { x1: x, y1: y, x2: x + width, y2: y, length: width },
+    { x1: x + width, y1: y, x2: x + width, y2: y + height, length: height },
+    { x1: x + width, y1: y + height, x2: x, y2: y + height, length: width },
+    { x1: x, y1: y + height, x2: x, y2: y, length: height },
+  ];
+
+  ctx.beginPath();
+  for (const segment of segments) {
+    if (remaining <= 0) break;
+    const length = Math.min(segment.length, remaining);
+    const ratio = segment.length > 0 ? length / segment.length : 0;
+    ctx.moveTo(segment.x1, segment.y1);
+    ctx.lineTo(
+      segment.x1 + (segment.x2 - segment.x1) * ratio,
+      segment.y1 + (segment.y2 - segment.y1) * ratio,
+    );
+    remaining -= length;
+  }
+  ctx.stroke();
+}
+
 export function getDisplayColumn(totalColumns: number, handedness: 'left' | 'right', physicalColumn: number) {
   return handedness === 'right' ? physicalColumn + 1 : totalColumns - physicalColumn;
 }
@@ -223,6 +258,7 @@ export function drawFocusCanvas(params: {
   currentCellKey: string | null;
   completedCellKeys: Set<string>;
   selectedBlockCellKeys: Set<string>;
+  completionProgress: number;
   showGuide: boolean;
   placementMode: boolean;
   handedness: 'left' | 'right';
@@ -230,7 +266,7 @@ export function drawFocusCanvas(params: {
   height: number;
   clip: CanvasClipArea;
 }) {
-  const { canvas, pattern, cells, viewport, boardLayout, activeColorKey, currentCellKey, completedCellKeys, selectedBlockCellKeys, showGuide, placementMode, width, height, clip } = params;
+  const { canvas, pattern, cells, viewport, boardLayout, activeColorKey, currentCellKey, completedCellKeys, selectedBlockCellKeys, completionProgress, showGuide, placementMode, width, height, clip } = params;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
@@ -481,6 +517,26 @@ export function drawFocusCanvas(params: {
   ctx.setLineDash(placementMode ? [8, 6] : []);
   ctx.strokeRect(viewport.tx + patternX, viewport.ty + patternY, patternWidth, patternHeight);
   ctx.restore();
+
+  if (!placementMode) {
+    const progressInset = Math.max(2, Math.min(6, viewport.cellPx * 0.16));
+    const progressX = viewport.tx + patternX - progressInset;
+    const progressY = viewport.ty + patternY - progressInset;
+    const progressWidth = patternWidth + progressInset * 2;
+    const progressHeight = patternHeight + progressInset * 2;
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,.82)';
+    ctx.lineWidth = Math.max(4, Math.min(8, viewport.cellPx * 0.22));
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeRect(progressX, progressY, progressWidth, progressHeight);
+    ctx.strokeStyle = '#7B4FA0';
+    ctx.shadowColor = 'rgba(123,79,160,.32)';
+    ctx.shadowBlur = 8;
+    drawRectProgress(ctx, progressX, progressY, progressWidth, progressHeight, completionProgress);
+    ctx.restore();
+  }
 
   ctx.save();
   ctx.strokeStyle = 'rgba(93,83,74,.22)';

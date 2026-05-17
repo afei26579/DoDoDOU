@@ -427,6 +427,7 @@ export function FocusModePage() {
     : 0;
   const toolbarTotalColorCount = currentColorCellKeys.length;
   const toolbarRemainingColorCount = Math.max(0, toolbarTotalColorCount - completedCurrentColorCellCount);
+  const toolbarColorProgress = toolbarTotalColorCount > 0 ? completedCurrentColorCellCount / toolbarTotalColorCount : 0;
 
   const computedCompletedColorKeys = useMemo(() => {
     if (!patternResult) return [];
@@ -709,6 +710,7 @@ export function FocusModePage() {
       currentCellKey: activeCellKey,
       completedCellKeys: completedCellKeySet,
       selectedBlockCellKeys: currentBlockCellKeys,
+      completionProgress: totalPatternCells > 0 ? normalizedCompletedCellKeys.length / totalPatternCells : 0,
       showGuide,
       placementMode,
       handedness,
@@ -716,7 +718,7 @@ export function FocusModePage() {
       height: boardSize.height,
       clip: getCanvasClipArea(boardSize.height),
     });
-  }, [activeCellKey, boardSize, cells, completedCellKeySet, currentBlockCellKeys, effectiveActiveColorKey, effectiveBoardLayout, patternResult, placementMode, showGuide, viewport]);
+  }, [activeCellKey, boardSize, cells, completedCellKeySet, currentBlockCellKeys, effectiveActiveColorKey, effectiveBoardLayout, normalizedCompletedCellKeys.length, patternResult, placementMode, showGuide, totalPatternCells, viewport]);
 
   const rulerData = useMemo(() => {
     if (!patternResult || !viewport || !effectiveBoardLayout || boardSize.width <= 0) return { columns: [], rows: [] };
@@ -1078,6 +1080,7 @@ export function FocusModePage() {
         currentBlockCount={currentBlock?.cells.length ?? 0}
         totalColorCount={toolbarTotalColorCount}
         remainingColorCount={toolbarRemainingColorCount}
+        colorProgress={toolbarColorProgress}
         onPrevious={() => goToBlock('previous')}
         onNext={() => goToBlock('next')}
         onCenter={() => {
