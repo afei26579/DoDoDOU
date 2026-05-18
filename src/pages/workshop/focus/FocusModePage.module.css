@@ -362,8 +362,8 @@
   top: 50%;
   min-width: 0;
   overflow: visible;
-  height: 106px;
-  min-height: 106px;
+  height: 96px;
+  min-height: 96px;
   padding: 9px 10px;
   display: grid;
   grid-template-columns: 66px minmax(0, 1fr);
@@ -410,8 +410,8 @@
 .infoArea {
   display: grid;
   align-content: center;
-  gap: 7px;
-  padding: 0 4px;
+  gap: 5px;
+  padding: 2px 4px;
   text-align: left;
 }
 
@@ -473,8 +473,8 @@
 }
 
 .toolbarCode {
-  font-size: 17px;
-  line-height: 1;
+  font-size: 18px;
+  line-height: 1.05;
   font-weight: 1000;
   color: #7b4fa0;
   letter-spacing: 0.3px;
@@ -483,18 +483,24 @@
 .toolbarRecord {
   display: block;
   min-width: 0;
-  padding: 4px 8px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 8px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.74);
   border: 1px solid rgba(180, 143, 204, 0.24);
   color: #7b7066;
-  font-size: 11px;
-  line-height: 1.1;
+  font-size: 10px;
+  line-height: 1.15;
   font-weight: 900;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   box-shadow: 0 1px 4px rgba(93, 83, 74, 0.05);
+}
+
+.toolbarRecordMuted {
+  color: var(--focus-muted);
 }
 
 .toolbarName {
@@ -805,6 +811,90 @@
   color: var(--focus-text);
 }
 
+.settingNameRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.settingHelp {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.settingHelpButton {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid rgba(139, 108, 154, 0.26);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--focus-muted);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.settingHelpButton.active {
+  color: #7b4fa0;
+  background: var(--focus-primary-light);
+  border-color: rgba(180, 143, 204, 0.42);
+}
+
+.settingHelpText {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  z-index: 80;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 132px));
+  padding: 8px 10px;
+  border: 1px solid rgba(139, 108, 154, 0.16);
+  border-radius: 12px;
+  background: rgba(248, 244, 252, 0.92);
+  box-shadow: 0 10px 28px rgba(93, 83, 74, 0.14);
+  color: var(--focus-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(4px, -50%) scale(0.98);
+  transform-origin: left center;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.settingHelpText::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  background: rgba(248, 244, 252, 0.92);
+  border-left: 1px solid rgba(139, 108, 154, 0.16);
+  border-bottom: 1px solid rgba(139, 108, 154, 0.16);
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.settingHelpActive .settingHelpText {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(0, -50%) scale(1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .settingHelp:hover .settingHelpText,
+  .settingHelp:focus-within .settingHelpText {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(0, -50%) scale(1);
+  }
+}
+
 .settingDesc {
   margin-top: 2px;
   font-size: 12px;
@@ -1105,7 +1195,7 @@
   }
 
   .toolbarRecord {
-    padding: 3px 6px;
+    padding: 2px 6px;
     font-size: 9px;
   }
 

@@ -316,7 +316,7 @@ export function FocusModePage() {
   const [rowAxis, setRowAxis] = useState<BeadingAxis>('row');
   const [beadingStrategy, setBeadingStrategy] = useState<WorkshopBeadingStrategy>('smart');
   const [horizontalDirection, setHorizontalDirection] = useState<WorkshopBeadingHorizontalDirection>('smart');
-  const [verticalDirection, setVerticalDirection] = useState<WorkshopBeadingVerticalDirection>('smart');
+  const [verticalDirection, setVerticalDirection] = useState<WorkshopBeadingVerticalDirection>('top-to-bottom');
   const [activeColorKey, setActiveColorKey] = useState<string | null>(null);
   const [activeCellKey, setActiveCellKey] = useState<string | null>(null);
   const [completedCellKeys, setCompletedCellKeys] = useState<string[]>([]);
@@ -650,7 +650,7 @@ export function FocusModePage() {
     setHandedness(progress.handedness === 'left' ? 'left' : 'right');
     setBeadingStrategy(isBeadingStrategy(progress.beadingStrategy) ? progress.beadingStrategy : 'smart');
     setHorizontalDirection(isHorizontalDirection(progress.horizontalDirection) ? progress.horizontalDirection : 'smart');
-    setVerticalDirection(isVerticalDirection(progress.verticalDirection) ? progress.verticalDirection : 'smart');
+    setVerticalDirection(isVerticalDirection(progress.verticalDirection) ? progress.verticalDirection : 'top-to-bottom');
     const restoredLayout = normalizeBoardLayout(patternResult, progress.boardLayout);
     setBoardLayout(restoredLayout);
     if (boardSize.width > 0 && boardSize.height > 0) {
@@ -858,15 +858,19 @@ export function FocusModePage() {
     if (patternCoord.x < 0 || patternCoord.x >= patternResult.width || patternCoord.y < 0 || patternCoord.y >= patternResult.height) return;
     const cell = cellByCoordKey.get(`${patternCoord.x},${patternCoord.y}`);
     if (!cell) return;
-    const colorChanged = cell.colorKey !== activeColorKey;
     const block = findBlockForCell(cell);
+    if (currentBlockCellKeys.has(cell.coordKey)) {
+      selectExactCell(cell);
+      return;
+    }
+
     if (block) {
       selectBlock(block);
     } else {
       selectExactCell(cell);
     }
     showToast(`已切换到色号 ${cell.vendorCode}`);
-  }, [activeColorKey, boardSize.height, cellByCoordKey, effectiveBoardLayout, findBlockForCell, patternResult, placementMode, selectBlock, selectExactCell, showToast, viewport]);
+  }, [boardSize.height, cellByCoordKey, currentBlockCellKeys, effectiveBoardLayout, findBlockForCell, patternResult, placementMode, selectBlock, selectExactCell, showToast, viewport]);
 
   const zoomAt = useCallback((factor: number, clientX = boardSize.width / 2, clientY = boardSize.height / 2) => {
     cancelViewportAnimation();
@@ -1209,6 +1213,7 @@ export function FocusModePage() {
           setPlacementMode((current) => !current);
           showToast(placementMode ? '已关闭图纸摆放' : '已开启图纸摆放');
         }}
+        onNotice={showToast}
         onBoardLayoutChange={updateBoardLayout}
       />
 

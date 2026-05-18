@@ -54,7 +54,8 @@ export function FocusToolbar({
 }: FocusToolbarProps) {
   const colorCode = currentColor?.vendorCode ?? '--';
   const blockText = currentColor ? `${blockNumber}/${totalBlocks} 块` : '--/-- 块';
-  const beadText = currentColor ? `${currentBlockCount} 颗 · 剩余 ${remainingColorCount}` : '等待图纸';
+  const currentBeadText = currentColor ? `当前 ${currentBlockCount} 颗` : '等待图纸';
+  const remainingBeadText = currentColor ? `剩余 ${remainingColorCount} 颗` : '请先生成图纸';
   const swatchStyle = {
     '--swatch-color': currentColor?.hex ?? '#D8B4E2',
     '--swatch-progress': `${Math.max(0, Math.min(1, colorProgress)) * 360}deg`,
@@ -73,12 +74,13 @@ export function FocusToolbar({
               <span className={styles.toolbarSwatch} style={swatchStyle}>
                 <span className={styles.toolbarSwatchCode}>{colorCode}</span>
               </span>
-              <span className={styles.paletteChevron} aria-hidden="true">⌄</span>
+            
             </button>
 
             <button type="button" className={styles.infoArea} aria-label="定位当前色块" onClick={onCenter} disabled={!currentColor}>
               <span className={styles.toolbarCode}>{blockText}</span>
-              <span className={styles.toolbarRecord}>{beadText}</span>
+              <span className={styles.toolbarRecord}>{currentBeadText}</span>
+              <span className={`${styles.toolbarRecord} ${styles.toolbarRecordMuted}`}>{remainingBeadText}</span>
             </button>
           </div>
 

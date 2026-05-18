@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import type {
   WorkshopBeadingHorizontalDirection,
   WorkshopBeadingStrategy,
@@ -25,15 +26,16 @@ type FocusSettingsSheetProps = {
   onToggleRuler: () => void;
   onToggleGuide: () => void;
   onTogglePlacementMode?: () => void;
+  onNotice?: (message: string) => void;
   onBoardLayoutChange: (patch: Partial<WorkshopBoardLayout>) => void;
 };
 
 const MAX_BOARD_SIDE = 200;
+type SettingHelpKey = 'direction' | 'strategy' | 'board' | 'handedness' | 'ruler' | 'guide';
+type DirectionPreset = 'horizontal' | 'vertical';
 
-function readBoardSide(value: string, min: number) {
-  const numeric = Number.parseInt(value, 10);
-  if (!Number.isFinite(numeric)) return min;
-  return Math.max(min, Math.min(MAX_BOARD_SIDE, numeric));
+function getHelpButtonLabel(label: string) {
+  return `查看${label}说明`;
 }
 
 export function FocusSettingsSheet({
@@ -54,11 +56,81 @@ export function FocusSettingsSheet({
   onVerticalDirectionChange,
   onToggleRuler,
   onToggleGuide,
+  onNotice,
   onBoardLayoutChange,
 }: FocusSettingsSheetProps) {
   const minBoardSide = Math.max(1, patternWidth, patternHeight);
   const boardSide = Math.max(boardLayout?.boardWidth ?? minBoardSide, boardLayout?.boardHeight ?? minBoardSide);
   const canEditBoard = patternWidth > 0 && patternHeight > 0;
+  const directionPreset: DirectionPreset = horizontalDirection !== 'smart' && verticalDirection === 'smart'
+    ? 'horizontal'
+    : horizontalDirection === 'smart' && verticalDirection !== 'smart'
+      ? 'vertical'
+      : 'vertical';
+  const [activeHelp, setActiveHelp] = useState<SettingHelpKey | null>(null);
+  const [boardSideDraft, setBoardSideDraft] = useState(() => String(boardSide));
+
+  useEffect(() => {
+    setBoardSideDraft(String(boardSide));
+  }, [boardSide]);
+
+  useEffect(() => {
+    if (!activeHelp) return;
+
+    const closeHelpOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest(`[data-setting-help="${activeHelp}"]`)) return;
+      setActiveHelp(null);
+    };
+
+    document.addEventListener('pointerdown', closeHelpOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeHelpOnOutsidePointer);
+  }, [activeHelp]);
+
+  const commitBoardSideDraft = () => {
+    const numeric = Number.parseInt(boardSideDraft, 10);
+    if (!Number.isFinite(numeric)) {
+      setBoardSideDraft(String(boardSide));
+      return;
+    }
+
+    if (numeric < minBoardSide) {
+      setBoardSideDraft(String(minBoardSide));
+      onBoardLayoutChange({ boardWidth: minBoardSide, boardHeight: minBoardSide });
+      onNotice?.('实体板不能小于图纸尺寸');
+      return;
+    }
+
+    const nextSide = Math.max(minBoardSide, Math.min(MAX_BOARD_SIDE, numeric));
+    setBoardSideDraft(String(nextSide));
+    if (nextSide !== boardSide) {
+      onBoardLayoutChange({ boardWidth: nextSide, boardHeight: nextSide });
+    }
+  };
+
+  const renderSettingLabel = (key: SettingHelpKey, label: string, description: string) => (
+    <div>
+      <div className={styles.settingNameRow}>
+        <div className={styles.settingName}>{label}</div>
+        <span className={`${styles.settingHelp} ${activeHelp === key ? styles.settingHelpActive : ''}`} data-setting-help={key}>
+          <button
+            type="button"
+            className={`${styles.settingHelpButton} ${activeHelp === key ? styles.active : ''}`}
+            aria-label={getHelpButtonLabel(label)}
+            aria-describedby={`setting-help-${key}`}
+            aria-expanded={activeHelp === key}
+            onClick={() => setActiveHelp((current) => (current === key ? null : key))}
+          >
+            ?
+          </button>
+          <span id={`setting-help-${key}`} className={styles.settingHelpText} role="tooltip">
+            {description}
+          </span>
+        </span>
+      </div>
+    </div>
+  );
 
   return (
     <>
@@ -72,42 +144,35 @@ export function FocusSettingsSheet({
         </div>
 
         <div className={styles.settingRow}>
-          <div>
-            <div className={styles.settingName}>拼豆方向</div>
-            <div className={styles.settingDesc}>可同时选择一个横向和一个纵向方向；智能推荐会按左右手习惯决定。</div>
-          </div>
-          <div className={styles.directionGrid} role="group" aria-label="拼豆方向">
+          {renderSettingLabel('direction', '拼豆方向', '选择色块推进方向，横向会按左右手习惯决定默认左右走向。')}
+          <div className={styles.segmented} role="group" aria-label="拼豆方向">
             <button
               type="button"
-              className={horizontalDirection === 'smart' && verticalDirection === 'smart' ? styles.active : ''}
-              aria-pressed={horizontalDirection === 'smart' && verticalDirection === 'smart'}
+              className={directionPreset === 'vertical' ? styles.active : ''}
+              aria-pressed={directionPreset === 'vertical'}
               onClick={() => {
                 onHorizontalDirectionChange('smart');
+                onVerticalDirectionChange('top-to-bottom');
+              }}
+            >
+              纵向
+            </button>
+            <button
+              type="button"
+              className={directionPreset === 'horizontal' ? styles.active : ''}
+              aria-pressed={directionPreset === 'horizontal'}
+              onClick={() => {
+                onHorizontalDirectionChange(handedness === 'left' ? 'right-to-left' : 'left-to-right');
                 onVerticalDirectionChange('smart');
               }}
             >
-              智能推荐
-            </button>
-            <button type="button" className={horizontalDirection === 'left-to-right' ? styles.active : ''} aria-pressed={horizontalDirection === 'left-to-right'} onClick={() => onHorizontalDirectionChange('left-to-right')}>
-              左→右
-            </button>
-            <button type="button" className={horizontalDirection === 'right-to-left' ? styles.active : ''} aria-pressed={horizontalDirection === 'right-to-left'} onClick={() => onHorizontalDirectionChange('right-to-left')}>
-              右→左
-            </button>
-            <button type="button" className={verticalDirection === 'top-to-bottom' ? styles.active : ''} aria-pressed={verticalDirection === 'top-to-bottom'} onClick={() => onVerticalDirectionChange('top-to-bottom')}>
-              上→下
-            </button>
-            <button type="button" className={verticalDirection === 'bottom-to-top' ? styles.active : ''} aria-pressed={verticalDirection === 'bottom-to-top'} onClick={() => onVerticalDirectionChange('bottom-to-top')}>
-              下→上
+              横向
             </button>
           </div>
         </div>
 
         <div className={styles.settingRow}>
-          <div>
-            <div className={styles.settingName}>拼豆策略</div>
-            <div className={styles.settingDesc}>控制下一块色块的推荐顺序。</div>
-          </div>
+          {renderSettingLabel('strategy', '拼豆策略', '控制下一块色块的推荐顺序。')}
           <div className={`${styles.segmented} ${styles.segmentedThree}`} role="group" aria-label="拼豆策略">
             <button type="button" className={beadingStrategy === 'smart' ? styles.active : ''} aria-pressed={beadingStrategy === 'smart'} onClick={() => onBeadingStrategyChange('smart')}>
               智能推荐
@@ -122,54 +187,26 @@ export function FocusSettingsSheet({
         </div>
 
         <div className={styles.settingRow}>
-          <div>
-            <div className={styles.settingName}>实体板尺寸</div>
-            <div className={styles.settingDesc}>
-              当前图纸 {patternWidth || '-'} × {patternHeight || '-'}，正方形板子不能小于图纸最长边。
-            </div>
-          </div>
+          {renderSettingLabel('board', '实体板尺寸', `当前图纸 ${patternWidth || '-'} × ${patternHeight || '-'}，正方形板子不能小于图纸最长边。`)}
           <div className={styles.boardSizeControl} aria-label="实体板尺寸设置">
             <label className={styles.boardSizeSingle}>
-              <span>边长</span>
+            
               <input
                 type="number"
                 inputMode="numeric"
                 min={minBoardSide}
                 max={MAX_BOARD_SIDE}
-                value={boardSide}
+                value={boardSideDraft}
                 disabled={!canEditBoard}
-                onChange={(event) => {
-                  const nextSide = readBoardSide(event.target.value, minBoardSide);
-                  onBoardLayoutChange({ boardWidth: nextSide, boardHeight: nextSide });
-                }}
+                onChange={(event) => setBoardSideDraft(event.target.value)}
+                onBlur={commitBoardSideDraft}
               />
             </label>
-            <div className={styles.boardPresetRow}>
-              <button
-                type="button"
-                disabled={!canEditBoard}
-                onClick={() => onBoardLayoutChange({ boardWidth: minBoardSide, boardHeight: minBoardSide })}
-              >
-                图纸
-              </button>
-              <button
-                type="button"
-                disabled={!canEditBoard || minBoardSide > 78}
-                onClick={() => onBoardLayoutChange({ boardWidth: 78, boardHeight: 78 })}
-              >
-                78
-              </button>
-            </div>
           </div>
         </div>
 
         <div className={styles.settingRow}>
-          <div>
-            <div className={styles.settingName}>操作习惯</div>
-            <div className={styles.settingDesc}>
-              {handedness === 'right' ? '右手模式：坐标从左上角开始，行坐标尺在左侧。' : '左手模式：坐标从右上角开始，列号从右向左递增。'}
-            </div>
-          </div>
+          {renderSettingLabel('handedness', '操作习惯', handedness === 'right' ? '右手模式：坐标从左上角开始，行坐标尺在左侧。' : '左手模式：坐标从右上角开始，列号从右向左递增。')}
           <div className={styles.segmented} role="group" aria-label="操作习惯">
             <button
               type="button"
@@ -191,10 +228,7 @@ export function FocusSettingsSheet({
         </div>
 
         <div className={styles.settingRow}>
-          <div>
-            <div className={styles.settingName}>固定坐标尺</div>
-            <div className={styles.settingDesc}>标尺固定在屏幕边缘，放大拖动时仍显示当前可见行列。</div>
-          </div>
+          {renderSettingLabel('ruler', '固定坐标尺', '标尺固定在屏幕边缘，放大拖动时仍显示当前可见行列。')}
           <button
             type="button"
             className={`${styles.switch} ${showRuler ? styles.active : ''}`}
@@ -205,10 +239,7 @@ export function FocusSettingsSheet({
         </div>
 
         <div className={styles.settingRow}>
-          <div>
-            <div className={styles.settingName}>行列辅助线</div>
-            <div className={styles.settingDesc}>高亮当前行和当前列，减少找错位置。</div>
-          </div>
+          {renderSettingLabel('guide', '行列辅助线', '高亮当前行和当前列，减少找错位置。')}
           <button
             type="button"
             className={`${styles.switch} ${showGuide ? styles.active : ''}`}
