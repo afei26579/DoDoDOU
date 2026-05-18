@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>流动边框进度条演示</title>
+<style>
+  body {
+    font-family: 'Nunito', sans-serif;
+    background: #FDFBF7;
+    padding: 40px;
+  }
+
+  h1 {
+    text-align: center;
+    color: #5D534A;
+    margin-bottom: 40px;
+  }
+
+  .progress-container {
+    width: 300px;
+    height: 50px;
+    border: 3px solid #D8B4E2;
+    border-radius: 12px;
+    margin: 30px auto;
+    position: relative;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .progress-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: var(--progress, 50%);
+    border-radius: 10px;
+  }
+
+  /* 流动效果1：水平滑动 */
+  .flow-style1 {
+    background: linear-gradient(90deg, #D8B4E2 25%, #B48FCC 50%, #D8B4E2 75%);
+    background-size: 200% 100%;
+    animation: move1 2s linear infinite;
+  }
+
+  @keyframes move1 {
+    0% { background-position: 0 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  /* 流动效果2：斜向流动 */
+  .flow-style2 {
+    background: linear-gradient(45deg, #D8B4E2 25%, #B48FCC 50%, #D8B4E2 75%);
+    background-size: 150% 150%;
+    animation: move2 2s linear infinite;
+  }
+
+  @keyframes move2 {
+    0% { background-position: -50% -50%; }
+    100% { background-position: 50% 50%; }
+  }
+
+  /* 流动效果3：闪烁流动 */
+  .flow-style3 {
+    background: repeating-linear-gradient(
+      90deg,
+      #D8B4E2,
+      #B48FCC 10%,
+      #D8B4E2 20%
+    );
+    animation: move3 1.5s linear infinite;
+  }
+
+  @keyframes move3 {
+    0% { background-position: 0 0; }
+    100% { background-position: 100px 0; }
+  }
+
+  /* 工具栏按钮示例 */
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px;
+    height: 100%;
+    position: absolute;
+    width: 100%;
+    top: 0;
+    left: 0;
+  }
+
+  .toolbar button {
+    background: #fff;
+    border: 2px solid #D8B4E2;
+    border-radius: 8px;
+    padding: 5px 12px;
+    color: #5D534A;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+  }
+
+  .toolbar button:hover {
+    background: #D8B4E2;
+    color: #fff;
+  }
+
+  .center-status {
+    text-align: center;
+    flex-grow: 1;
+    margin: 0 10px;
+    font-size: 14px;
+    color: #5D534A;
+    font-weight: 600;
+  }
+
+  .center-status span {
+    font-weight: bold;
+    color: #B48FCC;
+  }
+
+</style>
+</head>
+<body>
+
+<h1>边框流动进度条演示</h1>
+
+<!-- 流动样式1 -->
+<div class="progress-container">
+  <div class="progress-bar flow-style1" style="--progress:60%;"></div>
+  <div class="toolbar">
+    <button>&larr; 上一块</button>
+    <div class="center-status"><span>D24</span> 1/10 块</div>
+    <button>下一块 &rarr;</button>
+  </div>
+</div>
+
+<!-- 流动样式2 -->
+<div class="progress-container">
+  <div class="progress-bar flow-style2" style="--progress:70%;"></div>
+  <div class="toolbar">
+    <button>&larr; 上一块</button>
+    <div class="center-status"><span>D24</span> 3/10 块</div>
+    <button>下一块 &rarr;</button>
+  </div>
+</div>
+
+<!-- 流动样式3 -->
+<div class="progress-container">
+  <div class="progress-bar flow-style3" style="--progress:80%;"></div>
+  <div class="toolbar">
+    <button>&larr; 上一块</button>
+    <div class="center-status"><span>D24</span> 5/10 块</div>
+    <button>下一块 &rarr;</button>
+  </div>
+</div>
+
+</body>
+</html>

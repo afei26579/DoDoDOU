@@ -79,6 +79,37 @@ const ICONS = {
   pan: '/assets/pngs/move_no_border.png',
 } as const;
 
+function DownloadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 3v11" fill="none" strokeWidth="2.2" strokeLinecap="round" />
+      <path d="m7.5 9.5 4.5 4.5 4.5-4.5" fill="none" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 17.5v1.2c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-1.2" fill="none" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function BeadIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="7.5" cy="7.5" r="2.4" fill="none" strokeWidth="2" />
+      <circle cx="16.5" cy="7.5" r="2.4" fill="none" strokeWidth="2" />
+      <circle cx="7.5" cy="16.5" r="2.4" fill="none" strokeWidth="2" />
+      <circle cx="16.5" cy="16.5" r="2.4" fill="none" strokeWidth="2" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 8.3a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 0 0 0-7.4Z" fill="none" strokeWidth="2" />
+      <path d="M19.4 13.5c.1-.5.1-1 .1-1.5s0-1-.1-1.5l2-1.5-2-3.4-2.4 1a8.2 8.2 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.6A8.2 8.2 0 0 0 7 6.6l-2.4-1-2 3.4 2 1.5a8.4 8.4 0 0 0 0 3l-2 1.5 2 3.4 2.4-1a8.2 8.2 0 0 0 2.6 1.5l.4 2.6h4l.4-2.6a8.2 8.2 0 0 0 2.6-1.5l2.4 1 2-3.4-2-1.5Z" fill="none" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 const TOOL_ITEMS: Array<{ id: Tool; label: string; icon?: string; iconSrc?: string }> = [
   { id: 'brush', label: '画笔', iconSrc: ICONS.brush },
   { id: 'eraser', label: '橡皮', iconSrc: ICONS.eraser },
@@ -1531,32 +1562,34 @@ export function WorkshopEditorPage() {
           <button
             type="button"
             className={styles.iconButton}
-            onClick={() => setSettingsOpen(true)}
-            title="设置"
-            aria-label="打开设置"
-          >
-            ⚙
-          </button>
-          <button
-            type="button"
-            className={styles.primaryBtn}
             onClick={() => {
               setDownloadBrand(editorBrand);
               setDownloadModalOpen(true);
             }}
             disabled={!grid.length}
-            title="导出"
+            title="下载"
+            aria-label="下载"
           >
-            下载
+            <DownloadIcon />
           </button>
           <button
             type="button"
-            className={styles.primaryBtn}
+            className={styles.iconButton}
             onClick={handleOpenFocusMode}
             disabled={!projectId || !grid.length}
-            title="进入拼豆模式"
+            title="拼豆"
+            aria-label="进入拼豆模式"
           >
-            拼豆
+            <BeadIcon />
+          </button>
+          <button
+            type="button"
+            className={styles.iconButton}
+            onClick={() => setSettingsOpen(true)}
+            title="设置"
+            aria-label="打开设置"
+          >
+            <SettingsIcon />
           </button>
         </div>
       </header>

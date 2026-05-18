@@ -147,6 +147,28 @@ function drawRectProgress(
   ctx.stroke();
 }
 
+function drawRectProgressFlow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  progress: number,
+  offset: number,
+) {
+  const clamped = clamp(progress, 0, 1);
+  if (clamped <= 0 || width <= 0 || height <= 0) return;
+  const perimeter = (width + height) * 2;
+  const progressLength = perimeter * clamped;
+  const headLength = Math.min(14, Math.max(6, progressLength));
+  const headEnd = progressLength <= headLength ? progressLength : (offset * 86) % progressLength;
+  const headStart = Math.max(0, headEnd - headLength);
+
+  ctx.setLineDash([headLength, perimeter]);
+  ctx.lineDashOffset = -headStart;
+  drawRectProgress(ctx, x, y, width, height, progress);
+}
+
 export function getDisplayColumn(totalColumns: number, handedness: 'left' | 'right', physicalColumn: number) {
   return handedness === 'right' ? physicalColumn + 1 : totalColumns - physicalColumn;
 }
@@ -257,8 +279,10 @@ export function drawFocusCanvas(params: {
   activeColorKey: string | null;
   currentCellKey: string | null;
   completedCellKeys: Set<string>;
+  completedBlockCellKeyGroups: Set<string>[];
   selectedBlockCellKeys: Set<string>;
   completionProgress: number;
+  progressFlowOffset: number;
   showGuide: boolean;
   placementMode: boolean;
   handedness: 'left' | 'right';
@@ -266,7 +290,7 @@ export function drawFocusCanvas(params: {
   height: number;
   clip: CanvasClipArea;
 }) {
-  const { canvas, pattern, cells, viewport, boardLayout, activeColorKey, currentCellKey, completedCellKeys, selectedBlockCellKeys, completionProgress, showGuide, placementMode, width, height, clip } = params;
+  const { canvas, pattern, cells, viewport, boardLayout, activeColorKey, currentCellKey, completedCellKeys, completedBlockCellKeyGroups, selectedBlockCellKeys, completionProgress, progressFlowOffset, showGuide, placementMode, width, height, clip } = params;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
@@ -467,18 +491,19 @@ export function drawFocusCanvas(params: {
     ctx.restore();
   }
 
-  if (selectedBlockCellKeys.size > 0) {
+  const drawBlockOutline = (cellKeys: Set<string>, color: string, widthScale: number, shadowColor: string) => {
+    if (cellKeys.size === 0) return;
     ctx.save();
-    ctx.strokeStyle = '#4C2B6F';
-    ctx.lineWidth = Math.max(2.5, Math.min(6, viewport.cellPx * 0.18));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, Math.min(6, viewport.cellPx * widthScale));
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.shadowColor = 'rgba(255,255,255,.72)';
+    ctx.shadowColor = shadowColor;
     ctx.shadowBlur = 7;
     ctx.beginPath();
 
     for (const cell of cells) {
-      if (!selectedBlockCellKeys.has(cell.coordKey)) continue;
+      if (!cellKeys.has(cell.coordKey)) continue;
       const boardX = boardLayout.patternOffsetX + cell.x;
       const boardY = boardLayout.patternOffsetY + cell.y;
       const x = viewport.tx + boardX * viewport.cellPx;
@@ -489,19 +514,19 @@ export function drawFocusCanvas(params: {
       const bottomKey = `${cell.x},${cell.y + 1}`;
       const leftKey = `${cell.x - 1},${cell.y}`;
 
-      if (!selectedBlockCellKeys.has(topKey)) {
+      if (!cellKeys.has(topKey)) {
         ctx.moveTo(x, y);
         ctx.lineTo(x + size, y);
       }
-      if (!selectedBlockCellKeys.has(rightKey)) {
+      if (!cellKeys.has(rightKey)) {
         ctx.moveTo(x + size, y);
         ctx.lineTo(x + size, y + size);
       }
-      if (!selectedBlockCellKeys.has(bottomKey)) {
+      if (!cellKeys.has(bottomKey)) {
         ctx.moveTo(x + size, y + size);
         ctx.lineTo(x, y + size);
       }
-      if (!selectedBlockCellKeys.has(leftKey)) {
+      if (!cellKeys.has(leftKey)) {
         ctx.moveTo(x, y + size);
         ctx.lineTo(x, y);
       }
@@ -509,6 +534,20 @@ export function drawFocusCanvas(params: {
 
     ctx.stroke();
     ctx.restore();
+  };
+
+  for (const group of completedBlockCellKeyGroups) {
+    drawBlockOutline(group, '#7BC56E', 0.11, 'rgba(123,197,110,.26)');
+  }
+
+  if (selectedBlockCellKeys.size > 0) {
+    const selectedDone = Array.from(selectedBlockCellKeys).every((key) => completedCellKeys.has(key));
+    drawBlockOutline(
+      selectedBlockCellKeys,
+      selectedDone ? '#2F9E44' : '#4C2B6F',
+      selectedDone ? 0.16 : 0.18,
+      selectedDone ? 'rgba(123,197,110,.44)' : 'rgba(255,255,255,.72)',
+    );
   }
 
   if (placementMode) {
@@ -535,6 +574,11 @@ export function drawFocusCanvas(params: {
     ctx.shadowColor = 'rgba(123,197,110,.28)';
     ctx.shadowBlur = 8;
     drawRectProgress(ctx, progressX, progressY, progressWidth, progressHeight, completionProgress);
+    ctx.strokeStyle = 'rgba(232,255,220,.9)';
+    ctx.shadowColor = 'rgba(232,255,220,.62)';
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = Math.max(3, Math.min(5, viewport.cellPx * 0.14));
+    drawRectProgressFlow(ctx, progressX, progressY, progressWidth, progressHeight, completionProgress, progressFlowOffset);
     ctx.restore();
   }
 

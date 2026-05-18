@@ -299,6 +299,7 @@ export function FocusModePage() {
   const skipNextProgressSaveRef = useRef(false);
   const boardLayoutRef = useRef<WorkshopBoardLayout | null>(null);
   const viewportAnimationRef = useRef<number | null>(null);
+  const progressFlowFrameRef = useRef<number | null>(null);
 
   const [boardSize, setBoardSize] = useState({ width: 0, height: 0, dpr: 1 });
   const [viewport, setViewport] = useState<FocusViewport | null>(null);
@@ -308,6 +309,7 @@ export function FocusModePage() {
   const [zoomLocked, setZoomLocked] = useState(false);
   const [wakeActive, setWakeActive] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [patternMode, setPatternMode] = useState<PatternMode>('color-block');
   const [connectivity, setConnectivity] = useState<BeadingConnectivity>('8');
@@ -321,6 +323,7 @@ export function FocusModePage() {
   const [lockShaking, setLockShaking] = useState(false);
   const [boardLayout, setBoardLayout] = useState<WorkshopBoardLayout | null>(null);
   const [placementMode, setPlacementMode] = useState(false);
+  const [progressFlowOffset, setProgressFlowOffset] = useState(0);
 
   const cells = useMemo(() => (patternResult ? normalizeCells(patternResult) : []), [patternResult]);
   const cellByCoordKey = useMemo(() => new Map(cells.map((cell) => [cell.coordKey, cell])), [cells]);
@@ -373,6 +376,13 @@ export function FocusModePage() {
     () => new Set((currentBlock?.cells ?? []).map(getCellCoordKey)),
     [currentBlock],
   );
+  const currentBlockCompleted = currentBlock ? isBlockCompleted(currentBlock, completedCellKeySet) : false;
+  const completedBlockCellKeyGroups = useMemo(
+    () => planBlocks
+      .filter((block) => isBlockCompleted(block, completedCellKeySet))
+      .map((block) => new Set(block.cells.map(getCellCoordKey))),
+    [completedCellKeySet, planBlocks],
+  );
   useEffect(() => {
     if (!currentBlock) return;
     const exitPoint = getBlockExitPoint(currentBlock, handedness, horizontalDirection, verticalDirection);
@@ -422,12 +432,22 @@ export function FocusModePage() {
     [activeColorBlocks, completedCellKeySet],
   );
   const toolbarTotalBlocks = currentColor ? Math.max(activeColorBlocks.length, 1) : 0;
-  const toolbarBlockNumber = currentColor
-    ? clamp(completedCurrentColorBlockCount + (currentBlock && !isBlockCompleted(currentBlock, completedCellKeySet) ? 1 : 0), 1, toolbarTotalBlocks)
-    : 0;
+  const toolbarBlockNumber = currentColor ? clamp(currentBlockIndex + 1, 1, toolbarTotalBlocks) : 0;
   const toolbarTotalColorCount = currentColorCellKeys.length;
   const toolbarRemainingColorCount = Math.max(0, toolbarTotalColorCount - completedCurrentColorCellCount);
   const toolbarColorProgress = toolbarTotalColorCount > 0 ? completedCurrentColorCellCount / toolbarTotalColorCount : 0;
+  const totalCompletionProgress = totalPatternCells > 0 ? normalizedCompletedCellKeys.length / totalPatternCells : 0;
+  const paletteOptions = useMemo(() => palette.map((item) => {
+    const colorKey = getColorKey(item);
+    const blocks = planBlocks.filter((block) => block.colorKey === colorKey);
+    return {
+      ...item,
+      colorKey,
+      totalBlocks: blocks.length,
+      completedBlocks: blocks.filter((block) => isBlockCompleted(block, completedCellKeySet)).length,
+      active: colorKey === effectiveActiveColorKey,
+    };
+  }), [completedCellKeySet, effectiveActiveColorKey, palette, planBlocks]);
 
   const computedCompletedColorKeys = useMemo(() => {
     if (!patternResult) return [];
@@ -528,6 +548,31 @@ export function FocusModePage() {
   }, [animateViewportTo, boardLayout, boardSize.height, boardSize.width, cancelViewportAnimation, effectiveBoardLayout, patternResult, viewport]);
 
   useEffect(() => () => cancelViewportAnimation(), [cancelViewportAnimation]);
+
+  useEffect(() => {
+    if (placementMode || totalCompletionProgress <= 0 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      if (progressFlowFrameRef.current !== null) {
+        window.cancelAnimationFrame(progressFlowFrameRef.current);
+        progressFlowFrameRef.current = null;
+      }
+      return;
+    }
+
+    let startedAt: number | null = null;
+    const tick = (now: number) => {
+      startedAt ??= now;
+      setProgressFlowOffset((now - startedAt) / 1000);
+      progressFlowFrameRef.current = window.requestAnimationFrame(tick);
+    };
+    progressFlowFrameRef.current = window.requestAnimationFrame(tick);
+
+    return () => {
+      if (progressFlowFrameRef.current !== null) {
+        window.cancelAnimationFrame(progressFlowFrameRef.current);
+        progressFlowFrameRef.current = null;
+      }
+    };
+  }, [placementMode, totalCompletionProgress]);
 
   useEffect(() => {
     if (!patternResult) {
@@ -709,8 +754,10 @@ export function FocusModePage() {
       activeColorKey: effectiveActiveColorKey,
       currentCellKey: activeCellKey,
       completedCellKeys: completedCellKeySet,
+      completedBlockCellKeyGroups,
       selectedBlockCellKeys: currentBlockCellKeys,
-      completionProgress: totalPatternCells > 0 ? normalizedCompletedCellKeys.length / totalPatternCells : 0,
+      completionProgress: totalCompletionProgress,
+      progressFlowOffset,
       showGuide,
       placementMode,
       handedness,
@@ -718,7 +765,7 @@ export function FocusModePage() {
       height: boardSize.height,
       clip: getCanvasClipArea(boardSize.height),
     });
-  }, [activeCellKey, boardSize, cells, completedCellKeySet, currentBlockCellKeys, effectiveActiveColorKey, effectiveBoardLayout, normalizedCompletedCellKeys.length, patternResult, placementMode, showGuide, totalPatternCells, viewport]);
+  }, [activeCellKey, boardSize, cells, completedBlockCellKeyGroups, completedCellKeySet, currentBlockCellKeys, effectiveActiveColorKey, effectiveBoardLayout, patternResult, placementMode, progressFlowOffset, showGuide, totalCompletionProgress, viewport]);
 
   const rulerData = useMemo(() => {
     if (!patternResult || !viewport || !effectiveBoardLayout || boardSize.width <= 0) return { columns: [], rows: [] };
@@ -764,6 +811,41 @@ export function FocusModePage() {
     if (options.center) centerCell(cellByCoordKey.get(coordKey) ?? null, undefined, { animated: options.animated });
   }, [cellByCoordKey, centerCell, handedness]);
 
+  const findBlockForCell = useCallback((cell: FocusBoardCell) => {
+    return planBlocks.find((block) => block.colorKey === cell.colorKey && block.cells.some((blockCell) => getCellCoordKey(blockCell) === cell.coordKey)) ?? null;
+  }, [planBlocks]);
+
+  const selectColorFromPalette = useCallback((colorKey: string) => {
+    const colorBlocks = planBlocks.filter((block) => block.colorKey === colorKey);
+    const nextBlock =
+      colorBlocks.find((block) => !isBlockCompleted(block, completedCellKeySet)) ??
+      [...colorBlocks].sort((a, b) => b.cells.length - a.cells.length)[0] ??
+      null;
+    if (nextBlock) {
+      selectBlock(nextBlock, { center: true, animated: true });
+    } else {
+      setActiveColorKey(colorKey);
+      setActiveCellKey(null);
+    }
+    setPaletteOpen(false);
+    const item = palette.find((paletteItem) => getColorKey(paletteItem) === colorKey);
+    if (item) showToast(`已切换到色号 ${item.vendorCode}`);
+  }, [completedCellKeySet, palette, planBlocks, selectBlock, showToast]);
+
+  const toggleCurrentBlockCompletion = useCallback(() => {
+    if (!currentBlock) return;
+    const blockKeys = currentBlock.cells.map(getCellCoordKey);
+    const completed = isBlockCompleted(currentBlock, completedCellKeySet);
+    setCompletedCellKeys((current) => {
+      if (completed) {
+        const removeKeys = new Set(blockKeys);
+        return current.filter((key) => !removeKeys.has(key));
+      }
+      return Array.from(new Set([...current, ...blockKeys]));
+    });
+    showToast(completed ? '已取消当前块完成' : '已标记当前块完成');
+  }, [completedCellKeySet, currentBlock, showToast]);
+
   const handleBoardTap = useCallback((clientX: number, clientY: number) => {
     if (!patternResult || !viewport || !effectiveBoardLayout || placementMode) return;
     const clip = getCanvasClipArea(boardSize.height);
@@ -777,10 +859,14 @@ export function FocusModePage() {
     const cell = cellByCoordKey.get(`${patternCoord.x},${patternCoord.y}`);
     if (!cell) return;
     const colorChanged = cell.colorKey !== activeColorKey;
-    selectExactCell(cell);
-    if (!colorChanged) return;
+    const block = findBlockForCell(cell);
+    if (block) {
+      selectBlock(block);
+    } else {
+      selectExactCell(cell);
+    }
     showToast(`已切换到色号 ${cell.vendorCode}`);
-  }, [activeColorKey, boardSize.height, cellByCoordKey, effectiveBoardLayout, patternResult, placementMode, selectExactCell, showToast, viewport]);
+  }, [activeColorKey, boardSize.height, cellByCoordKey, effectiveBoardLayout, findBlockForCell, patternResult, placementMode, selectBlock, selectExactCell, showToast, viewport]);
 
   const zoomAt = useCallback((factor: number, clientX = boardSize.width / 2, clientY = boardSize.height / 2) => {
     cancelViewportAnimation();
@@ -1075,18 +1161,25 @@ export function FocusModePage() {
 
       <FocusToolbar
         currentColor={currentColor}
+        paletteOptions={paletteOptions}
+        paletteOpen={paletteOpen}
         blockNumber={toolbarBlockNumber}
         totalBlocks={toolbarTotalBlocks}
         currentBlockCount={currentBlock?.cells.length ?? 0}
         totalColorCount={toolbarTotalColorCount}
         remainingColorCount={toolbarRemainingColorCount}
         colorProgress={toolbarColorProgress}
+        currentBlockCompleted={currentBlockCompleted}
         onPrevious={() => goToBlock('previous')}
         onNext={() => goToBlock('next')}
+        onOpenPalette={() => setPaletteOpen(true)}
+        onClosePalette={() => setPaletteOpen(false)}
+        onSelectPaletteColor={selectColorFromPalette}
         onCenter={() => {
           if (currentCell) selectCell(currentCell, { center: true });
           if (currentColor) showToast(`当前聚焦 ${currentColor.vendorCode}`);
         }}
+        onToggleComplete={toggleCurrentBlockCompletion}
         previousDisabled={!currentBlock || currentBlockIndex <= 0}
         nextDisabled={!currentBlock || (!recommendedNextBlock && currentBlockIndex >= activeColorBlocks.length - 1)}
       />
