@@ -511,14 +511,14 @@ export function drawFocusCanvas(params: {
     ctx.restore();
   }
 
-  ctx.save();
-  ctx.strokeStyle = placementMode ? '#E8A87C' : 'rgba(232,168,124,.52)';
-  ctx.lineWidth = placementMode ? 3 : 2;
-  ctx.setLineDash(placementMode ? [8, 6] : []);
-  ctx.strokeRect(viewport.tx + patternX, viewport.ty + patternY, patternWidth, patternHeight);
-  ctx.restore();
-
-  if (!placementMode) {
+  if (placementMode) {
+    ctx.save();
+    ctx.strokeStyle = '#E8A87C';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([8, 6]);
+    ctx.strokeRect(viewport.tx + patternX, viewport.ty + patternY, patternWidth, patternHeight);
+    ctx.restore();
+  } else {
     const progressInset = Math.max(2, Math.min(6, viewport.cellPx * 0.16));
     const progressX = viewport.tx + patternX - progressInset;
     const progressY = viewport.ty + patternY - progressInset;
@@ -526,13 +526,13 @@ export function drawFocusCanvas(params: {
     const progressHeight = patternHeight + progressInset * 2;
 
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,.82)';
+    ctx.strokeStyle = 'rgba(93,83,74,.18)';
     ctx.lineWidth = Math.max(4, Math.min(8, viewport.cellPx * 0.22));
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.strokeRect(progressX, progressY, progressWidth, progressHeight);
-    ctx.strokeStyle = '#7B4FA0';
-    ctx.shadowColor = 'rgba(123,79,160,.32)';
+    ctx.strokeStyle = '#7BC56E';
+    ctx.shadowColor = 'rgba(123,197,110,.28)';
     ctx.shadowBlur = 8;
     drawRectProgress(ctx, progressX, progressY, progressWidth, progressHeight, completionProgress);
     ctx.restore();

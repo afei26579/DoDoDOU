@@ -33,9 +33,12 @@ export function FocusToolbar({
 }: FocusToolbarProps) {
   const colorCode = currentColor?.vendorCode ?? '--';
   const blockText = currentColor ? `${blockNumber}/${totalBlocks} 块` : '--/-- 块';
-  const countText = currentColor
-    ? `当前块 ${currentBlockCount}颗，共${totalColorCount}颗，剩余${remainingColorCount}颗`
-    : '等待图纸';
+  const stats = currentColor
+    ? [
+        `当前${currentBlockCount}颗`,
+        `剩余${remainingColorCount}颗`,
+      ]
+    : ['等待图纸'];
   const swatchStyle = {
     '--swatch-color': currentColor?.hex ?? '#D8B4E2',
     '--swatch-progress': `${Math.max(0, Math.min(1, colorProgress)) * 360}deg`,
@@ -55,7 +58,11 @@ export function FocusToolbar({
           </span>
           <span className={styles.toolbarCopy}>
             <span className={styles.toolbarCode}>{blockText}</span>
-            <span className={styles.toolbarCount}>{countText}</span>
+            <span className={styles.toolbarStats}>
+              {stats.map((item) => (
+                <span className={styles.toolbarPill} key={item}>{item}</span>
+              ))}
+            </span>
           </span>
         </button>
 
