@@ -169,6 +169,64 @@ function drawRectProgressFlow(
   drawRectProgress(ctx, x, y, width, height, progress);
 }
 
+function getRectPerimeterPoint(x: number, y: number, width: number, height: number, progress: number) {
+  const clamped = clamp(progress, 0, 1);
+  const perimeter = (width + height) * 2;
+  let distance = perimeter * clamped;
+
+  if (distance <= width) {
+    return { x: x + distance, y };
+  }
+  distance -= width;
+
+  if (distance <= height) {
+    return { x: x + width, y: y + distance };
+  }
+  distance -= height;
+
+  if (distance <= width) {
+    return { x: x + width - distance, y: y + height };
+  }
+  distance -= width;
+
+  return { x, y: y + height - distance };
+}
+
+function drawCompletionSweepPoint(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  progress: number,
+  cellPx: number,
+) {
+  if (width <= 0 || height <= 0) return;
+
+  const point = getRectPerimeterPoint(x, y, width, height, progress);
+  const radius = Math.max(4, Math.min(9, cellPx * 0.24));
+  const glowRadius = radius * 4.2;
+  const pulse = Math.sin(clamp(progress, 0, 1) * Math.PI);
+  const glow = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, glowRadius);
+  glow.addColorStop(0, `rgba(255,255,255,${0.92 + pulse * 0.08})`);
+  glow.addColorStop(0.22, 'rgba(255,218,193,0.86)');
+  glow.addColorStop(1, 'rgba(255,218,193,0)');
+
+  ctx.save();
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, glowRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#fff7df';
+  ctx.shadowColor = 'rgba(255,218,193,.95)';
+  ctx.shadowBlur = 14 + pulse * 8;
+  ctx.beginPath();
+  ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 export function getDisplayColumn(totalColumns: number, handedness: 'left' | 'right', physicalColumn: number) {
   return handedness === 'right' ? physicalColumn + 1 : totalColumns - physicalColumn;
 }
@@ -282,13 +340,21 @@ function getHexLuminance(hex: string) {
 }
 
 function drawTransparentCell(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
-  ctx.fillStyle = '#F3F1EC';
-  ctx.fillRect(x, y, Math.ceil(size) + 0.5, Math.ceil(size) + 0.5);
-  if (size < 7) return;
-  ctx.fillStyle = '#E4DFD6';
-  const checker = size / 2;
-  ctx.fillRect(x, y, checker, checker);
-  ctx.fillRect(x + checker, y + checker, checker, checker);
+  const cellSize = size / 4;
+  const light = '#F7F5F1';
+  const dark = '#E2DED6';
+
+  for (let row = 0; row < 4; row += 1) {
+    for (let column = 0; column < 4; column += 1) {
+      ctx.fillStyle = (row + column) % 2 === 0 ? light : dark;
+      ctx.fillRect(
+        x + column * cellSize,
+        y + row * cellSize,
+        Math.ceil(cellSize) + 0.5,
+        Math.ceil(cellSize) + 0.5,
+      );
+    }
+  }
 }
 
 function drawCompletedCellMark(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, drawCircle: boolean, selectedColor: boolean, hex: string) {
@@ -576,6 +642,7 @@ export function drawFocusCanvas(params: {
     ctx.lineCap = 'round';
     ctx.shadowColor = shadowColor;
     ctx.shadowBlur = 7;
+    ctx.setLineDash([Math.max(6, viewport.cellPx * 0.48), Math.max(4, viewport.cellPx * 0.32)]);
     ctx.beginPath();
 
     for (const cell of cells) {
@@ -645,37 +712,25 @@ export function drawFocusCanvas(params: {
     ctx.shadowColor = 'rgba(123,197,110,.28)';
     ctx.shadowBlur = 8;
     drawRectProgress(ctx, progressX, progressY, progressWidth, progressHeight, completionProgress);
-    ctx.strokeStyle = 'rgba(232,255,220,.9)';
-    ctx.shadowColor = 'rgba(232,255,220,.62)';
-    ctx.shadowBlur = 10;
-    ctx.lineWidth = Math.max(3, Math.min(5, viewport.cellPx * 0.14));
-    drawRectProgressFlow(ctx, progressX, progressY, progressWidth, progressHeight, completionProgress, progressFlowOffset);
+    if (completionGlowProgress <= 0) {
+      ctx.strokeStyle = 'rgba(232,255,220,.9)';
+      ctx.shadowColor = 'rgba(232,255,220,.62)';
+      ctx.shadowBlur = 10;
+      ctx.lineWidth = Math.max(3, Math.min(5, viewport.cellPx * 0.14));
+      drawRectProgressFlow(ctx, progressX, progressY, progressWidth, progressHeight, completionProgress, progressFlowOffset);
+    }
     ctx.restore();
 
     if (completionGlowProgress > 0) {
-      const glow = Math.sin(completionGlowProgress * Math.PI);
-      const loop = Math.sin(completionGlowProgress * Math.PI * 6) * 0.5 + 0.5;
-
-      ctx.save();
-      ctx.strokeStyle = `rgba(255,218,193,${0.5 + glow * 0.42})`;
-      ctx.lineWidth = Math.max(6, Math.min(12, viewport.cellPx * (0.28 + glow * 0.12)));
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      ctx.shadowColor = 'rgba(255,218,193,.92)';
-      ctx.shadowBlur = 18 + glow * 20;
-      ctx.strokeRect(progressX, progressY, progressWidth, progressHeight);
-      ctx.restore();
-
-      ctx.save();
-      ctx.strokeStyle = `rgba(255,255,255,${0.38 + loop * 0.4})`;
-      ctx.lineWidth = Math.max(2, Math.min(5, viewport.cellPx * 0.12));
-      ctx.lineCap = 'round';
-      ctx.setLineDash([Math.max(10, viewport.cellPx * 1.2), Math.max(8, viewport.cellPx * 0.72)]);
-      ctx.lineDashOffset = -progressFlowOffset * 120;
-      ctx.shadowColor = 'rgba(255,255,255,.85)';
-      ctx.shadowBlur = 12;
-      ctx.strokeRect(progressX, progressY, progressWidth, progressHeight);
-      ctx.restore();
+      drawCompletionSweepPoint(
+        ctx,
+        progressX,
+        progressY,
+        progressWidth,
+        progressHeight,
+        completionGlowProgress,
+        viewport.cellPx,
+      );
     }
   }
 

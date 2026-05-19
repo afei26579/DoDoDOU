@@ -52,10 +52,12 @@ export function FocusToolbar({
   previousDisabled,
   nextDisabled,
 }: FocusToolbarProps) {
+  const hasPaletteOptions = paletteOptions.length > 0;
+  const effectivePaletteOpen = paletteOpen && hasPaletteOptions;
   const colorCode = currentColor?.vendorCode ?? '--';
   const blockText = currentColor ? `${blockNumber}/${totalBlocks} 块` : '--/-- 块';
-  const currentBeadText = currentColor ? `当前 ${currentBlockCount} 颗` : '等待图纸';
-  const remainingBeadText = currentColor ? `剩余 ${remainingColorCount} 颗` : '请先生成图纸';
+  const currentBeadText = currentColor ? `当前 ${currentBlockCount} 颗` : '点击色卡或图纸';
+  const remainingBeadText = currentColor ? `剩余 ${remainingColorCount} 颗` : '选择高亮的色系';
   const swatchStyle = {
     '--swatch-color': currentColor?.hex ?? '#D8B4E2',
     '--swatch-progress': `${Math.max(0, Math.min(1, colorProgress)) * 360}deg`,
@@ -70,7 +72,7 @@ export function FocusToolbar({
           </button>
 
           <div className={styles.colorFocus} aria-label="当前选中色号">
-            <button type="button" className={styles.colorArea} aria-label="切换色号" onClick={onOpenPalette} disabled={!currentColor}>
+            <button type="button" className={styles.colorArea} aria-label="切换色号" onClick={onOpenPalette} disabled={!hasPaletteOptions}>
               <span className={styles.toolbarSwatch} style={swatchStyle}>
                 <span className={styles.toolbarSwatchCode}>{colorCode}</span>
               </span>
@@ -102,8 +104,8 @@ export function FocusToolbar({
 
       </section>
 
-      <div className={`${styles.sheetMask} ${paletteOpen ? styles.show : ''}`} role="presentation" onClick={onClosePalette} />
-      <section className={`${styles.paletteSheet} ${paletteOpen ? styles.show : ''}`} aria-label="色号列表" aria-hidden={!paletteOpen}>
+      <div className={`${styles.sheetMask} ${effectivePaletteOpen ? styles.show : ''}`} role="presentation" onClick={onClosePalette} />
+      <section className={`${styles.paletteSheet} ${effectivePaletteOpen ? styles.show : ''}`} aria-label="色号列表" aria-hidden={!effectivePaletteOpen}>
         <div className={styles.sheetHead}>
           <div className={styles.sheetTitle}>色号列表</div>
           <button type="button" className={styles.sheetClose} aria-label="关闭色号列表" onClick={onClosePalette}>×</button>
@@ -124,7 +126,7 @@ export function FocusToolbar({
                   <span className={styles.paletteCount}>{item.count}颗 · {item.completedBlocks}/{item.totalBlocks}块</span>
                 </span>
                 <span className={`${styles.paletteStatus} ${done ? styles.paletteStatusDone : ''}`}>
-                  {item.active ? '当前' : done ? '完成' : '选择'}
+                  {done ? '完成' : '未完成'}
                 </span>
               </button>
             );

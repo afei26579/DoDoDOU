@@ -95,7 +95,7 @@ const PATTERN_MODES: PatternMode[] = ['smart', 'color-block', 'edge-first', 'reg
 const CONNECTIVITY_OPTIONS: BeadingConnectivity[] = ['4', '8', 'smart'];
 const MAX_BOARD_SIDE = 200;
 const VIEWPORT_ANIMATION_MS = 520;
-const COMPLETION_CELEBRATION_MS = 3200;
+const COMPLETION_CELEBRATION_MS = 1200;
 const COMPLETION_PARTICLE_COUNT = 30;
 
 function easeInOutCubic(t: number) {
@@ -435,11 +435,71 @@ function buildCompletionParticles(params: {
       size: clamp(viewport.cellPx * (0.48 + Math.random() * 0.26), 8, 18),
       dx: Math.cos(angle) * distance,
       dy: Math.sin(angle) * distance - 22 - Math.random() * 42,
-      delay: Math.random() * 260,
-      duration: 900 + Math.random() * 520,
+      delay: Math.random() * 120,
+      duration: 680 + Math.random() * 320,
       rotate: (Math.random() > 0.5 ? 1 : -1) * (120 + Math.random() * 220),
     };
   });
+}
+
+function drawCompletionPreview(canvas: HTMLCanvasElement, pattern: PatternResult, cells: FocusBoardCell[]) {
+  const rect = canvas.getBoundingClientRect();
+  const size = Math.max(1, Math.floor(Math.min(rect.width || 220, rect.height || 220)));
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.floor(size * dpr);
+  canvas.height = Math.floor(size * dpr);
+  canvas.style.width = `${size}px`;
+  canvas.style.height = `${size}px`;
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, size, size);
+
+  const drawableCells = cells.filter(isDrawableCell);
+  if (drawableCells.length === 0 || pattern.width <= 0 || pattern.height <= 0) return;
+
+  const xs = drawableCells.map((cell) => cell.x);
+  const ys = drawableCells.map((cell) => cell.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const contentWidth = maxX - minX + 1;
+  const contentHeight = maxY - minY + 1;
+  const padding = 4;
+  const available = Math.max(1, size - padding * 2);
+  const cellSize = Math.max(0.5, Math.min(available / contentWidth, available / contentHeight));
+  const patternWidth = contentWidth * cellSize;
+  const patternHeight = contentHeight * cellSize;
+  const offsetX = (size - patternWidth) / 2 - minX * cellSize;
+  const offsetY = (size - patternHeight) / 2 - minY * cellSize;
+  const drawBeads = cellSize >= 4;
+
+  for (const cell of drawableCells) {
+    const x = offsetX + cell.x * cellSize;
+    const y = offsetY + cell.y * cellSize;
+    ctx.fillStyle = cell.hex;
+
+    if (!drawBeads) {
+      ctx.fillRect(x, y, Math.ceil(cellSize) + 0.2, Math.ceil(cellSize) + 0.2);
+      continue;
+    }
+
+    const centerX = x + cellSize / 2;
+    const centerY = y + cellSize / 2;
+    const radius = Math.max(1, cellSize * 0.44);
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (cellSize >= 8) {
+      ctx.fillStyle = 'rgba(255,255,255,0.32)';
+      ctx.beginPath();
+      ctx.arc(centerX - radius * 0.28, centerY - radius * 0.32, Math.max(0.8, radius * 0.22), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 export function FocusModePage() {
@@ -451,6 +511,7 @@ export function FocusModePage() {
   const hasPattern = isUsablePattern(patternResult);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const completionPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const sideRulerRef = useRef<HTMLDivElement | null>(null);
   const pointersRef = useRef(new Map<number, PointerPoint>());
   const dragStartRef = useRef<DragStart | null>(null);
@@ -466,6 +527,7 @@ export function FocusModePage() {
   const colorAutoAdvanceTimerRef = useRef<number | null>(null);
   const completionCelebrationFrameRef = useRef<number | null>(null);
   const completionCelebrationTimerRef = useRef<number | null>(null);
+  const completionDialogTimerRef = useRef<number | null>(null);
   const completionViewportTimerRef = useRef<number | null>(null);
 
   const [boardSize, setBoardSize] = useState({ width: 0, height: 0, dpr: 1 });
@@ -492,6 +554,7 @@ export function FocusModePage() {
   const [placementMode, setPlacementMode] = useState(false);
   const [progressFlowOffset, setProgressFlowOffset] = useState(0);
   const [completionCelebration, setCompletionCelebration] = useState<CompletionCelebration | null>(null);
+  const [completionDialogOpen, setCompletionDialogOpen] = useState(false);
   const [completionGlowProgress, setCompletionGlowProgress] = useState(0);
 
   const cells = useMemo(() => (patternResult ? normalizeCells(patternResult) : []), [patternResult]);
@@ -687,6 +750,10 @@ export function FocusModePage() {
       window.clearTimeout(completionCelebrationTimerRef.current);
       completionCelebrationTimerRef.current = null;
     }
+    if (completionDialogTimerRef.current !== null) {
+      window.clearTimeout(completionDialogTimerRef.current);
+      completionDialogTimerRef.current = null;
+    }
     if (completionViewportTimerRef.current !== null) {
       window.clearTimeout(completionViewportTimerRef.current);
       completionViewportTimerRef.current = null;
@@ -711,8 +778,8 @@ export function FocusModePage() {
         });
 
     setCompletionCelebration({ id: Date.now(), particles: nextParticles });
+    setCompletionDialogOpen(false);
     setCompletionGlowProgress(0.001);
-    showToast('图纸完成啦', 2600);
 
     const currentViewport = viewport ?? getFitViewport(patternResult, boardSize.width, boardSize.height, effectiveBoardLayout);
     if (reduceMotion) {
@@ -736,11 +803,16 @@ export function FocusModePage() {
       completionCelebrationFrameRef.current = window.requestAnimationFrame(tick);
     }
 
+    completionDialogTimerRef.current = window.setTimeout(() => {
+      setCompletionDialogOpen(true);
+      completionDialogTimerRef.current = null;
+    }, reduceMotion ? 0 : COMPLETION_CELEBRATION_MS);
+
     completionCelebrationTimerRef.current = window.setTimeout(() => {
       setCompletionCelebration(null);
       setCompletionGlowProgress(0);
       completionCelebrationTimerRef.current = null;
-    }, COMPLETION_CELEBRATION_MS + 700);
+    }, reduceMotion ? 0 : COMPLETION_CELEBRATION_MS);
   }, [
     animateViewportTo,
     boardSize.height,
@@ -984,6 +1056,23 @@ export function FocusModePage() {
     });
   }, [activeCellKey, boardSize, cells, completedCellKeySet, completionGlowProgress, currentBlockCellKeys, effectiveActiveColorKey, effectiveBoardLayout, patternResult, placementMode, progressFlowOffset, showGuide, totalCompletionProgress, viewport]);
 
+  useEffect(() => {
+    const canvas = completionPreviewCanvasRef.current;
+    if (!completionDialogOpen || !canvas || !patternResult) return;
+
+    const draw = () => drawCompletionPreview(canvas, patternResult, cells);
+    draw();
+
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(draw);
+    resizeObserver?.observe(canvas);
+    window.addEventListener('resize', draw);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', draw);
+    };
+  }, [cells, completionDialogOpen, patternResult]);
+
   const rulerData = useMemo(() => {
     if (!patternResult || !viewport || !effectiveBoardLayout || boardSize.width <= 0) return { columns: [], rows: [] };
     const sideRect = sideRulerRef.current?.getBoundingClientRect();
@@ -1073,15 +1162,32 @@ export function FocusModePage() {
     if (!currentBlock) return;
     const blockKeys = currentBlock.cells.map(getCellCoordKey);
     const completed = isBlockCompleted(currentBlock, completedCellKeySet);
-    setCompletedCellKeys((current) => {
-      if (completed) {
-        const removeKeys = new Set(blockKeys);
-        return current.filter((key) => !removeKeys.has(key));
-      }
-      return Array.from(new Set([...current, ...blockKeys]));
-    });
-    showToast(completed ? '已取消当前块完成' : '已标记当前块完成');
-  }, [completedCellKeySet, currentBlock, showToast]);
+    if (completed) {
+      const removeKeys = new Set(blockKeys);
+      setCompletedCellKeys((current) => current.filter((key) => !removeKeys.has(key)));
+      showToast('已取消当前块完成');
+      return;
+    }
+
+    const completedAfterToggle = new Set(normalizedCompletedCellKeys);
+    for (const key of blockKeys) {
+      completedAfterToggle.add(key);
+    }
+
+    setCompletedCellKeys(Array.from(completedAfterToggle));
+    if (totalPatternCells > 0 && completedAfterToggle.size >= totalPatternCells) {
+      triggerCompletionCelebration();
+      return;
+    }
+    showToast('已标记当前块完成');
+  }, [
+    completedCellKeySet,
+    currentBlock,
+    normalizedCompletedCellKeys,
+    showToast,
+    totalPatternCells,
+    triggerCompletionCelebration,
+  ]);
 
   const handleBoardTap = useCallback((clientX: number, clientY: number) => {
     if (!patternResult || !viewport || !effectiveBoardLayout || placementMode) return;
@@ -1400,7 +1506,7 @@ export function FocusModePage() {
       : null;
 
   const handleBack = () => {
-    navigate(returnTo ?? `/workshop/result/${projectId ?? ''}`);
+    navigate(returnTo ?? `/workshop/result/${projectId ?? ''}`, { replace: true });
   };
 
   return (
@@ -1418,7 +1524,7 @@ export function FocusModePage() {
       </div>
 
       {completionCelebration ? (
-        <div className={styles.completionLayer} aria-live="polite">
+        <div className={styles.completionLayer} aria-hidden="true">
           <div className={styles.completionBurst} aria-hidden="true">
             {completionCelebration.particles.map((particle) => (
               <span
@@ -1439,9 +1545,34 @@ export function FocusModePage() {
               />
             ))}
           </div>
-          <section className={styles.completionMessage}>
-            <p>图纸完成啦</p>
-            <span>可以欣赏一下整张作品了</span>
+        </div>
+      ) : null}
+
+      {completionDialogOpen ? (
+        <div className={styles.completionModalBackdrop}>
+          <section className={styles.completionModal} role="dialog" aria-modal="true" aria-labelledby="completion-title">
+            <header className={styles.completionModalHeader}>
+              <h3 id="completion-title">图纸完成啦</h3>
+            </header>
+            <div className={styles.completionPreviewFrame}>
+              <canvas
+                ref={completionPreviewCanvasRef}
+                className={styles.completionPreviewCanvas}
+                role="img"
+                aria-label="完成图纸预览"
+              />
+            </div>
+            <p className={styles.completionModalText}>
+              这张拼豆图纸已经全部完成，可以发布作品，或者先回到发现页继续看看灵感。
+            </p>
+            <div className={styles.completionModalActions}>
+              <button type="button" onClick={() => showToast('发布作品开发中')}>
+                发布作品
+              </button>
+              <button type="button" className={styles.completionModalPrimary} onClick={() => navigate('/')}>
+                返回主页
+              </button>
+            </div>
           </section>
         </div>
       ) : null}
@@ -1487,7 +1618,9 @@ export function FocusModePage() {
         currentBlockCompleted={currentBlockCompleted}
         onPrevious={() => goToBlock('previous')}
         onNext={() => goToBlock('next')}
-        onOpenPalette={() => setPaletteOpen(true)}
+        onOpenPalette={() => {
+          if (paletteOptions.length > 0) setPaletteOpen(true);
+        }}
         onClosePalette={() => setPaletteOpen(false)}
         onSelectPaletteColor={selectColorFromPalette}
         onCenter={() => {

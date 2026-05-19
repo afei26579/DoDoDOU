@@ -53,6 +53,8 @@ Browser
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
+| `GALLERY_DEV_LAN_ENABLED` | `false` | 仅用于 `npm run dev:all` 的开发开关。设为 `true` 时，脚本会自动把本机调试切到局域网手机调试模式。 |
+| `GALLERY_DEV_LAN_HOST` | 空 | 可选。局域网调试时手动指定本机局域网 IP，避免自动检测选错网卡。 |
 | `GALLERY_SERVER_HOST` | `127.0.0.1` | 后端监听地址。内测不要使用 `0.0.0.0`，除非有代理或防火墙保护。 |
 | `GALLERY_SERVER_PORT` | `3001` | 后端端口。 |
 | `GALLERY_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | CORS 白名单，多个域名用逗号分隔。测试时可设为 `*`，不建议长期使用。 |
@@ -66,6 +68,8 @@ Browser
 | `GALLERY_MAX_PATTERN_CELLS` | `10000` | 单个图纸最大格子数。 |
 | `GALLERY_MAX_DATA_URL_CHARS` | `1500000` | 单个 data URL 最大字符数。 |
 | `GALLERY_TRUST_PROXY` | `false` | 是否信任反向代理传入的客户端 IP。部署在可信代理后方时可设为 `true`。 |
+| `VITE_API_BASE_URL` | `http://127.0.0.1:3001` | 前端 API 地址。开发时可设为 `auto`，按当前页面 hostname 自动使用同主机的 API 端口。 |
+| `VITE_API_PORT` | `3001` | `VITE_API_BASE_URL=auto` 时使用的 API 端口。 |
 | `VITE_ENABLE_GALLERY_PUBLISH` | `false` | 前端是否显示上传图纸入口。 |
 
 ## 开发调试配置
@@ -79,6 +83,22 @@ GALLERY_ALLOWED_ORIGINS="http://localhost:5173,http://127.0.0.1:5173"
 GALLERY_PUBLISH_ENABLED="false"
 VITE_ENABLE_GALLERY_PUBLISH="false"
 ```
+
+手机局域网调试：
+```env
+GALLERY_DEV_LAN_ENABLED="true"
+# 可选，自动检测不准时再配置
+GALLERY_DEV_LAN_HOST="192.168.1.226"
+```
+
+使用 `npm run dev:all` 启动时，脚本会临时派生这些运行时配置：
+```env
+GALLERY_SERVER_HOST="0.0.0.0"
+GALLERY_ALLOWED_ORIGINS="http://localhost:5173,http://127.0.0.1:5173,http://<局域网IP>:5173"
+VITE_API_BASE_URL="http://<局域网IP>:3001"
+```
+
+该模式只建议在可信局域网内短时间使用，结束后把 `GALLERY_DEV_LAN_ENABLED` 改回 `false`。
 
 本机临时测试发布接口：
 

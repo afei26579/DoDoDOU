@@ -307,7 +307,10 @@ export function CollectionPage() {
                         className={`collection-recent-card ${isBeading ? 'collection-recent-card--beading' : 'collection-recent-card--pattern'}`}
                         role="button"
                         tabIndex={0}
-                        onClick={() => navigate(isBeading ? `/workshop/focus/${encodeURIComponent(item.id)}` : `/workshop/editor/${encodeURIComponent(item.id)}`)}
+                        onClick={() => navigate(
+                          isBeading ? `/workshop/focus/${encodeURIComponent(item.id)}` : `/workshop/editor/${encodeURIComponent(item.id)}`,
+                          isBeading ? { state: { returnTo: '/collection' } } : undefined,
+                        )}
                       >
                         <div className="collection-recent-card__media" aria-hidden="true">
                           {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
@@ -383,7 +386,7 @@ export function CollectionPage() {
                       className="collection-progress-item"
                       role="button"
                       tabIndex={0}
-                      onClick={() => navigate(`/workshop/focus/${encodeURIComponent(item.id)}`)}
+                      onClick={() => navigate(`/workshop/focus/${encodeURIComponent(item.id)}`, { state: { returnTo: '/collection' } })}
                     >
                       <div className="collection-progress-item__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }} aria-hidden="true">
                         {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}

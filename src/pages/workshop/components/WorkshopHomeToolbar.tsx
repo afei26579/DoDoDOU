@@ -45,30 +45,30 @@ export function WorkshopHomeToolbar({
 
       <button
         type="button"
-        className="workshop-home-import"
+        className="workshop-home-import workshop-home-import--placeholder"
         onClick={onImportPattern}
         disabled={isGenerating}
       >
         <span className="workshop-home-import__icon" aria-hidden="true">⬇</span>
         <span className="workshop-home-import__copy">
           <strong>导入图纸</strong>
-          <span>分享码 · 文件导入</span>
+          <span>开发中 · 暂未开放</span>
         </span>
-        <span className="workshop-home-import__arrow" aria-hidden="true">›</span>
+        <span className="workshop-home-import__arrow" aria-hidden="true">开发中</span>
       </button>
 
       <button
         type="button"
-        className="workshop-home-import workshop-home-import--inventory"
+        className="workshop-home-import workshop-home-import--inventory workshop-home-import--placeholder"
         onClick={onOpenInventory}
         disabled={isGenerating}
       >
         <span className="workshop-home-import__icon" aria-hidden="true">▣</span>
         <span className="workshop-home-import__copy">
           <strong>我的库存</strong>
-          <span>色号数量 · 缺口检查</span>
+          <span>开发中 · 暂未开放</span>
         </span>
-        <span className="workshop-home-import__arrow" aria-hidden="true">›</span>
+        <span className="workshop-home-import__arrow" aria-hidden="true">开发中</span>
       </button>
     </section>
   );

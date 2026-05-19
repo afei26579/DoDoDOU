@@ -120,6 +120,7 @@ npm run dev:all
 
 ```bash
 DATABASE_URL="file:./dev.db"
+GALLERY_DEV_LAN_ENABLED="false"
 GALLERY_SERVER_HOST="127.0.0.1"
 GALLERY_SERVER_PORT="3001"
 ```
@@ -129,6 +130,31 @@ GALLERY_SERVER_PORT="3001"
 ```bash
 VITE_API_BASE_URL=http://127.0.0.1:3001
 VITE_USE_MOCK_GALLERY=false
+```
+
+也可以设为 `auto`，让前端按当前访问页面的 hostname 自动拼出 API 地址：
+
+```bash
+VITE_API_BASE_URL=auto
+VITE_API_PORT=3001
+```
+
+开发阶段需要手机通过局域网访问时，把 `.env.local` 或 `.env` 里的开关改成：
+
+```bash
+GALLERY_DEV_LAN_ENABLED="true"
+```
+
+然后使用 `npm run dev:all` 启动。脚本会自动检测本机局域网 IP，并临时切换为：
+
+- 后端监听 `0.0.0.0:3001`
+- CORS 放行 `http://<局域网IP>:5173`
+- 前端 API 地址使用 `http://<局域网IP>:3001`
+
+如果自动检测到的 IP 不对，可以再指定：
+
+```bash
+GALLERY_DEV_LAN_HOST="192.168.1.226"
 ```
 
 ## 路由概览

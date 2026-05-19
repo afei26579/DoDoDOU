@@ -12,6 +12,14 @@ export const PALETTE = [
 ];
 
 export const QUICK_COLORS = ['#000000','#FFFFFF','#FF0000','#FF6600','#FFD700','#00CC44','#0088FF','#AA00FF','#FF88CC','#D8B4E2'];
+export const TRANSPARENT_GRID_LIGHT = '#F7F5F1';
+export const TRANSPARENT_GRID_DARK = '#E2DED6';
+export const EDITOR_GRID_LINE_COLOR = 'rgba(180,143,204,.52)';
+export const EDITOR_GRID_MINOR_LINE_COLOR = '#C7DFF7';
+export const EDITOR_GRID_MAJOR_LINE_COLOR = 'rgba(180,143,204,.72)';
+export const EDITOR_GRID_BORDER_COLOR = '#B48FCC';
+export const EDITOR_GRID_MINOR_VISIBLE_CELL_PX = 10;
+export const EDITOR_GRID_LINE_VISIBLE_CELL_PX = 18;
 
 export function createEmptyGrid(cols: number, rows: number) {
   return Array.from({ length: rows }, () => Array(cols).fill(''));
@@ -51,6 +59,99 @@ export function toCellPoint(clientX: number, clientY: number, canvas: HTMLCanvas
   return { row, col };
 }
 
+function isTransparentCell(hex: string) {
+  return !hex || hex === 'transparent';
+}
+
+function drawTransparentCell(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  const checkerSize = size / 4;
+
+  for (let row = 0; row < 4; row += 1) {
+    for (let column = 0; column < 4; column += 1) {
+      ctx.fillStyle = (row + column) % 2 === 0 ? TRANSPARENT_GRID_LIGHT : TRANSPARENT_GRID_DARK;
+      ctx.fillRect(
+        x + column * checkerSize,
+        y + row * checkerSize,
+        Math.ceil(checkerSize) + 0.5,
+        Math.ceil(checkerSize) + 0.5,
+      );
+    }
+  }
+}
+
+function drawTinyTransparentCell(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, row: number, column: number) {
+  ctx.fillStyle = (row + column) % 2 === 0 ? TRANSPARENT_GRID_LIGHT : TRANSPARENT_GRID_DARK;
+  ctx.fillRect(x, y, width, height);
+}
+
+function drawEditorGridLines(ctx: CanvasRenderingContext2D, width: number, height: number, cols: number, rows: number, cellSize: number, visibleCellSize: number) {
+  if (visibleCellSize >= EDITOR_GRID_LINE_VISIBLE_CELL_PX) {
+    ctx.save();
+    ctx.strokeStyle = EDITOR_GRID_LINE_COLOR;
+    ctx.lineWidth = 0.75;
+    ctx.beginPath();
+    for (let col = 1; col < cols; col += 1) {
+      if (col % 5 === 0) continue;
+      const x = Math.round(col * cellSize) + 0.5;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+    }
+    for (let row = 1; row < rows; row += 1) {
+      if (row % 5 === 0) continue;
+      const y = Math.round(row * cellSize) + 0.5;
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  if (visibleCellSize >= EDITOR_GRID_MINOR_VISIBLE_CELL_PX) {
+    ctx.save();
+    ctx.strokeStyle = EDITOR_GRID_MINOR_LINE_COLOR;
+    ctx.lineWidth = 1.25;
+    ctx.setLineDash([3, 2]);
+    ctx.beginPath();
+    for (let col = 5; col < cols; col += 5) {
+      if (col % 10 === 0) continue;
+      const x = Math.round(col * cellSize) + 0.5;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+    }
+    for (let row = 5; row < rows; row += 5) {
+      if (row % 10 === 0) continue;
+      const y = Math.round(row * cellSize) + 0.5;
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.strokeStyle = EDITOR_GRID_MAJOR_LINE_COLOR;
+  ctx.lineWidth = 1.75;
+  ctx.beginPath();
+  for (let col = 10; col < cols; col += 10) {
+    const x = Math.round(col * cellSize) + 0.5;
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+  }
+  for (let row = 10; row < rows; row += 10) {
+    const y = Math.round(row * cellSize) + 0.5;
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  ctx.strokeStyle = EDITOR_GRID_BORDER_COLOR;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(1, 1, Math.max(0, width - 2), Math.max(0, height - 2));
+  ctx.restore();
+}
+
 export function paintGridToCanvas({
   canvas,
   previewCanvas,
@@ -62,6 +163,7 @@ export function paintGridToCanvas({
   showGrid,
   displayWidth,
   displayHeight,
+  visibleCellSize,
 }: {
   canvas: HTMLCanvasElement;
   previewCanvas: HTMLCanvasElement;
@@ -73,6 +175,7 @@ export function paintGridToCanvas({
   showGrid: boolean;
   displayWidth?: number;
   displayHeight?: number;
+  visibleCellSize?: number;
 }) {
   const ctx = canvas.getContext('2d');
   const pCtx = previewCanvas.getContext('2d');
@@ -88,27 +191,15 @@ export function paintGridToCanvas({
   ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   grid.forEach((row, r) => row.forEach((hex, c) => {
-    if (!hex || hex === 'transparent') return;
+    if (isTransparentCell(hex)) {
+      drawTransparentCell(ctx, c * cellSize, r * cellSize, cellSize);
+      return;
+    }
     ctx.fillStyle = hex;
     ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
   }));
   if (showGrid) {
-    ctx.save();
-    ctx.strokeStyle = 'rgba(140,130,120,0.28)';
-    ctx.lineWidth = 0.5;
-    for (let c = 0; c <= cols; c += 1) {
-      ctx.beginPath();
-      ctx.moveTo(c * cellSize + 0.25, 0);
-      ctx.lineTo(c * cellSize + 0.25, canvas.height);
-      ctx.stroke();
-    }
-    for (let r = 0; r <= rows; r += 1) {
-      ctx.beginPath();
-      ctx.moveTo(0, r * cellSize + 0.25);
-      ctx.lineTo(canvas.width, r * cellSize + 0.25);
-      ctx.stroke();
-    }
-    ctx.restore();
+    drawEditorGridLines(ctx, canvas.width, canvas.height, cols, rows, cellSize, visibleCellSize ?? cellSize);
   }
 
   previewCanvas.width = cols;
@@ -116,7 +207,10 @@ export function paintGridToCanvas({
   pCtx.fillStyle = bgColor;
   pCtx.fillRect(0, 0, cols, rows);
   grid.forEach((row, r) => row.forEach((hex, c) => {
-    if (!hex || hex === 'transparent') return;
+    if (isTransparentCell(hex)) {
+      drawTinyTransparentCell(pCtx, c, r, 1, 1, r, c);
+      return;
+    }
     pCtx.fillStyle = hex;
     pCtx.fillRect(c, r, 1, 1);
   }));
@@ -129,9 +223,16 @@ export function paintGridToCanvas({
     const scX = 32 / cols;
     const scY = 32 / rows;
     grid.forEach((row, r) => row.forEach((hex, c) => {
-      if (!hex || hex === 'transparent') return;
+      const x = Math.floor(c * scX);
+      const y = Math.floor(r * scY);
+      const width = Math.max(1, Math.ceil(scX));
+      const height = Math.max(1, Math.ceil(scY));
+      if (isTransparentCell(hex)) {
+        drawTinyTransparentCell(bCtx, x, y, width, height, r, c);
+        return;
+      }
       bCtx.fillStyle = hex;
-      bCtx.fillRect(Math.floor(c * scX), Math.floor(r * scY), Math.max(1, Math.ceil(scX)), Math.max(1, Math.ceil(scY)));
+      bCtx.fillRect(x, y, width, height);
     }));
   }
 }

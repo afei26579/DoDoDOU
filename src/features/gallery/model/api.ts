@@ -1,7 +1,17 @@
 import type { GalleryDetailResponse, GalleryListQuery, GalleryListResponse, PublishGalleryPayload, PublishGalleryResponse } from './types';
 import { getMockGalleryDetail, getMockGalleryList, makePublishedResponse } from './mock';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') || '';
+function resolveApiBaseUrl() {
+  const configured = import.meta.env.VITE_API_BASE_URL?.trim() || '';
+  if (configured !== 'auto') return configured.replace(/\/$/, '');
+
+  if (typeof window === 'undefined') return '';
+
+  const apiPort = import.meta.env.VITE_API_PORT || '3001';
+  return `${window.location.protocol}//${window.location.hostname}:${apiPort}`;
+}
+
+const API_BASE_URL = resolveApiBaseUrl();
 const USE_MOCK = import.meta.env.VITE_USE_MOCK_GALLERY !== 'false' && !API_BASE_URL;
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {

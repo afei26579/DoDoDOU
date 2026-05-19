@@ -240,7 +240,10 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         }}
         onViewPattern={() => navigate(`/workshop/result/${projectId ?? createProjectId()}`)}
         onOpenEditor={() => navigate(`/workshop/editor/${projectId ?? createProjectId()}`)}
-        onOpenFocusMode={() => navigate(`/workshop/focus/${projectId ?? createProjectId()}`)}
+        onOpenFocusMode={() => {
+          const nextProjectId = projectId ?? createProjectId();
+          navigate(`/workshop/focus/${nextProjectId}`, { state: { returnTo: `/workshop/result/${nextProjectId}` } });
+        }}
         onOpenInventory={() => navigate('/workshop/inventory')}
         onPatternResultChange={actions.setPatternResult}
         onUploadToGallery={ENABLE_GALLERY_PUBLISH ? () => setIsPublishOpen(true) : undefined}

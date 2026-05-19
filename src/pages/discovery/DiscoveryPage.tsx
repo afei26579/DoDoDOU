@@ -199,11 +199,11 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
                   className="collection-progress-item continue-beading-card"
                   role="button"
                   tabIndex={0}
-                  onClick={() => navigate(`/workshop/focus/${encodeURIComponent(item.id)}`)}
+                  onClick={() => navigate(`/workshop/focus/${encodeURIComponent(item.id)}`, { state: { returnTo: '/' } })}
                   onKeyDown={(event) => {
                     if (event.key !== 'Enter' && event.key !== ' ') return;
                     event.preventDefault();
-                    navigate(`/workshop/focus/${encodeURIComponent(item.id)}`);
+                    navigate(`/workshop/focus/${encodeURIComponent(item.id)}`, { state: { returnTo: '/' } });
                   }}
                 >
                   <div className="collection-progress-item__media continue-beading-card__media" aria-hidden="true">

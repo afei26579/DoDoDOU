@@ -34,6 +34,7 @@ type WorkshopPageProps = {
   onOpenEditor?: () => void;
   onOpenFocusMode?: () => void;
   onCreateCanvas?: () => void;
+  onAiInspiration?: () => void;
   onImportPattern?: () => void;
   onOpenInventory?: () => void;
   onPatternResultChange?: (patternResult: PatternResult) => void;
@@ -62,6 +63,7 @@ export function WorkshopPage({
   onOpenEditor,
   onOpenFocusMode,
   onCreateCanvas,
+  onAiInspiration,
   onImportPattern,
   onOpenInventory,
   onPatternResultChange,
@@ -271,7 +273,7 @@ export function WorkshopPage({
       {isHome ? (
         <WorkshopHomeToolbar
           isGenerating={isGenerating}
-          onAiInspiration={() => {}}
+          onAiInspiration={onAiInspiration ?? (() => {})}
           onCreateCanvas={onCreateCanvas ?? (() => {})}
           onImportPattern={onImportPattern ?? (() => {})}
           onOpenInventory={onOpenInventory ?? (() => {})}

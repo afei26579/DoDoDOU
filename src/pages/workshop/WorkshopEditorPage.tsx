@@ -17,6 +17,7 @@ import {
   createEmptyGrid,
   floodFill,
   paintGridToCanvas,
+  TRANSPARENT_GRID_LIGHT,
   toCellPoint,
 } from './editor/WorkshopEditor.utils';
 
@@ -420,7 +421,7 @@ export function WorkshopEditorPage() {
   const [grid, setGrid] = useState(() => createEmptyGrid(32, 32));
   const [cols, setCols] = useState(32);
   const [rows, setRows] = useState(32);
-  const [bgColor, setBgColor] = useState('#f5f0eb');
+  const [bgColor, setBgColor] = useState(TRANSPARENT_GRID_LIGHT);
   const [showGrid, setShowGrid] = useState(true);
   const [tool, setTool] = useState<Tool>('pan');
   const [brushSize, setBrushSize] = useState(1);
@@ -517,7 +518,7 @@ export function WorkshopEditorPage() {
 
     try {
       await persistEditorSnapshot();
-      navigate(`/workshop/focus/${projectId}`);
+      navigate(`/workshop/focus/${projectId}`, { state: { returnTo: `/workshop/editor/${projectId}` } });
     } catch (error) {
       console.error('[WorkshopEditorPage] open focus mode save failed', error);
       showToast('保存失败，请稍后再试');
@@ -681,8 +682,9 @@ export function WorkshopEditorPage() {
       showGrid,
       displayWidth,
       displayHeight,
+      visibleCellSize: cellSize * scale,
     });
-  }, [bgColor, cols, grid, rows, showGrid, toolbarHeight]);
+  }, [bgColor, cols, grid, rows, scale, showGrid, toolbarHeight]);
 
   useEffect(() => {
     return () => {
