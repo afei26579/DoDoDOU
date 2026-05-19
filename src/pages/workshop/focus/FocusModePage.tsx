@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { saveWorkshopProject } from '../../../features/workshop/model/projectStore';
 import type {
@@ -32,6 +32,7 @@ import {
   getCanvasClipArea,
   getDisplayColumn,
   getFitViewport,
+  isDrawableCell,
   normalizeCells,
   screenToCell,
   type FocusBoardCell,
@@ -67,6 +68,24 @@ type TapStart = PointerPoint & {
   moved: boolean;
 };
 
+type CompletionParticle = {
+  id: number;
+  x: number;
+  y: number;
+  hex: string;
+  size: number;
+  dx: number;
+  dy: number;
+  delay: number;
+  duration: number;
+  rotate: number;
+};
+
+type CompletionCelebration = {
+  id: number;
+  particles: CompletionParticle[];
+};
+
 type WakeLockSentinelLike = {
   release: () => Promise<void>;
   addEventListener: (type: 'release', listener: () => void) => void;
@@ -76,6 +95,8 @@ const PATTERN_MODES: PatternMode[] = ['smart', 'color-block', 'edge-first', 'reg
 const CONNECTIVITY_OPTIONS: BeadingConnectivity[] = ['4', '8', 'smart'];
 const MAX_BOARD_SIDE = 200;
 const VIEWPORT_ANIMATION_MS = 520;
+const COMPLETION_CELEBRATION_MS = 3200;
+const COMPLETION_PARTICLE_COUNT = 30;
 
 function easeInOutCubic(t: number) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -101,31 +122,6 @@ function getColorKey(item: BeadingPaletteItem) {
   return `${item.colorId}-${item.vendorCode}-${item.hex}`;
 }
 
-function getFirstCellForColor(cells: FocusBoardCell[], colorKey: string, handedness: 'left' | 'right') {
-  const matches = cells.filter((cell) => cell.colorKey === colorKey);
-  matches.sort((a, b) => {
-    if (a.y !== b.y) return a.y - b.y;
-    return handedness === 'left' ? b.x - a.x : a.x - b.x;
-  });
-  return matches[0] ?? null;
-}
-
-function getBlockAnchorCell(block: BeadingBlock, handedness: 'left' | 'right') {
-  const cells = [...block.cells];
-  cells.sort((a, b) => {
-    if (a.y !== b.y) return a.y - b.y;
-    return handedness === 'left' ? b.x - a.x : a.x - b.x;
-  });
-  return cells[0] ?? null;
-}
-
-function getLargestBlockForColor(blocks: BeadingBlock[], colorKey: string | null) {
-  if (!colorKey) return null;
-  return [...blocks]
-    .filter((block) => block.colorKey === colorKey)
-    .sort((a, b) => b.cells.length - a.cells.length)[0] ?? null;
-}
-
 function isBeadingStrategy(value: unknown): value is WorkshopBeadingStrategy {
   return value === 'smart' || value === 'nearest' || value === 'largest';
 }
@@ -145,6 +141,52 @@ function resolveHorizontalDirection(handedness: 'left' | 'right', direction: Wor
 
 function resolveVerticalDirection(direction: WorkshopBeadingVerticalDirection) {
   return direction === 'smart' ? 'top-to-bottom' : direction;
+}
+
+function getTraversalAxis(horizontalDirection: WorkshopBeadingHorizontalDirection, verticalDirection: WorkshopBeadingVerticalDirection) {
+  return horizontalDirection === 'smart' && verticalDirection !== 'smart' ? 'vertical' : 'horizontal';
+}
+
+function compareCellsByTraversal(
+  a: Pick<FocusBoardCell, 'x' | 'y'>,
+  b: Pick<FocusBoardCell, 'x' | 'y'>,
+  handedness: 'left' | 'right',
+  horizontalDirection: WorkshopBeadingHorizontalDirection,
+  verticalDirection: WorkshopBeadingVerticalDirection,
+) {
+  const axis = getTraversalAxis(horizontalDirection, verticalDirection);
+  const horizontal = resolveHorizontalDirection(handedness, horizontalDirection);
+  const vertical = resolveVerticalDirection(verticalDirection);
+
+  if (axis === 'horizontal') {
+    if (a.y !== b.y) return vertical === 'top-to-bottom' ? a.y - b.y : b.y - a.y;
+    if (a.x !== b.x) return horizontal === 'left-to-right' ? a.x - b.x : b.x - a.x;
+    return 0;
+  }
+
+  if (a.x !== b.x) return horizontal === 'left-to-right' ? a.x - b.x : b.x - a.x;
+  if (a.y !== b.y) return vertical === 'top-to-bottom' ? a.y - b.y : b.y - a.y;
+  return 0;
+}
+
+function getBlockTraversalCell(
+  block: BeadingBlock,
+  handedness: 'left' | 'right',
+  horizontalDirection: WorkshopBeadingHorizontalDirection,
+  verticalDirection: WorkshopBeadingVerticalDirection,
+  edge: 'first' | 'last',
+) {
+  const orderedCells = [...block.cells].sort((a, b) => compareCellsByTraversal(a, b, handedness, horizontalDirection, verticalDirection));
+  return edge === 'first' ? orderedCells[0] ?? null : orderedCells[orderedCells.length - 1] ?? null;
+}
+
+function getBlockEntryCell(
+  block: BeadingBlock,
+  handedness: 'left' | 'right',
+  horizontalDirection: WorkshopBeadingHorizontalDirection,
+  verticalDirection: WorkshopBeadingVerticalDirection,
+) {
+  return getBlockTraversalCell(block, handedness, horizontalDirection, verticalDirection, 'first');
 }
 
 function getBlockBounds(block: BeadingBlock) {
@@ -170,12 +212,22 @@ function getBlockExitPoint(
   horizontalDirection: WorkshopBeadingHorizontalDirection,
   verticalDirection: WorkshopBeadingVerticalDirection,
 ) {
-  const bounds = getBlockBounds(block);
+  const exitCell = getBlockTraversalCell(block, handedness, horizontalDirection, verticalDirection, 'last');
+  if (!exitCell) return { x: block.anchorX, y: block.anchorY };
+  const axis = getTraversalAxis(horizontalDirection, verticalDirection);
   const horizontal = resolveHorizontalDirection(handedness, horizontalDirection);
   const vertical = resolveVerticalDirection(verticalDirection);
+
+  if (axis === 'horizontal') {
+    return {
+      x: horizontal === 'left-to-right' ? exitCell.x + 1 : exitCell.x,
+      y: exitCell.y + 0.5,
+    };
+  }
+
   return {
-    x: horizontal === 'left-to-right' ? bounds.maxX + 1 : bounds.minX,
-    y: vertical === 'top-to-bottom' ? bounds.maxY + 1 : bounds.minY,
+    x: exitCell.x + 0.5,
+    y: vertical === 'top-to-bottom' ? exitCell.y + 1 : exitCell.y,
   };
 }
 
@@ -204,52 +256,107 @@ function getDirectionPenalty(
   return penalty;
 }
 
-function isBlockCompleted(block: BeadingBlock, completedCellKeys: Set<string>) {
-  return block.cells.every((cell) => completedCellKeys.has(getCellCoordKey(cell)));
+function compareBlocksByTraversal(
+  a: BeadingBlock,
+  b: BeadingBlock,
+  handedness: 'left' | 'right',
+  horizontalDirection: WorkshopBeadingHorizontalDirection,
+  verticalDirection: WorkshopBeadingVerticalDirection,
+) {
+  const aCell = getBlockTraversalCell(a, handedness, horizontalDirection, verticalDirection, 'first');
+  const bCell = getBlockTraversalCell(b, handedness, horizontalDirection, verticalDirection, 'first');
+  if (aCell && bCell) {
+    const cellOrder = compareCellsByTraversal(aCell, bCell, handedness, horizontalDirection, verticalDirection);
+    if (cellOrder !== 0) return cellOrder;
+  }
+  if (b.cells.length !== a.cells.length) return b.cells.length - a.cells.length;
+  return a.key.localeCompare(b.key);
 }
 
-function pickNextBlock(params: {
-  currentBlock: BeadingBlock | null;
-  candidates: BeadingBlock[];
-  completedCellKeys: Set<string>;
+function compareBlocksBySize(
+  a: BeadingBlock,
+  b: BeadingBlock,
+  handedness: 'left' | 'right',
+  horizontalDirection: WorkshopBeadingHorizontalDirection,
+  verticalDirection: WorkshopBeadingVerticalDirection,
+) {
+  if (b.cells.length !== a.cells.length) return b.cells.length - a.cells.length;
+  return compareBlocksByTraversal(a, b, handedness, horizontalDirection, verticalDirection);
+}
+
+function isBlockAheadOfPoint(
+  point: PointerPoint,
+  block: BeadingBlock,
+  handedness: 'left' | 'right',
+  horizontalDirection: WorkshopBeadingHorizontalDirection,
+  verticalDirection: WorkshopBeadingVerticalDirection,
+) {
+  const bounds = getBlockBounds(block);
+  const axis = getTraversalAxis(horizontalDirection, verticalDirection);
+  const horizontal = resolveHorizontalDirection(handedness, horizontalDirection);
+  const vertical = resolveVerticalDirection(verticalDirection);
+
+  if (axis === 'horizontal') {
+    const beforeRow = vertical === 'top-to-bottom' ? bounds.maxY + 1 < point.y : bounds.minY > point.y;
+    if (beforeRow) return false;
+    if (Math.floor(bounds.centerY) !== Math.floor(point.y)) return true;
+    return horizontal === 'left-to-right' ? bounds.maxX + 1 >= point.x : bounds.minX <= point.x;
+  }
+
+  const beforeColumn = horizontal === 'left-to-right' ? bounds.maxX + 1 < point.x : bounds.minX > point.x;
+  if (beforeColumn) return false;
+  if (Math.floor(bounds.centerX) !== Math.floor(point.x)) return true;
+  return vertical === 'top-to-bottom' ? bounds.maxY + 1 >= point.y : bounds.minY <= point.y;
+}
+
+function buildOrderedBlocks(params: {
+  blocks: BeadingBlock[];
   handedness: 'left' | 'right';
   strategy: WorkshopBeadingStrategy;
   horizontalDirection: WorkshopBeadingHorizontalDirection;
   verticalDirection: WorkshopBeadingVerticalDirection;
 }) {
-  const { currentBlock, candidates, completedCellKeys, handedness, strategy, horizontalDirection, verticalDirection } = params;
-  if (!currentBlock) return null;
-  const exitPoint = getBlockExitPoint(currentBlock, handedness, horizontalDirection, verticalDirection);
-  const available = candidates.filter((block) => block.key !== currentBlock.key && !isBlockCompleted(block, completedCellKeys));
-  if (available.length === 0) return null;
-
-  const scored = available.map((block) => ({
-    block,
-    distance: getDistanceToBlockBoundary(exitPoint, block),
-    directionPenalty: getDirectionPenalty(exitPoint, block, handedness, horizontalDirection, verticalDirection),
-  }));
-
-  scored.sort((a, b) => {
-    if (strategy === 'largest') {
-      if (b.block.cells.length !== a.block.cells.length) return b.block.cells.length - a.block.cells.length;
-      if (a.distance !== b.distance) return a.distance - b.distance;
-      return a.directionPenalty - b.directionPenalty;
-    }
-
-    if (strategy === 'nearest') {
-      if (a.distance !== b.distance) return a.distance - b.distance;
-      if (a.directionPenalty !== b.directionPenalty) return a.directionPenalty - b.directionPenalty;
-      return b.block.cells.length - a.block.cells.length;
-    }
-
-    const distanceTolerance = 5;
-    if (Math.abs(a.distance - b.distance) > distanceTolerance) return a.distance - b.distance;
-    if (a.directionPenalty !== b.directionPenalty) return a.directionPenalty - b.directionPenalty;
-    if (Math.abs(a.distance - b.distance) > 1) return a.distance - b.distance;
-    return b.block.cells.length - a.block.cells.length;
+  const { blocks, handedness, strategy, horizontalDirection, verticalDirection } = params;
+  const ordered = [...blocks].sort((a, b) => {
+    if (strategy === 'largest') return compareBlocksBySize(a, b, handedness, horizontalDirection, verticalDirection);
+    return compareBlocksByTraversal(a, b, handedness, horizontalDirection, verticalDirection);
   });
 
-  return scored[0]?.block ?? null;
+  if (strategy === 'largest' || ordered.length <= 1) return ordered;
+
+  const sequence: BeadingBlock[] = [];
+  const remaining = [...ordered];
+  sequence.push(remaining.shift() as BeadingBlock);
+
+  while (remaining.length > 0) {
+    const current = sequence[sequence.length - 1];
+    const exitPoint = getBlockExitPoint(current, handedness, horizontalDirection, verticalDirection);
+    const scored = remaining.map((block) => ({
+      block,
+      distance: getDistanceToBlockBoundary(exitPoint, block),
+      directionPenalty: getDirectionPenalty(exitPoint, block, handedness, horizontalDirection, verticalDirection),
+      behindPenalty: isBlockAheadOfPoint(exitPoint, block, handedness, horizontalDirection, verticalDirection) ? 0 : 1,
+    }));
+
+    scored.sort((a, b) => {
+      if (strategy === 'smart' && a.behindPenalty !== b.behindPenalty) return a.behindPenalty - b.behindPenalty;
+      if (strategy === 'smart' && a.directionPenalty !== b.directionPenalty) return a.directionPenalty - b.directionPenalty;
+      if (Math.abs(a.distance - b.distance) > (strategy === 'smart' ? 5 : 0)) return a.distance - b.distance;
+      if (strategy === 'smart' && b.block.cells.length !== a.block.cells.length) return b.block.cells.length - a.block.cells.length;
+      if (a.distance !== b.distance) return a.distance - b.distance;
+      return compareBlocksByTraversal(a.block, b.block, handedness, horizontalDirection, verticalDirection);
+    });
+
+    const nextBlock = scored[0].block;
+    sequence.push(nextBlock);
+    remaining.splice(remaining.indexOf(nextBlock), 1);
+  }
+
+  return sequence;
+}
+
+function isBlockCompleted(block: BeadingBlock, completedCellKeys: Set<string>) {
+  return block.cells.every((cell) => completedCellKeys.has(getCellCoordKey(cell)));
 }
 
 function getValidCellKeys(pattern: PatternResult | null) {
@@ -279,6 +386,62 @@ function normalizeBoardLayout(pattern: PatternResult, layout?: Partial<WorkshopB
   };
 }
 
+function getPatternFitViewport(pattern: PatternResult, width: number, height: number, boardLayout: WorkshopBoardLayout): FocusViewport {
+  const base = getFitViewport(pattern, width, height, boardLayout);
+  const clip = getCanvasClipArea(height);
+  const margin = clamp(width * 0.055, 16, 34);
+  const fit = Math.min(
+    (width - margin * 2) / pattern.width,
+    (clip.bottom - clip.top - margin * 2) / pattern.height,
+  );
+  const cellPx = clamp(fit, base.minCellPx, base.maxCellPx);
+  const patternCenterX = boardLayout.patternOffsetX + pattern.width / 2;
+  const patternCenterY = boardLayout.patternOffsetY + pattern.height / 2;
+
+  return {
+    ...base,
+    cellPx,
+    tx: width / 2 - patternCenterX * cellPx,
+    ty: (clip.top + clip.bottom) / 2 - patternCenterY * cellPx,
+  };
+}
+
+function buildCompletionParticles(params: {
+  cells: FocusBoardCell[];
+  viewport: FocusViewport;
+  boardLayout: WorkshopBoardLayout;
+  width: number;
+  height: number;
+}) {
+  const { cells, viewport, boardLayout, width, height } = params;
+  const drawableCells = cells.filter(isDrawableCell);
+  const selectedCells = [...drawableCells]
+    .sort(() => Math.random() - 0.5)
+    .slice(0, Math.min(COMPLETION_PARTICLE_COUNT, drawableCells.length));
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+  return selectedCells.map((cell, index): CompletionParticle => {
+    const x = viewport.tx + (boardLayout.patternOffsetX + cell.x + 0.5) * viewport.cellPx;
+    const y = viewport.ty + (boardLayout.patternOffsetY + cell.y + 0.5) * viewport.cellPx;
+    const angle = Math.atan2(y - centerY, x - centerX) + (Math.random() - 0.5) * 1.25;
+    const distance = clamp(Math.min(width, height) * (0.18 + Math.random() * 0.18), 58, 180);
+
+    return {
+      id: index,
+      x,
+      y,
+      hex: cell.hex,
+      size: clamp(viewport.cellPx * (0.48 + Math.random() * 0.26), 8, 18),
+      dx: Math.cos(angle) * distance,
+      dy: Math.sin(angle) * distance - 22 - Math.random() * 42,
+      delay: Math.random() * 260,
+      duration: 900 + Math.random() * 520,
+      rotate: (Math.random() > 0.5 ? 1 : -1) * (120 + Math.random() * 220),
+    };
+  });
+}
+
 export function FocusModePage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -300,6 +463,10 @@ export function FocusModePage() {
   const boardLayoutRef = useRef<WorkshopBoardLayout | null>(null);
   const viewportAnimationRef = useRef<number | null>(null);
   const progressFlowFrameRef = useRef<number | null>(null);
+  const colorAutoAdvanceTimerRef = useRef<number | null>(null);
+  const completionCelebrationFrameRef = useRef<number | null>(null);
+  const completionCelebrationTimerRef = useRef<number | null>(null);
+  const completionViewportTimerRef = useRef<number | null>(null);
 
   const [boardSize, setBoardSize] = useState({ width: 0, height: 0, dpr: 1 });
   const [viewport, setViewport] = useState<FocusViewport | null>(null);
@@ -324,6 +491,8 @@ export function FocusModePage() {
   const [boardLayout, setBoardLayout] = useState<WorkshopBoardLayout | null>(null);
   const [placementMode, setPlacementMode] = useState(false);
   const [progressFlowOffset, setProgressFlowOffset] = useState(0);
+  const [completionCelebration, setCompletionCelebration] = useState<CompletionCelebration | null>(null);
+  const [completionGlowProgress, setCompletionGlowProgress] = useState(0);
 
   const cells = useMemo(() => (patternResult ? normalizeCells(patternResult) : []), [patternResult]);
   const cellByCoordKey = useMemo(() => new Map(cells.map((cell) => [cell.coordKey, cell])), [cells]);
@@ -354,19 +523,17 @@ export function FocusModePage() {
   }, [handedness, patternResult, rowAxis]);
 
   const planBlocks = beadingPlan?.blocks ?? [];
-  const activeColorBlocks = useMemo(() => {
-    if (!activeColorKey) return planBlocks;
-    return planBlocks
-      .filter((block) => block.colorKey === activeColorKey)
-      .sort((a, b) => {
-        if (b.cells.length !== a.cells.length) return b.cells.length - a.cells.length;
-        const anchorA = getBlockAnchorCell(a, handedness);
-        const anchorB = getBlockAnchorCell(b, handedness);
-        if (!anchorA || !anchorB) return 0;
-        if (anchorA.y !== anchorB.y) return anchorA.y - anchorB.y;
-        return handedness === 'left' ? anchorB.x - anchorA.x : anchorA.x - anchorB.x;
-      });
-  }, [activeColorKey, handedness, planBlocks]);
+  const getOrderedBlocksForColor = useCallback((colorKey: string | null) => {
+    const colorBlocks = colorKey ? planBlocks.filter((block) => block.colorKey === colorKey) : planBlocks;
+    return buildOrderedBlocks({
+      blocks: colorBlocks,
+      handedness,
+      strategy: beadingStrategy,
+      horizontalDirection,
+      verticalDirection,
+    });
+  }, [beadingStrategy, handedness, horizontalDirection, planBlocks, verticalDirection]);
+  const activeColorBlocks = useMemo(() => getOrderedBlocksForColor(activeColorKey), [activeColorKey, getOrderedBlocksForColor]);
   const currentBlockIndex = useMemo(() => {
     if (!activeCellKey) return -1;
     return activeColorBlocks.findIndex((block) => block.cells.some((cell) => getCellCoordKey(cell) === activeCellKey));
@@ -377,12 +544,6 @@ export function FocusModePage() {
     [currentBlock],
   );
   const currentBlockCompleted = currentBlock ? isBlockCompleted(currentBlock, completedCellKeySet) : false;
-  const completedBlockCellKeyGroups = useMemo(
-    () => planBlocks
-      .filter((block) => isBlockCompleted(block, completedCellKeySet))
-      .map((block) => new Set(block.cells.map(getCellCoordKey))),
-    [completedCellKeySet, planBlocks],
-  );
   useEffect(() => {
     if (!currentBlock) return;
     const exitPoint = getBlockExitPoint(currentBlock, handedness, horizontalDirection, verticalDirection);
@@ -399,19 +560,6 @@ export function FocusModePage() {
       exitPoint,
     });
   }, [currentBlock, handedness, horizontalDirection, verticalDirection]);
-  const recommendedNextBlock = useMemo(
-    () => pickNextBlock({
-      currentBlock,
-      candidates: activeColorBlocks,
-      completedCellKeys: completedCellKeySet,
-      handedness,
-      strategy: beadingStrategy,
-      horizontalDirection,
-      verticalDirection,
-    }),
-    [activeColorBlocks, beadingStrategy, completedCellKeySet, currentBlock, handedness, horizontalDirection, verticalDirection],
-  );
-
   const effectiveActiveColorKey = currentBlock?.colorKey ?? activeColorKey;
   const currentColor = useMemo(
     () => palette.find((item) => getColorKey(item) === effectiveActiveColorKey) ?? null,
@@ -483,11 +631,17 @@ export function FocusModePage() {
     boardLayoutRef.current = effectiveBoardLayout;
   }, [effectiveBoardLayout]);
 
-  const showToast = useCallback((message: string) => {
+  const showToast = useCallback((message: string, duration = 1400) => {
     setToast(message);
     window.setTimeout(() => {
       setToast((current) => (current === message ? '' : current));
-    }, 1400);
+    }, duration);
+  }, []);
+
+  const clearColorAutoAdvance = useCallback(() => {
+    if (colorAutoAdvanceTimerRef.current === null) return;
+    window.clearTimeout(colorAutoAdvanceTimerRef.current);
+    colorAutoAdvanceTimerRef.current = null;
   }, []);
 
   const cancelViewportAnimation = useCallback(() => {
@@ -524,6 +678,82 @@ export function FocusModePage() {
     viewportAnimationRef.current = window.requestAnimationFrame(tick);
   }, [cancelViewportAnimation]);
 
+  const clearCompletionCelebration = useCallback(() => {
+    if (completionCelebrationFrameRef.current !== null) {
+      window.cancelAnimationFrame(completionCelebrationFrameRef.current);
+      completionCelebrationFrameRef.current = null;
+    }
+    if (completionCelebrationTimerRef.current !== null) {
+      window.clearTimeout(completionCelebrationTimerRef.current);
+      completionCelebrationTimerRef.current = null;
+    }
+    if (completionViewportTimerRef.current !== null) {
+      window.clearTimeout(completionViewportTimerRef.current);
+      completionViewportTimerRef.current = null;
+    }
+  }, []);
+
+  const triggerCompletionCelebration = useCallback(() => {
+    if (!patternResult || !effectiveBoardLayout || boardSize.width <= 0 || boardSize.height <= 0) return;
+    clearCompletionCelebration();
+    clearColorAutoAdvance();
+
+    const targetViewport = getPatternFitViewport(patternResult, boardSize.width, boardSize.height, effectiveBoardLayout);
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const nextParticles = reduceMotion
+      ? []
+      : buildCompletionParticles({
+          cells,
+          viewport: targetViewport,
+          boardLayout: effectiveBoardLayout,
+          width: boardSize.width,
+          height: boardSize.height,
+        });
+
+    setCompletionCelebration({ id: Date.now(), particles: nextParticles });
+    setCompletionGlowProgress(0.001);
+    showToast('图纸完成啦', 2600);
+
+    const currentViewport = viewport ?? getFitViewport(patternResult, boardSize.width, boardSize.height, effectiveBoardLayout);
+    if (reduceMotion) {
+      setViewport(targetViewport);
+      setCompletionGlowProgress(1);
+    } else {
+      completionViewportTimerRef.current = window.setTimeout(() => {
+        completionViewportTimerRef.current = null;
+        animateViewportTo(currentViewport, targetViewport);
+      }, 160);
+      const startedAt = performance.now();
+      const tick = (now: number) => {
+        const progress = clamp((now - startedAt) / COMPLETION_CELEBRATION_MS, 0, 1);
+        setCompletionGlowProgress(progress);
+        if (progress < 1) {
+          completionCelebrationFrameRef.current = window.requestAnimationFrame(tick);
+        } else {
+          completionCelebrationFrameRef.current = null;
+        }
+      };
+      completionCelebrationFrameRef.current = window.requestAnimationFrame(tick);
+    }
+
+    completionCelebrationTimerRef.current = window.setTimeout(() => {
+      setCompletionCelebration(null);
+      setCompletionGlowProgress(0);
+      completionCelebrationTimerRef.current = null;
+    }, COMPLETION_CELEBRATION_MS + 700);
+  }, [
+    animateViewportTo,
+    boardSize.height,
+    boardSize.width,
+    cells,
+    clearColorAutoAdvance,
+    clearCompletionCelebration,
+    effectiveBoardLayout,
+    patternResult,
+    showToast,
+    viewport,
+  ]);
+
   const centerCell = useCallback((cell: FocusBoardCell | null, targetCellPx?: number, options: { animated?: boolean } = {}) => {
     if (!cell || !patternResult || boardSize.width <= 0 || boardSize.height <= 0) return;
     const layout = effectiveBoardLayout ?? normalizeBoardLayout(patternResult, boardLayout);
@@ -548,6 +778,7 @@ export function FocusModePage() {
   }, [animateViewportTo, boardLayout, boardSize.height, boardSize.width, cancelViewportAnimation, effectiveBoardLayout, patternResult, viewport]);
 
   useEffect(() => () => cancelViewportAnimation(), [cancelViewportAnimation]);
+  useEffect(() => () => clearCompletionCelebration(), [clearCompletionCelebration]);
 
   useEffect(() => {
     if (placementMode || totalCompletionProgress <= 0 || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
@@ -625,15 +856,9 @@ export function FocusModePage() {
 
     const validColorKeys = new Set(palette.map(getColorKey));
     setCompletedCellKeys((current) => current.filter((key) => validCellKeys.has(key)));
-    setActiveColorKey((current) => (current && validColorKeys.has(current) ? current : getColorKey(palette[0])));
-    setActiveCellKey((current) => {
-      if (current && validCellKeys.has(current)) return current;
-      const colorKey = getColorKey(palette[0]);
-      const largestBlock = getLargestBlockForColor(planBlocks, colorKey);
-      const anchorCell = largestBlock ? getBlockAnchorCell(largestBlock, handedness) : null;
-      return anchorCell ? getCellCoordKey(anchorCell) : getFirstCellForColor(cells, colorKey, handedness)?.coordKey ?? null;
-    });
-  }, [cells, handedness, palette, patternResult, planBlocks, validCellKeys]);
+    setActiveColorKey((current) => (current && validColorKeys.has(current) ? current : null));
+    setActiveCellKey((current) => (current && validCellKeys.has(current) ? current : null));
+  }, [palette, patternResult, validCellKeys]);
 
   useEffect(() => {
     if (!projectId || isHydrating || !patternResult || restoredProjectRef.current === projectId) return;
@@ -643,34 +868,26 @@ export function FocusModePage() {
     if (!progress) return;
 
     skipNextProgressSaveRef.current = true;
-    const validColorKeys = new Set(palette.map(getColorKey));
+    const restoredHandedness = progress.handedness === 'left' ? 'left' : 'right';
+    const restoredStrategy = isBeadingStrategy(progress.beadingStrategy) ? progress.beadingStrategy : 'smart';
+    const restoredHorizontalDirection = isHorizontalDirection(progress.horizontalDirection) ? progress.horizontalDirection : 'smart';
+    const restoredVerticalDirection = isVerticalDirection(progress.verticalDirection) ? progress.verticalDirection : 'top-to-bottom';
     setPatternMode('color-block');
     setConnectivity('8');
     setRowAxis(progress.axis === 'column' ? 'column' : 'row');
-    setHandedness(progress.handedness === 'left' ? 'left' : 'right');
-    setBeadingStrategy(isBeadingStrategy(progress.beadingStrategy) ? progress.beadingStrategy : 'smart');
-    setHorizontalDirection(isHorizontalDirection(progress.horizontalDirection) ? progress.horizontalDirection : 'smart');
-    setVerticalDirection(isVerticalDirection(progress.verticalDirection) ? progress.verticalDirection : 'top-to-bottom');
+    setHandedness(restoredHandedness);
+    setBeadingStrategy(restoredStrategy);
+    setHorizontalDirection(restoredHorizontalDirection);
+    setVerticalDirection(restoredVerticalDirection);
     const restoredLayout = normalizeBoardLayout(patternResult, progress.boardLayout);
     setBoardLayout(restoredLayout);
     if (boardSize.width > 0 && boardSize.height > 0) {
       setViewport(getFitViewport(patternResult, boardSize.width, boardSize.height, restoredLayout));
     }
-    const fallbackColorKey = palette[0] ? getColorKey(palette[0]) : null;
-    const restoredColorKey = progress.activeColorKey && validColorKeys.has(progress.activeColorKey) ? progress.activeColorKey : fallbackColorKey;
-    setActiveColorKey(restoredColorKey);
-    setActiveCellKey(progress.activeCellKey && validCellKeys.has(progress.activeCellKey)
-      ? progress.activeCellKey
-      : restoredColorKey
-        ? (() => {
-            const restoredHandedness = progress.handedness === 'left' ? 'left' : 'right';
-            const largestBlock = getLargestBlockForColor(planBlocks, restoredColorKey);
-            const anchorCell = largestBlock ? getBlockAnchorCell(largestBlock, restoredHandedness) : null;
-            return anchorCell ? getCellCoordKey(anchorCell) : getFirstCellForColor(cells, restoredColorKey, restoredHandedness)?.coordKey ?? null;
-          })()
-        : null);
+    setActiveColorKey(null);
+    setActiveCellKey(null);
     setCompletedCellKeys(progress.completedCellKeys.filter((key) => validCellKeys.has(key)));
-  }, [boardSize.height, boardSize.width, cells, isHydrating, palette, patternResult, planBlocks, projectId, state.beadingProgress, validCellKeys]);
+  }, [boardSize.height, boardSize.width, isHydrating, patternResult, projectId, state.beadingProgress, validCellKeys]);
 
   useEffect(() => {
     if (!projectId || isHydrating || !patternResult || totalPatternCells === 0) return;
@@ -754,9 +971,9 @@ export function FocusModePage() {
       activeColorKey: effectiveActiveColorKey,
       currentCellKey: activeCellKey,
       completedCellKeys: completedCellKeySet,
-      completedBlockCellKeyGroups,
       selectedBlockCellKeys: currentBlockCellKeys,
       completionProgress: totalCompletionProgress,
+      completionGlowProgress,
       progressFlowOffset,
       showGuide,
       placementMode,
@@ -765,7 +982,7 @@ export function FocusModePage() {
       height: boardSize.height,
       clip: getCanvasClipArea(boardSize.height),
     });
-  }, [activeCellKey, boardSize, cells, completedBlockCellKeyGroups, completedCellKeySet, currentBlockCellKeys, effectiveActiveColorKey, effectiveBoardLayout, patternResult, placementMode, progressFlowOffset, showGuide, totalCompletionProgress, viewport]);
+  }, [activeCellKey, boardSize, cells, completedCellKeySet, completionGlowProgress, currentBlockCellKeys, effectiveActiveColorKey, effectiveBoardLayout, patternResult, placementMode, progressFlowOffset, showGuide, totalCompletionProgress, viewport]);
 
   const rulerData = useMemo(() => {
     if (!patternResult || !viewport || !effectiveBoardLayout || boardSize.width <= 0) return { columns: [], rows: [] };
@@ -785,14 +1002,12 @@ export function FocusModePage() {
 
   const selectCell = useCallback((cell: FocusBoardCell, options: { center?: boolean } = {}) => {
     if (!cell.vendorCode || cell.isExternal || cell.hex === 'transparent') return;
-    const largestBlock = planBlocks
-      .filter((block) => block.colorKey === cell.colorKey)
-      .sort((a, b) => b.cells.length - a.cells.length)[0] ?? null;
-    const anchorCell = largestBlock ? getBlockAnchorCell(largestBlock, handedness) : cell;
+    const firstBlock = getOrderedBlocksForColor(cell.colorKey)[0] ?? null;
+    const entryCell = firstBlock ? getBlockEntryCell(firstBlock, handedness, horizontalDirection, verticalDirection) : cell;
     setActiveColorKey(cell.colorKey);
-    setActiveCellKey(anchorCell ? getCellCoordKey(anchorCell) : cell.coordKey);
-    if (options.center) centerCell(anchorCell ? cellByCoordKey.get(getCellCoordKey(anchorCell)) ?? cell : cell);
-  }, [cellByCoordKey, centerCell, handedness, planBlocks]);
+    setActiveCellKey(entryCell ? getCellCoordKey(entryCell) : cell.coordKey);
+    if (options.center) centerCell(entryCell ? cellByCoordKey.get(getCellCoordKey(entryCell)) ?? cell : cell);
+  }, [cellByCoordKey, centerCell, getOrderedBlocksForColor, handedness, horizontalDirection, verticalDirection]);
 
   const selectExactCell = useCallback((cell: FocusBoardCell, options: { center?: boolean } = {}) => {
     if (!cell.vendorCode || cell.isExternal || cell.hex === 'transparent') return;
@@ -803,24 +1018,21 @@ export function FocusModePage() {
 
   const selectBlock = useCallback((block: BeadingBlock | null, options: { center?: boolean; animated?: boolean } = {}) => {
     if (!block) return;
-    const anchorCell = getBlockAnchorCell(block, handedness);
-    if (!anchorCell) return;
-    const coordKey = getCellCoordKey(anchorCell);
+    const entryCell = getBlockEntryCell(block, handedness, horizontalDirection, verticalDirection);
+    if (!entryCell) return;
+    const coordKey = getCellCoordKey(entryCell);
     setActiveColorKey(block.colorKey);
     setActiveCellKey(coordKey);
     if (options.center) centerCell(cellByCoordKey.get(coordKey) ?? null, undefined, { animated: options.animated });
-  }, [cellByCoordKey, centerCell, handedness]);
+  }, [cellByCoordKey, centerCell, handedness, horizontalDirection, verticalDirection]);
 
   const findBlockForCell = useCallback((cell: FocusBoardCell) => {
     return planBlocks.find((block) => block.colorKey === cell.colorKey && block.cells.some((blockCell) => getCellCoordKey(blockCell) === cell.coordKey)) ?? null;
   }, [planBlocks]);
 
   const selectColorFromPalette = useCallback((colorKey: string) => {
-    const colorBlocks = planBlocks.filter((block) => block.colorKey === colorKey);
-    const nextBlock =
-      colorBlocks.find((block) => !isBlockCompleted(block, completedCellKeySet)) ??
-      [...colorBlocks].sort((a, b) => b.cells.length - a.cells.length)[0] ??
-      null;
+    clearColorAutoAdvance();
+    const nextBlock = getOrderedBlocksForColor(colorKey)[0] ?? null;
     if (nextBlock) {
       selectBlock(nextBlock, { center: true, animated: true });
     } else {
@@ -830,7 +1042,32 @@ export function FocusModePage() {
     setPaletteOpen(false);
     const item = palette.find((paletteItem) => getColorKey(paletteItem) === colorKey);
     if (item) showToast(`已切换到色号 ${item.vendorCode}`);
-  }, [completedCellKeySet, palette, planBlocks, selectBlock, showToast]);
+  }, [clearColorAutoAdvance, getOrderedBlocksForColor, palette, selectBlock, showToast]);
+
+  const scheduleNextColorAutoAdvance = useCallback((finishedColorKey: string | null) => {
+    clearColorAutoAdvance();
+    const currentPaletteIndex = palette.findIndex((item) => getColorKey(item) === finishedColorKey);
+    const nextPaletteItem = currentPaletteIndex >= 0 ? palette[currentPaletteIndex + 1] ?? null : null;
+
+    if (!nextPaletteItem) {
+      showToast('当前色号已完成，已经是最后一个色号', 3000);
+      return;
+    }
+
+    const nextColorKey = getColorKey(nextPaletteItem);
+    showToast(`当前色号已完成，3 秒后切换到 ${nextPaletteItem.vendorCode}`, 3000);
+    colorAutoAdvanceTimerRef.current = window.setTimeout(() => {
+      colorAutoAdvanceTimerRef.current = null;
+      const nextBlock = getOrderedBlocksForColor(nextColorKey)[0] ?? null;
+      if (nextBlock) {
+        selectBlock(nextBlock, { center: true, animated: true });
+        showToast(`已切换到色号 ${nextBlock.label}`);
+        return;
+      }
+      setActiveColorKey(nextColorKey);
+      setActiveCellKey(null);
+    }, 3000);
+  }, [clearColorAutoAdvance, getOrderedBlocksForColor, palette, selectBlock, showToast]);
 
   const toggleCurrentBlockCompletion = useCallback(() => {
     if (!currentBlock) return;
@@ -848,6 +1085,7 @@ export function FocusModePage() {
 
   const handleBoardTap = useCallback((clientX: number, clientY: number) => {
     if (!patternResult || !viewport || !effectiveBoardLayout || placementMode) return;
+    clearColorAutoAdvance();
     const clip = getCanvasClipArea(boardSize.height);
     if (clientY < clip.top || clientY > clip.bottom) return;
     const boardCoord = screenToCell(viewport, clientX, clientY);
@@ -870,7 +1108,7 @@ export function FocusModePage() {
       selectExactCell(cell);
     }
     showToast(`已切换到色号 ${cell.vendorCode}`);
-  }, [boardSize.height, cellByCoordKey, currentBlockCellKeys, effectiveBoardLayout, findBlockForCell, patternResult, placementMode, selectBlock, selectExactCell, showToast, viewport]);
+  }, [boardSize.height, cellByCoordKey, clearColorAutoAdvance, currentBlockCellKeys, effectiveBoardLayout, findBlockForCell, patternResult, placementMode, selectBlock, selectExactCell, showToast, viewport]);
 
   const zoomAt = useCallback((factor: number, clientX = boardSize.width / 2, clientY = boardSize.height / 2) => {
     cancelViewportAnimation();
@@ -1046,25 +1284,65 @@ export function FocusModePage() {
 
   const goToBlock = (direction: 'previous' | 'next') => {
     if (activeColorBlocks.length === 0) return;
+    clearColorAutoAdvance();
     const currentIndex = currentBlockIndex >= 0 ? currentBlockIndex : 0;
 
     if (direction === 'next') {
+      let nextBlock: BeadingBlock | null = null;
+      const completedAfterNext = new Set(normalizedCompletedCellKeys);
       if (currentBlock) {
-        setCompletedCellKeys((current) => Array.from(new Set([...current, ...currentBlock.cells.map(getCellCoordKey)])));
+        for (const cell of currentBlock.cells) {
+          completedAfterNext.add(getCellCoordKey(cell));
+        }
       }
-      const nextBlock = recommendedNextBlock;
+
+      const findFirstIncompleteBlock = (colorKey: string, startIndex = 0) => {
+        const blocks = getOrderedBlocksForColor(colorKey);
+        for (let index = Math.max(0, startIndex); index < blocks.length; index += 1) {
+          const block = blocks[index];
+          if (!isBlockCompleted(block, completedAfterNext)) return block;
+        }
+        return null;
+      };
+
+      const currentColorKey = effectiveActiveColorKey;
+      const currentPaletteIndex = palette.findIndex((item) => getColorKey(item) === currentColorKey);
+      nextBlock =
+        currentColorKey && currentBlockIndex >= 0
+          ? findFirstIncompleteBlock(currentColorKey, currentBlockIndex + 1)
+          : null;
+
+      if (!nextBlock && palette.length > 0 && currentPaletteIndex >= 0) {
+        for (let offset = 1; offset <= palette.length; offset += 1) {
+          const paletteItem = palette[(currentPaletteIndex + offset) % palette.length];
+          const candidate = findFirstIncompleteBlock(getColorKey(paletteItem));
+          if (candidate) {
+            nextBlock = candidate;
+            break;
+          }
+        }
+      }
+
+      if (currentBlock) {
+        setCompletedCellKeys(Array.from(completedAfterNext));
+      }
       if (nextBlock) {
         selectBlock(nextBlock, { center: true, animated: true });
         showToast(`已切换到色号 ${nextBlock.label}`);
       } else {
-        showToast('最后一块已完成');
+        const wouldCompleteProject = totalPatternCells > 0 && completedAfterNext.size >= totalPatternCells;
+        if (wouldCompleteProject) {
+          triggerCompletionCelebration();
+        } else {
+          showToast('暂未找到下一个未完成色块');
+        }
       }
       return;
     }
 
     const previousBlock = activeColorBlocks[Math.max(0, currentIndex - 1)] ?? null;
     if (previousBlock && previousBlock.key !== currentBlock?.key) {
-      selectBlock(previousBlock, { center: true });
+      selectBlock(previousBlock, { center: true, animated: true });
       showToast(`已回到色号 ${previousBlock.label}`);
     }
   };
@@ -1103,6 +1381,10 @@ export function FocusModePage() {
   };
 
   useEffect(() => {
+    return () => clearColorAutoAdvance();
+  }, [clearColorAutoAdvance]);
+
+  useEffect(() => {
     return () => {
       void wakeLockRef.current?.release().catch(() => undefined);
       wakeLockRef.current = null;
@@ -1134,6 +1416,35 @@ export function FocusModePage() {
           onPointerCancel={handlePointerUp}
         />
       </div>
+
+      {completionCelebration ? (
+        <div className={styles.completionLayer} aria-live="polite">
+          <div className={styles.completionBurst} aria-hidden="true">
+            {completionCelebration.particles.map((particle) => (
+              <span
+                key={`${completionCelebration.id}-${particle.id}`}
+                className={styles.completionParticle}
+                style={{
+                  left: particle.x,
+                  top: particle.y,
+                  width: particle.size,
+                  height: particle.size,
+                  backgroundColor: particle.hex,
+                  '--fly-x': `${particle.dx}px`,
+                  '--fly-y': `${particle.dy}px`,
+                  '--fly-delay': `${particle.delay}ms`,
+                  '--fly-duration': `${particle.duration}ms`,
+                  '--fly-rotate': `${particle.rotate}deg`,
+                } as CSSProperties}
+              />
+            ))}
+          </div>
+          <section className={styles.completionMessage}>
+            <p>图纸完成啦</p>
+            <span>可以欣赏一下整张作品了</span>
+          </section>
+        </div>
+      ) : null}
 
       <FocusTopbar
         zoomLocked={zoomLocked}
@@ -1185,7 +1496,7 @@ export function FocusModePage() {
         }}
         onToggleComplete={toggleCurrentBlockCompletion}
         previousDisabled={!currentBlock || currentBlockIndex <= 0}
-        nextDisabled={!currentBlock || (!recommendedNextBlock && currentBlockIndex >= activeColorBlocks.length - 1)}
+        nextDisabled={!currentBlock}
       />
 
       <FocusSettingsSheet

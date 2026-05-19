@@ -19,6 +19,7 @@ function createProjectId() {
 }
 
 const WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX = 'dodoudou:workshop-editor-local-draft:';
+const ENABLE_GALLERY_PUBLISH = import.meta.env.VITE_ENABLE_GALLERY_PUBLISH === 'true';
 
 function removeLocalEditorDraft(projectId: string) {
   if (typeof window === 'undefined') return;
@@ -242,11 +243,11 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         onOpenFocusMode={() => navigate(`/workshop/focus/${projectId ?? createProjectId()}`)}
         onOpenInventory={() => navigate('/workshop/inventory')}
         onPatternResultChange={actions.setPatternResult}
-        onUploadToGallery={() => setIsPublishOpen(true)}
+        onUploadToGallery={ENABLE_GALLERY_PUBLISH ? () => setIsPublishOpen(true) : undefined}
         backgroundRemovalNotice={backgroundRemovalNotice}
       />
       <GalleryPublishSheet
-        open={isPublishOpen && mode === 'result'}
+        open={ENABLE_GALLERY_PUBLISH && isPublishOpen && mode === 'result'}
         titleSeed={state.uploadedImage?.name?.replace(/\.[^.]+$/, '')}
         uploadedImage={state.uploadedImage}
         patternResult={state.patternResult}

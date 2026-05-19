@@ -33,10 +33,6 @@ function buildPreviewDataUrl(patternResult: PatternResult) {
   return canvas.toDataURL('image/png');
 }
 
-function makePublishIdPart(value: string) {
-  return value.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64) || 'project';
-}
-
 export function GalleryPublishSheet({
   open,
   titleSeed,
@@ -73,17 +69,12 @@ export function GalleryPublishSheet({
     setError(null);
     try {
       const cover = generatePatternCover(patternResult);
-      const publishStamp = Date.now();
-      const sourceProjectId = makePublishIdPart(projectId ?? String(publishStamp));
       const response = await publishGalleryItem({
-        itemId: `item-${sourceProjectId}-${publishStamp}`,
         title: title.trim(),
         description: description.trim() || undefined,
         authorId: 'local-official',
         sourceType: 'community',
         tags: splitTags(tags),
-        coverAssetId: `cover-${sourceProjectId}-${publishStamp}`,
-        previewAssetId: `preview-${sourceProjectId}-${publishStamp}`,
         coverUrl: cover.dataUrl || coverUrl,
         previewUrl,
         coverWidth: cover.width,

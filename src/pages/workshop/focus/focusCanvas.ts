@@ -260,6 +260,27 @@ function shade(hex: string, percent = 0, alpha = 1) {
   return `rgba(${r},${g},${b},${alpha})`;
 }
 
+function getHexLuminance(hex: string) {
+  const normalized = hex.replace('#', '');
+  const expanded = normalized.length === 3
+    ? normalized.split('').map((digit) => `${digit}${digit}`).join('')
+    : normalized;
+  const value = Number.parseInt(expanded, 16);
+  if (Number.isNaN(value) || expanded.length !== 6) return 1;
+  const channels = [
+    (value >> 16) & 255,
+    (value >> 8) & 255,
+    value & 255,
+  ].map((channel) => {
+    const normalizedChannel = channel / 255;
+    return normalizedChannel <= 0.03928
+      ? normalizedChannel / 12.92
+      : Math.pow((normalizedChannel + 0.055) / 1.055, 2.4);
+  });
+
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
 function drawTransparentCell(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
   ctx.fillStyle = '#F3F1EC';
   ctx.fillRect(x, y, Math.ceil(size) + 0.5, Math.ceil(size) + 0.5);
@@ -268,6 +289,41 @@ function drawTransparentCell(ctx: CanvasRenderingContext2D, x: number, y: number
   const checker = size / 2;
   ctx.fillRect(x, y, checker, checker);
   ctx.fillRect(x + checker, y + checker, checker, checker);
+}
+
+function drawCompletedCellMark(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, drawCircle: boolean, selectedColor: boolean, hex: string) {
+  if (size < 10) return;
+
+  const centerX = x + size / 2;
+  const centerY = y + size / 2;
+  const dotRadius = Math.max(1.4, Math.min(4.2, size * 0.12));
+  const ringInset = Math.max(3, size * 0.24);
+  const isDarkCell = getHexLuminance(hex) < 0.28;
+  const dotColor = isDarkCell
+    ? `rgba(255,246,226,${selectedColor ? 0.72 : 0.82})`
+    : `rgba(93,83,74,${selectedColor ? 0.42 : 0.5})`;
+  const ringColor = isDarkCell
+    ? `rgba(255,246,226,${selectedColor ? 0.36 : 0.46})`
+    : `rgba(93,83,74,${selectedColor ? 0.18 : 0.24})`;
+
+  ctx.save();
+  ctx.fillStyle = dotColor;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, dotRadius, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (size >= 20) {
+    ctx.strokeStyle = ringColor;
+    ctx.lineWidth = Math.max(1, size * 0.045);
+    if (drawCircle) {
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, Math.max(dotRadius + 3, size / 2 - ringInset), 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.strokeRect(x + ringInset, y + ringInset, size - ringInset * 2, size - ringInset * 2);
+    }
+  }
+  ctx.restore();
 }
 
 export function drawFocusCanvas(params: {
@@ -279,9 +335,9 @@ export function drawFocusCanvas(params: {
   activeColorKey: string | null;
   currentCellKey: string | null;
   completedCellKeys: Set<string>;
-  completedBlockCellKeyGroups: Set<string>[];
   selectedBlockCellKeys: Set<string>;
   completionProgress: number;
+  completionGlowProgress?: number;
   progressFlowOffset: number;
   showGuide: boolean;
   placementMode: boolean;
@@ -290,7 +346,25 @@ export function drawFocusCanvas(params: {
   height: number;
   clip: CanvasClipArea;
 }) {
-  const { canvas, pattern, cells, viewport, boardLayout, activeColorKey, currentCellKey, completedCellKeys, completedBlockCellKeyGroups, selectedBlockCellKeys, completionProgress, progressFlowOffset, showGuide, placementMode, width, height, clip } = params;
+  const {
+    canvas,
+    pattern,
+    cells,
+    viewport,
+    boardLayout,
+    activeColorKey,
+    currentCellKey,
+    completedCellKeys,
+    selectedBlockCellKeys,
+    completionProgress,
+    completionGlowProgress = 0,
+    progressFlowOffset,
+    showGuide,
+    placementMode,
+    width,
+    height,
+    clip,
+  } = params;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
@@ -361,11 +435,11 @@ export function drawFocusCanvas(params: {
     const drawable = isDrawableCell(cell);
 
     ctx.save();
-    ctx.globalAlpha = isSelectedColor ? 1 : 0.18;
+    ctx.globalAlpha = isSelectedColor ? 1 : done ? 0.26 : 0.18;
     if (!drawable) {
       drawTransparentCell(ctx, x, y, viewport.cellPx);
     } else if (drawCircle) {
-      ctx.fillStyle = done ? shade(cell.hex, -8, 0.62) : cell.hex;
+      ctx.fillStyle = done ? shade(cell.hex, -10, 0.74) : cell.hex;
       ctx.beginPath();
       ctx.arc(x + viewport.cellPx / 2, y + viewport.cellPx / 2, Math.max(1.5, viewport.cellPx / 2 - gap), 0, Math.PI * 2);
       ctx.fill();
@@ -380,9 +454,11 @@ export function drawFocusCanvas(params: {
         ctx.arc(x + viewport.cellPx * 0.38, y + viewport.cellPx * 0.34, viewport.cellPx * 0.12, 0, Math.PI * 2);
         ctx.fill();
       }
+      if (done) drawCompletedCellMark(ctx, x, y, viewport.cellPx, true, isSelectedColor, cell.hex);
     } else {
-      ctx.fillStyle = done ? shade(cell.hex, -8, 0.62) : cell.hex;
+      ctx.fillStyle = done ? shade(cell.hex, -10, 0.74) : cell.hex;
       ctx.fillRect(x, y, Math.ceil(viewport.cellPx) + 0.5, Math.ceil(viewport.cellPx) + 0.5);
+      if (done) drawCompletedCellMark(ctx, x, y, viewport.cellPx, false, isSelectedColor, cell.hex);
     }
     ctx.restore();
   }
@@ -536,17 +612,12 @@ export function drawFocusCanvas(params: {
     ctx.restore();
   };
 
-  for (const group of completedBlockCellKeyGroups) {
-    drawBlockOutline(group, '#7BC56E', 0.11, 'rgba(123,197,110,.26)');
-  }
-
   if (selectedBlockCellKeys.size > 0) {
-    const selectedDone = Array.from(selectedBlockCellKeys).every((key) => completedCellKeys.has(key));
     drawBlockOutline(
       selectedBlockCellKeys,
-      selectedDone ? '#2F9E44' : '#4C2B6F',
-      selectedDone ? 0.16 : 0.18,
-      selectedDone ? 'rgba(123,197,110,.44)' : 'rgba(255,255,255,.72)',
+      '#4C2B6F',
+      0.18,
+      'rgba(255,255,255,.72)',
     );
   }
 
@@ -580,6 +651,32 @@ export function drawFocusCanvas(params: {
     ctx.lineWidth = Math.max(3, Math.min(5, viewport.cellPx * 0.14));
     drawRectProgressFlow(ctx, progressX, progressY, progressWidth, progressHeight, completionProgress, progressFlowOffset);
     ctx.restore();
+
+    if (completionGlowProgress > 0) {
+      const glow = Math.sin(completionGlowProgress * Math.PI);
+      const loop = Math.sin(completionGlowProgress * Math.PI * 6) * 0.5 + 0.5;
+
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,218,193,${0.5 + glow * 0.42})`;
+      ctx.lineWidth = Math.max(6, Math.min(12, viewport.cellPx * (0.28 + glow * 0.12)));
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.shadowColor = 'rgba(255,218,193,.92)';
+      ctx.shadowBlur = 18 + glow * 20;
+      ctx.strokeRect(progressX, progressY, progressWidth, progressHeight);
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = `rgba(255,255,255,${0.38 + loop * 0.4})`;
+      ctx.lineWidth = Math.max(2, Math.min(5, viewport.cellPx * 0.12));
+      ctx.lineCap = 'round';
+      ctx.setLineDash([Math.max(10, viewport.cellPx * 1.2), Math.max(8, viewport.cellPx * 0.72)]);
+      ctx.lineDashOffset = -progressFlowOffset * 120;
+      ctx.shadowColor = 'rgba(255,255,255,.85)';
+      ctx.shadowBlur = 12;
+      ctx.strokeRect(progressX, progressY, progressWidth, progressHeight);
+      ctx.restore();
+    }
   }
 
   ctx.save();

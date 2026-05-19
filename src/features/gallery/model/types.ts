@@ -175,14 +175,11 @@ export type GalleryDetailResponse = {
 };
 
 export type PublishGalleryPayload = {
-  itemId?: string;
   title: string;
   description?: string;
   authorId: string;
   sourceType?: GallerySourceType;
   tags?: string[];
-  coverAssetId: string;
-  previewAssetId: string;
   coverUrl?: string;
   previewUrl?: string;
   coverWidth?: number;
