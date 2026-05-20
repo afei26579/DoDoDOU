@@ -12,6 +12,7 @@ export const defaultWorkshopConfig: WorkshopConfig = {
   brand: 'MARD',
   style: '动漫',
   colorMergeThreshold: 30,
+  algorithm: 'legacy',
 };
 
 export const defaultWorkshopFlowState: WorkshopFlowState = {

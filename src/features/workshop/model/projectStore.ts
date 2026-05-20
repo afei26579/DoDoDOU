@@ -86,6 +86,7 @@ function getDefaultConfig(): WorkshopConfig {
     brand: 'MARD',
     style: '动漫',
     colorMergeThreshold: 30,
+    algorithm: 'legacy',
   };
 }
 

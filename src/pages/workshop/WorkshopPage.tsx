@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CropTransform, PatternResult, WorkshopFlowState } from '../../features/workshop/model/types';
 import { getBeadBrandLabel } from '../../lib/pattern/brand';
 import { createCropCanvas, loadImage } from '../../lib/pattern/crop';
+import { WorkshopCreateSettingsSheet } from './components/WorkshopCreateSettingsSheet';
 import { WorkshopGenerateButton } from './components/WorkshopGenerateButton';
 import { WorkshopHero } from './components/WorkshopHero';
 import { WorkshopHomeToolbar } from './components/WorkshopHomeToolbar';
@@ -84,6 +85,7 @@ export function WorkshopPage({
   } | null>(null);
   const [isStatsSheetOpen, setIsStatsSheetOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [isCreateSettingsOpen, setIsCreateSettingsOpen] = useState(false);
   const [isCropPreviewOpen, setIsCropPreviewOpen] = useState(false);
   const [cropPreviewDataUrl, setCropPreviewDataUrl] = useState<string | null>(null);
   const [cropPreviewSize, setCropPreviewSize] = useState({ width: 420, height: 300 });
@@ -257,7 +259,12 @@ export function WorkshopPage({
 
   return (
     <main className={`workshop-page workshop-page--${mode} ${isHome ? 'workshop-page--home' : ''}`}>
-      <WorkshopHero projectId={projectId} />
+      <WorkshopHero
+        projectId={projectId}
+        mode={mode}
+        algorithm={config.algorithm ?? 'legacy'}
+        onOpenSettings={!isHome && mode === 'create' ? () => setIsCreateSettingsOpen(true) : undefined}
+      />
       <WorkshopPreviewArea
         mode={mode}
         uploadedImage={uploadedImage}
@@ -422,6 +429,13 @@ export function WorkshopPage({
         onClose={() => setIsDownloadModalOpen(false)}
         brand={config.brand}
         patternResult={patternResult}
+      />
+
+      <WorkshopCreateSettingsSheet
+        open={!isHome && mode === 'create' && isCreateSettingsOpen}
+        config={config}
+        onConfigChange={onConfigChange}
+        onClose={() => setIsCreateSettingsOpen(false)}
       />
 
       <style>{`

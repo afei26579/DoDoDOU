@@ -3,6 +3,7 @@ import type { BeadBrandKey } from '../../../lib/pattern/brand';
 export type ColorSystem = BeadBrandKey;
 
 export type WorkshopStyle = '写实' | '动漫' | '极简';
+export type PatternAlgorithm = 'legacy' | 'perceptual-p0';
 
 export type UploadedImage = {
   name: string;
@@ -25,6 +26,7 @@ export type WorkshopConfig = {
   brand: ColorSystem;
   style: WorkshopStyle;
   colorMergeThreshold: number;
+  algorithm?: PatternAlgorithm;
 };
 
 export type PatternCell = {
