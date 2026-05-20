@@ -25,10 +25,23 @@ function createGalleryProjectId(itemId: string) {
   return `gallery-${itemId}`;
 }
 
+function fitCanvasToContainer(canvas: HTMLCanvasElement | null, container: HTMLElement | null) {
+  if (!canvas || !container || canvas.width <= 0 || canvas.height <= 0) return;
+
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+  if (containerWidth <= 0 || containerHeight <= 0) return;
+
+  const scale = Math.min(1, containerWidth / canvas.width, containerHeight / canvas.height);
+  canvas.style.width = `${Math.max(1, Math.floor(canvas.width * scale))}px`;
+  canvas.style.height = `${Math.max(1, Math.floor(canvas.height * scale))}px`;
+}
+
 export function CollectionDetailPage() {
   const { itemId } = useParams();
   const navigate = useNavigate();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasShellRef = useRef<HTMLElement | null>(null);
   const [item, setItem] = useState<GalleryItemDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +92,22 @@ export function CollectionDetailPage() {
       brand: item.pattern.config.brand,
       patternResult,
     });
+    requestAnimationFrame(() => fitCanvasToContainer(canvasRef.current, canvasShellRef.current));
   }, [item, patternResult]);
+
+  useEffect(() => {
+    const shell = canvasShellRef.current;
+    if (!shell) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      fitCanvasToContainer(canvasRef.current, shell);
+    });
+    resizeObserver.observe(shell);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   const saveAsWorkshopProject = async () => {
     if (!item || !patternResult) return null;
@@ -158,7 +186,7 @@ export function CollectionDetailPage() {
       {!loading && !error && !patternResult ? <div className="gallery-detail__state">这张作品还没有可查看的图纸数据</div> : null}
       {!loading && !error && patternResult && patternResult.cells.length === 0 ? <div className="gallery-detail__state">这张作品缺少图纸格子数据，暂时只能查看封面</div> : null}
 
-      <section className="gallery-detail__canvas-shell" aria-label="图纸预览">
+      <section ref={canvasShellRef} className="gallery-detail__canvas-shell" aria-label="图纸预览">
         <div className="gallery-detail__canvas-scroll">
           <canvas ref={canvasRef} className="gallery-detail__canvas" />
         </div>

@@ -1885,7 +1885,7 @@ p { margin: 0; }
   background: #f5f0e8;
   -webkit-overflow-scrolling: touch;
   display: grid;
-  place-items: start center;
+  place-items: center;
 }
 .gallery-detail__canvas {
   display: block;
