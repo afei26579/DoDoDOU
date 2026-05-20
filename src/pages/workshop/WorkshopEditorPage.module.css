@@ -3,9 +3,12 @@
 .titlebarLeft { display: flex; align-items: center; gap: 10px; min-width: 0; pointer-events: auto; }
 .titlebarLogo { width: 54px; height: 54px; border: 0; border-radius: 10px; display: grid; place-items: center; background: transparent; box-shadow: none; flex: 0 0 auto; padding: 0; }
 .titlebarLogo img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
-.titlebarText { min-width: 0; }
-.titlebarText h1 { margin: 0; font-size: 16px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.titlebarText { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.titlebarText h1 { margin: 0; max-width: min(38vw, 360px); font-size: 16px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .titlebarText p { margin: 2px 0 0; font-size: 9px; color: rgba(93,83,74,.7); font-weight: 700; letter-spacing: .08em; }
+.titleEditBtn { width: 28px; height: 28px; border: 0; border-radius: 10px; display: grid; place-items: center; padding: 0; background: rgba(255,255,255,.82); color: #5d534a; box-shadow: 0 2px 12px rgba(93,83,74,.08); cursor: pointer; flex: 0 0 auto; }
+.titleEditBtn:hover { background: #edd9f5; }
+.titleEditBtn svg { width: 16px; height: 16px; display: block; stroke: currentColor; }
 .titlebarActions { margin-left: auto; display: flex; gap: 7px; flex-wrap: nowrap; justify-content: flex-end; align-items: center; min-width: 0; pointer-events: auto; }
 .iconBtn, .primaryBtn, .miniBtn, .closeBtn, .switch, .toolBtn, .canvasActionBtn, .previewToggle, .resizeHandle, .bubble, .sizeDotBtn, .smallActionBtn, .miniColor, .paletteSwatch, .paletteNavBtn { border: 0; cursor: pointer; flex: 0 0 auto; }
 .iconBtn { width: 28px; height: 28px; border-radius: 10px; background: rgba(255,255,255,.78); }
@@ -72,18 +75,16 @@
 .pickerTip span { color: #b894cc; }
 .zoomTools { display: flex; gap: 5px; }
 .smallActionBtn { width: 28px; height: 28px; border-radius: 10px; background: rgba(216,180,226,.18); font-weight: 800; }
-.colorSwatch { width: 36px; height: 36px; border: 2px solid #d8b4e2; border-radius: 12px; overflow: hidden; flex: 0 0 auto; padding: 0; box-shadow: inset 0 0 0 2px rgba(255,255,255,.8); }
+.colorSwatch { width: 50px; height: 50px; border: 2px solid #d8b4e2; border-radius: 14px; overflow: hidden; flex: 0 0 auto; padding: 0; box-shadow: inset 0 0 0 2px rgba(255,255,255,.8); display: grid; place-items: center; font-size: 12px; font-weight: 900; line-height: 1; text-align: center; letter-spacing: 0; }
+.colorSwatchCode { max-width: calc(100% - 6px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
 .switch { width: 42px; height: 24px; border-radius: 999px; background: rgba(93,83,74,.18); position: relative; }
 .switch::after { content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s ease; }
 .switchOn { background: #d8b4e2; }
 .switchOn::after { transform: translateX(18px); }
 .modalBackdrop { position: fixed; inset: 0; background: rgba(93,83,74,.22); backdrop-filter: blur(6px); z-index: 1000; display: grid; place-items: center; padding: 16px; }
-.modal { width: min(420px, 100%); max-height: min(86vh, 680px); background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(255,251,247,.98)); border-radius: 24px; border: 1px solid rgba(216,180,226,.42); box-shadow: 0 20px 60px rgba(93,83,74,.18); padding: 18px; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 12px; box-sizing: border-box; }
+.modal { width: min(420px, 100%); max-height: min(86vh, 680px); background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(255,251,247,.98)); border-radius: 24px; border: 1px solid rgba(216,180,226,.42); box-shadow: 0 20px 60px rgba(93,83,74,.18); padding: 18px; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; box-sizing: border-box; }
 .modalHeader { display: flex; justify-content: space-between; align-items: center; }
 .modalHeader h3 { margin: 0; font-family: 'ZCOOL KuaiLe', sans-serif; font-size: 18px; color: #5D534A; }
-.brandTabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
-.brandTab { min-height: 30px; border: 0; border-radius: 10px; padding: 0 10px; background: rgba(93,83,74,.08); color: #5D534A; font-size: 12px; font-weight: 700; white-space: nowrap; }
-.brandTabActive { background: #d8b4e2; color: #fff; }
 .paletteBody { min-height: 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; align-items: start; }
 .paletteNav { max-height: min(58vh, 480px); overflow: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 2px; scrollbar-width: thin; }
 .paletteNavBtn { min-height: 28px; border-radius: 9px; padding: 0 6px; background: rgba(93,83,74,.08); color: #5D534A; font-size: 11px; font-weight: 800; line-height: 1.15; white-space: normal; word-break: break-word; }
@@ -97,6 +98,12 @@
 .modalActions { display: flex; gap: 10px; }
 .modalActions button { flex: 1; height: 40px; border: 0; border-radius: 12px; background: rgba(216,180,226,.16); font-weight: 700; color: #5D534A; }
 .modalActions button:hover { background: rgba(216,180,226,.26); }
+.modalActions button:disabled { opacity: .55; cursor: not-allowed; }
+.renameModal { grid-template-rows: auto auto auto; }
+.renameBody { display: grid; gap: 8px; }
+.renameInput { width: 100%; min-width: 0; height: 44px; box-sizing: border-box; border: 1px solid rgba(216,180,226,.45); border-radius: 12px; padding: 0 12px; background: #fff; color: #5D534A; font-size: 15px; font-weight: 700; }
+.renameInput:focus { outline: none; border-color: #d8b4e2; box-shadow: 0 0 0 3px rgba(216,180,226,.24); }
+.renameBody p { margin: 0; color: rgba(93,83,74,.62); font-size: 12px; line-height: 1.45; }
 .closeBtn { width: 32px; height: 32px; border-radius: 10px; background: rgba(93,83,74,.08); }
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: rgba(93,83,74,.92); color: #fff; padding: 10px 14px; border-radius: 999px; }
 

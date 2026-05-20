@@ -8,6 +8,7 @@ import type {
   WorkshopViewMode,
 } from './types';
 import { normalizeBeadBrandKey } from '../../../lib/pattern/brand';
+import { generatePatternCover } from '../../../lib/pattern/cover';
 
 const DB_NAME = 'dodoudou-workshop';
 const DB_VERSION = 3;
@@ -114,6 +115,16 @@ function createDefaultRecord(projectId: string): WorkshopProjectRecord {
   };
 }
 
+function createPatternCoverDataUrl(patternResult: PatternResult | null) {
+  if (!patternResult || typeof document === 'undefined') return null;
+
+  try {
+    return generatePatternCover(patternResult).dataUrl || null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeTimestamp(value: unknown, fallback: string): string {
   if (typeof value === 'string') {
     const time = Date.parse(value);
@@ -155,11 +166,15 @@ function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
   const defaultRecord = createDefaultRecord(record.projectId);
   const createdAt = normalizeTimestamp(record.createdAt, defaultRecord.createdAt);
   const updatedAt = normalizeTimestamp(record.updatedAt, createdAt);
+  const patternResult = record.patternResult ?? null;
+  const fallbackPatternCoverUrl = !record.coverUrl && !record.previewUrl
+    ? createPatternCoverDataUrl(patternResult)
+    : null;
   const legacyKind = (record as Omit<WorkshopProjectRecord, 'kind'> & { kind?: string }).kind;
   const kind: WorkshopProjectKind =
     legacyKind === 'progress'
       ? 'progress'
-      : record.patternResult || record.editorState || legacyKind === 'pattern' || legacyKind === 'draft'
+      : patternResult || record.editorState || legacyKind === 'pattern' || legacyKind === 'draft'
         ? 'pattern'
         : 'upload';
   const config = {
@@ -177,17 +192,53 @@ function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
     sourceType: record.sourceType ?? defaultRecord.sourceType,
     sourceItemId: record.sourceItemId ?? null,
     uploadedImage: record.uploadedImage ?? null,
-    patternResult: record.patternResult ?? null,
+    patternResult,
     viewMode: record.viewMode ?? defaultRecord.viewMode,
     editorState: record.editorState ?? null,
     progress: record.progress ?? null,
     beadingProgress: record.beadingProgress ?? null,
-    coverUrl: record.coverUrl ?? null,
+    coverUrl: record.coverUrl ?? fallbackPatternCoverUrl ?? null,
     previewUrl: record.previewUrl ?? null,
     lastOpenedAt: normalizeNullableTimestamp(record.lastOpenedAt, null),
     createdAt,
     updatedAt,
   };
+}
+
+function withSyncedPatternCover(record: WorkshopProjectRecord, shouldSync: boolean): WorkshopProjectRecord {
+  if (!shouldSync) return record;
+  const coverUrl = createPatternCoverDataUrl(record.patternResult);
+  if (!coverUrl) return record;
+
+  return {
+    ...record,
+    coverUrl,
+    previewUrl: coverUrl,
+  };
+}
+
+function logPatternSave(projectId: string, record: WorkshopProjectRecord) {
+  const pattern = record.patternResult;
+  console.debug('[workshop-project] save pattern', {
+    projectId,
+    title: record.title,
+    kind: record.kind,
+    status: record.status,
+    beadingState: record.beadingState,
+    sourceType: record.sourceType,
+    pattern: pattern
+      ? {
+          width: pattern.width,
+          height: pattern.height,
+          beadCount: pattern.stats.totalCells,
+          colorCount: pattern.stats.colorCount,
+          paletteCount: pattern.palette.length,
+        }
+      : null,
+    hasCoverUrl: Boolean(record.coverUrl),
+    hasPreviewUrl: Boolean(record.previewUrl),
+    updatedAt: record.updatedAt,
+  });
 }
 
 function getPatternSummary(patternResult: PatternResult | null) {
@@ -332,13 +383,17 @@ export async function getWorkshopProject(projectId: string) {
 export async function ensureWorkshopProject(projectId: string, patch: WorkshopProjectPatch = {}) {
   const current = (await getWorkshopProject(projectId)) ?? createDefaultRecord(projectId);
   const definedPatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as WorkshopProjectPatch;
-  const next: WorkshopProjectRecord = normalizeRecord({
+  const shouldSyncPatternCover = definedPatch.patternResult !== undefined && Boolean(definedPatch.patternResult);
+  const next: WorkshopProjectRecord = withSyncedPatternCover(normalizeRecord({
     ...current,
     ...definedPatch,
     projectId,
     createdAt: current.createdAt,
     updatedAt: new Date().toISOString(),
-  });
+  }), shouldSyncPatternCover);
+  if (definedPatch.patternResult !== undefined) {
+    logPatternSave(projectId, next);
+  }
   MEMORY_CACHE.set(projectId, next);
   await writeRecord(next);
   return next;

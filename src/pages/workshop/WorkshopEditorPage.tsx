@@ -11,8 +11,8 @@ import {
 } from '../../features/workshop/model/draftStore';
 import type { PatternResult, WorkshopEditorState, WorkshopConfig } from '../../features/workshop/model/types';
 import { defaultWorkshopConfig } from '../../features/workshop/model/defaults';
-import { buildPalette, getVendorCode, type PatternPaletteColor } from '../../lib/pattern/color-system';
-import { beadBrandKeys, getBeadBrandLabel, type BeadBrandKey } from '../../lib/pattern/brand';
+import { buildPalette, getVendorCode, hexToRgb, type PatternPaletteColor } from '../../lib/pattern/color-system';
+import { getBeadBrandLabel, type BeadBrandKey } from '../../lib/pattern/brand';
 import {
   createEmptyGrid,
   floodFill,
@@ -113,6 +113,15 @@ function SettingsIcon() {
   );
 }
 
+function EditTitleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M4 16.8V20h3.2L18.7 8.5l-3.2-3.2L4 16.8Z" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m14.6 6.2 3.2 3.2" fill="none" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const TOOL_ITEMS: Array<{ id: Tool; label: string; icon?: string; iconSrc?: string }> = [
   { id: 'brush', label: '画笔', iconSrc: ICONS.brush },
   { id: 'eraser', label: '橡皮', iconSrc: ICONS.eraser },
@@ -126,6 +135,7 @@ const HISTORY_LIMIT = 80;
 const SAVE_DEBOUNCE_MS = 800;
 const WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX = 'dodoudou:workshop-editor-local-draft:';
 const ALL_PALETTE_GROUP = 'all';
+const DEFAULT_UNTITLED_PROJECT_TITLE = '未命名作品';
 
 type PaletteGroupType = 'all' | 'letter' | 'number';
 
@@ -179,6 +189,78 @@ function writeLocalEditorDraft(projectId: string, state: WorkshopEditorState) {
 
 function makeRecentColors(currentColor: string, recentColors: string[]) {
   return [currentColor, ...recentColors.filter((item) => item !== currentColor)].slice(0, 8);
+}
+
+function getNearestPaletteColor(hex: string, palette: PatternPaletteColor[]) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return null;
+
+  let nearest: PatternPaletteColor | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const color of palette) {
+    const distance =
+      ((rgb.r - color.rgb.r) ** 2) +
+      ((rgb.g - color.rgb.g) ** 2) +
+      ((rgb.b - color.rgb.b) ** 2);
+
+    if (distance >= nearestDistance) continue;
+    nearest = color;
+    nearestDistance = distance;
+  }
+
+  return nearest;
+}
+
+function getDisplayVendorCodeForColor(hex: string, brand: WorkshopConfig['brand'], palette: PatternPaletteColor[]) {
+  const exactCode = getVendorCode(hex, brand);
+  if (exactCode && exactCode !== '?') return exactCode;
+
+  return getNearestPaletteColor(hex, palette)?.vendorCode ?? '?';
+}
+
+function getRelativeLuminance(hex: string) {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 1;
+
+  const channels = [rgb.r, rgb.g, rgb.b].map((value) => {
+    const normalized = value / 255;
+    return normalized <= 0.03928
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  });
+
+  return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
+}
+
+function getCurrentSwatchTextStyle(hex: string) {
+  const darkText = '#5D534A';
+  const lightText = '#FFFFFF';
+  const luminance = getRelativeLuminance(hex);
+  const color = luminance > 0.52 ? darkText : lightText;
+
+  return {
+    color,
+    textShadow: color === lightText
+      ? '0 1px 2px rgba(93, 83, 74, 0.38)'
+      : '0 1px 2px rgba(255, 255, 255, 0.72)',
+  };
+}
+
+function isUntitledProjectTitle(title: string | null | undefined) {
+  const normalized = title?.trim() ?? '';
+  return !normalized || normalized === DEFAULT_UNTITLED_PROJECT_TITLE;
+}
+
+function getTitleTimestamp(createdAt: string | null) {
+  const time = createdAt ? Date.parse(createdAt) : Number.NaN;
+  return Number.isNaN(time) ? Date.now().toString() : String(time);
+}
+
+function getDisplayProjectTitle(title: string | null | undefined, createdAt: string | null) {
+  const normalized = title?.trim() ?? '';
+  if (!isUntitledProjectTitle(normalized)) return normalized;
+  return `未命名-${getTitleTimestamp(createdAt)}`;
 }
 
 function getNumberPaletteGroup(code: string): PaletteGroup | null {
@@ -464,6 +546,11 @@ export function WorkshopEditorPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [projectTitle, setProjectTitle] = useState('');
+  const [projectCreatedAt, setProjectCreatedAt] = useState<string | null>(null);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [draftTitle, setDraftTitle] = useState('');
+  const [titleSaving, setTitleSaving] = useState(false);
   const hasUserAdjustedViewRef = useRef(false);
   const pinchRef = useRef<{
     startDistance: number;
@@ -481,8 +568,20 @@ export function WorkshopEditorPage() {
   const [activePaletteGroup, setActivePaletteGroup] = useState(ALL_PALETTE_GROUP);
 
   const currentRecentColors = makeRecentColors(currentColor, recentColors);
+  const displayProjectTitle = useMemo(
+    () => getDisplayProjectTitle(projectTitle, projectCreatedAt),
+    [projectCreatedAt, projectTitle],
+  );
   const downloadPatternResult = gridToPatternResult(grid, downloadBrand);
   const editorPalette = useMemo(() => buildPalette(editorBrand), [editorBrand]);
+  const currentColorCode = useMemo(
+    () => getDisplayVendorCodeForColor(currentColor, editorBrand, editorPalette),
+    [currentColor, editorBrand, editorPalette],
+  );
+  const currentColorCodeTextStyle = useMemo(
+    () => getCurrentSwatchTextStyle(currentColor),
+    [currentColor],
+  );
   const paletteGroups = useMemo(
     () => buildPaletteGroups(editorBrand, editorPalette),
     [editorBrand, editorPalette],
@@ -546,6 +645,55 @@ export function WorkshopEditorPage() {
       console.error('[WorkshopEditorPage] back save failed', error);
     } finally {
       navigate(-1);
+    }
+  };
+
+  const openRenameDialog = () => {
+    setDraftTitle(isUntitledProjectTitle(projectTitle) ? '' : projectTitle.trim());
+    setRenameOpen(true);
+  };
+
+  const closeRenameDialog = () => {
+    if (titleSaving) return;
+    setRenameOpen(false);
+  };
+
+  const saveProjectTitle = async () => {
+    const nextTitle = draftTitle.trim();
+
+    if (!projectId) {
+      setProjectTitle(nextTitle);
+      setRenameOpen(false);
+      return;
+    }
+
+    setTitleSaving(true);
+    try {
+      await saveWorkshopProject(projectId, {
+        title: nextTitle,
+        lastOpenedAt: new Date().toISOString(),
+      });
+      setProjectTitle(nextTitle);
+      setRenameOpen(false);
+      showToast('图纸名称已更新');
+    } catch (error) {
+      console.error('[WorkshopEditorPage] rename failed', error);
+      showToast('名称保存失败，请稍后再试');
+    } finally {
+      setTitleSaving(false);
+    }
+  };
+
+  const handleRenameKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void saveProjectTitle();
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeRenameDialog();
     }
   };
 
@@ -614,6 +762,8 @@ export function WorkshopEditorPage() {
       const project = await getWorkshopProject(projectId).catch(() => null);
       if (!alive) return;
       const projectBrand = project?.config?.brand ?? defaultWorkshopConfig.brand;
+      setProjectTitle(project?.title ?? '');
+      setProjectCreatedAt(project?.createdAt ?? new Date().toISOString());
       setEditorBrand(projectBrand);
       setDownloadBrand(projectBrand);
 
@@ -1063,11 +1213,11 @@ export function WorkshopEditorPage() {
           </div>
           <div className={styles.toolSep} />
           <div className={styles.paramGroup}>
-            <div className={styles.paramLabel}>粗细</div>
+           
             <div className={styles.sizeDots}>
               {[1, 2, 3].map((size) => {
                 const active = brushSize === size;
-                const dotSize = 7 + size * 4;
+                const dotSize = 7 + size * 3;
 
                 return (
                   <button
@@ -1093,7 +1243,7 @@ export function WorkshopEditorPage() {
           </div>
           <div className={styles.toolSep} />
           <div className={styles.paramGroup}>
-            <div className={styles.paramLabel}>颜色</div>
+            
             <div className={styles.miniPalette}>
               {currentRecentColors.map((hex) => (
                 <button
@@ -1123,11 +1273,11 @@ export function WorkshopEditorPage() {
           </div>
           <div className={styles.toolSep} />
           <div className={styles.paramGroup}>
-            <div className={styles.paramLabel}>大小</div>
+            
             <div className={styles.sizeDots}>
               {[1, 2, 3].map((size) => {
                 const active = eraserSize === size;
-                const dotSize = 7 + size * 4;
+                const dotSize = 7 + size * 3;
 
                 return (
                   <button
@@ -1164,7 +1314,7 @@ export function WorkshopEditorPage() {
           </div>
           <div className={styles.toolSep} />
           <div className={styles.paramGroup}>
-            <div className={styles.paramLabel}>填充色</div>
+            
             <div className={styles.miniPalette}>
               {currentRecentColors.map((hex) => (
                 <button
@@ -1181,7 +1331,7 @@ export function WorkshopEditorPage() {
               ))}
             </div>
           </div>
-          <span className={styles.fillTip}>点击格子泛洪填色</span>
+         
         </>
       );
     }
@@ -1195,7 +1345,7 @@ export function WorkshopEditorPage() {
           </div>
           <div className={styles.toolSep} />
           <div className={styles.pickerTip}>
-            点击画布格子
+            点击画布格子取色
             <br />
             <span>自动吸取颜色并切回画笔</span>
           </div>
@@ -1211,7 +1361,7 @@ export function WorkshopEditorPage() {
         </div>
         <div className={styles.toolSep} />
         <div className={styles.paramGroup}>
-          <div className={styles.paramLabel}>视图缩放</div>
+        
           <div className={styles.zoomTools}>
             <button
               type="button"
@@ -1593,7 +1743,16 @@ export function WorkshopEditorPage() {
             <img src={ICONS.goback} alt="" />
           </button>
           <div className={styles.titlebarText}>
-            <h1>图纸编辑</h1>
+            <h1 title={displayProjectTitle}>{displayProjectTitle}</h1>
+            <button
+              type="button"
+              className={styles.titleEditBtn}
+              onClick={openRenameDialog}
+              title="修改图纸名称"
+              aria-label="修改图纸名称"
+            >
+              <EditTitleIcon />
+            </button>
           </div>
         </div>
         <div className={styles.titlebarActions}>
@@ -1701,7 +1860,7 @@ export function WorkshopEditorPage() {
           onClose={() => setDownloadModalOpen(false)}
           brand={downloadBrand}
           patternResult={downloadPatternResult}
-          defaultPatternName=""
+          defaultPatternName={displayProjectTitle}
         />
         {downloadModalOpen && <div className={styles.modalShield} aria-hidden="true" />}
 
@@ -1731,11 +1890,13 @@ export function WorkshopEditorPage() {
             <button
               type="button"
               className={styles.colorSwatch}
-              style={{ background: currentColor }}
+              style={{ background: currentColor, ...currentColorCodeTextStyle }}
               onClick={() => setPaletteOpen(true)}
-              title="当前颜色"
-              aria-label="打开色卡"
-            />
+              title={`当前色号 ${currentColorCode}`}
+              aria-label={`打开色卡，当前色号 ${currentColorCode}`}
+            >
+              <span className={styles.colorSwatchCode}>{currentColorCode}</span>
+            </button>
           </div>
           <div className={styles.toolbarContent}>{renderToolRow2()}</div>
         </section>
@@ -1745,7 +1906,7 @@ export function WorkshopEditorPage() {
         <div className={styles.modalBackdrop} onClick={() => setPaletteOpen(false)}>
           <section className={styles.modal} onClick={(event) => event.stopPropagation()}>
             <header className={styles.modalHeader}>
-              <h3>拼豆色卡</h3>
+              <h3>拼豆色卡 · {getBeadBrandLabel(editorBrand)}</h3>
               <button
                 type="button"
                 className={styles.closeBtn}
@@ -1754,22 +1915,6 @@ export function WorkshopEditorPage() {
                 x
               </button>
             </header>
-            <div className={styles.brandTabs} role="tablist" aria-label="品牌色卡">
-              {beadBrandKeys.map((brandKey) => (
-                <button
-                  key={brandKey}
-                  type="button"
-                  className={`${styles.brandTab} ${editorBrand === brandKey ? styles.brandTabActive : ''}`}
-                  onClick={() => {
-                    setEditorBrand(brandKey);
-                    setDownloadBrand(brandKey);
-                    setActivePaletteGroup(ALL_PALETTE_GROUP);
-                  }}
-                >
-                  {getBeadBrandLabel(brandKey)}
-                </button>
-              ))}
-            </div>
             <div className={styles.paletteBody}>
               <nav className={styles.paletteNav} aria-label="色号系列">
                 {paletteGroups.map((group) => (
@@ -1837,6 +1982,45 @@ export function WorkshopEditorPage() {
 
       {toast ? <div className={styles.toast}>{toast}</div> : null}
 
+      {renameOpen ? (
+        <div className={styles.modalBackdrop} onClick={closeRenameDialog}>
+          <section className={`${styles.modal} ${styles.renameModal}`} onClick={(event) => event.stopPropagation()}>
+            <header className={styles.modalHeader}>
+              <h3>修改图纸名称</h3>
+              <button
+                type="button"
+                className={styles.closeBtn}
+                onClick={closeRenameDialog}
+                aria-label="关闭弹窗"
+                disabled={titleSaving}
+              >
+                x
+              </button>
+            </header>
+            <div className={styles.renameBody}>
+              <input
+                className={styles.renameInput}
+                value={draftTitle}
+                placeholder={displayProjectTitle}
+                autoFocus
+                maxLength={40}
+                onChange={(event) => setDraftTitle(event.target.value)}
+                onKeyDown={handleRenameKeyDown}
+              />
+              <p>留空后会继续显示自动生成的未命名标题。</p>
+            </div>
+            <div className={styles.modalActions}>
+              <button type="button" onClick={closeRenameDialog} disabled={titleSaving}>
+                取消
+              </button>
+              <button type="button" className={styles.primaryBtn} onClick={saveProjectTitle} disabled={titleSaving}>
+                {titleSaving ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       <EditorSettingsSheet
         open={settingsOpen}
         brand={editorBrand}
@@ -1852,6 +2036,7 @@ export function WorkshopEditorPage() {
         onBrandChange={(newBrand) => {
           setEditorBrand(newBrand);
           setDownloadBrand(newBrand);
+          setActivePaletteGroup(ALL_PALETTE_GROUP);
         }}
         onResizeCanvas={handleResizeCanvas}
         onShowDividersChange={setShowDividers}

@@ -139,9 +139,7 @@ export function EditorSettingsSheet({
                 />
               </label>
             </div>
-            <p className={styles.sizeHint}>
-              失去焦点后生效，最小 {minCols} x {minRows}
-            </p>
+           
           </section>
 
           <section className={styles.section}>
