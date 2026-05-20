@@ -24,6 +24,7 @@ type WorkshopPageProps = {
   onBackToOriginal: () => void;
   onRegenerate: () => void;
   onAutoCropPattern: () => void;
+  onMirrorPattern?: () => void;
   onRemoveBackground: () => void;
   onUploadImage: () => void;
   onReuploadImage: () => void;
@@ -53,6 +54,7 @@ export function WorkshopPage({
   onBackToOriginal,
   onRegenerate,
   onAutoCropPattern,
+  onMirrorPattern,
   onRemoveBackground,
   onUploadImage,
   onReuploadImage,
@@ -294,6 +296,7 @@ export function WorkshopPage({
               onBackToOriginal={onBackToOriginal}
               onRegenerate={onRegenerate}
               onAutoCropPattern={onAutoCropPattern}
+              onMirrorPattern={onMirrorPattern}
               onReuploadImage={onReuploadImage}
               onUploadToGallery={onUploadToGallery}
             />

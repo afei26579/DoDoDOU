@@ -22,11 +22,14 @@ export function WorkshopHomeToolbar({
           onClick={onAiInspiration}
           disabled={isGenerating}
         >
-          <span className="workshop-home-entry-card__icon" aria-hidden="true">✨</span>
+          <span className="workshop-home-entry-card__icon" aria-hidden="true">
+            <img src="/assets/system_icons/ai_inspiration.png" alt="" />
+          </span>
           <span className="workshop-home-entry-card__copy">
             <strong>AI 灵感</strong>
-            <span>描述你的想象</span>
+           
           </span>
+          <span className="workshop-home-entry-card__arrow" aria-hidden="true">›</span>
         </button>
 
         <button
@@ -35,11 +38,14 @@ export function WorkshopHomeToolbar({
           onClick={onCreateCanvas}
           disabled={isGenerating}
         >
-          <span className="workshop-home-entry-card__icon" aria-hidden="true">🎨</span>
+          <span className="workshop-home-entry-card__icon" aria-hidden="true">
+            <img src="/assets/system_icons/blank%20_canvas.png" alt="" />
+          </span>
           <span className="workshop-home-entry-card__copy">
             <strong>空白画布</strong>
-            <span>自由创作</span>
+           
           </span>
+          <span className="workshop-home-entry-card__arrow" aria-hidden="true">›</span>
         </button>
       </div>
 

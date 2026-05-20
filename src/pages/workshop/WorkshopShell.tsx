@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { defaultCropTransform, defaultWorkshopConfig } from '../../features/workshop/model/defaults';
 import { deleteWorkshopDraft } from '../../features/workshop/model/draftStore';
 import { ensureWorkshopProject, markWorkshopProjectOpened, saveWorkshopProject } from '../../features/workshop/model/projectStore';
+import type { PatternResult } from '../../features/workshop/model/types';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
 import { cropPatternToEffectiveBounds } from '../../lib/pattern/effectiveCrop';
 import { generatePatternFromImage } from '../../lib/pattern/generator';
@@ -24,6 +25,22 @@ const ENABLE_GALLERY_PUBLISH = import.meta.env.VITE_ENABLE_GALLERY_PUBLISH === '
 function removeLocalEditorDraft(projectId: string) {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(`${WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX}${projectId}`);
+}
+
+function mirrorPatternHorizontally(pattern: PatternResult): PatternResult {
+  const cells = pattern.cells
+    .map((cell) => ({
+      ...cell,
+      x: pattern.width - 1 - cell.x,
+    }))
+    .sort((a, b) => (a.y - b.y) || (a.x - b.x));
+
+  return {
+    ...pattern,
+    cells,
+    palette: pattern.palette.map((entry) => ({ ...entry })),
+    stats: { ...pattern.stats },
+  };
 }
 
 export function WorkshopShell({ mode }: WorkshopShellProps) {
@@ -158,6 +175,30 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     showBackgroundRemovalNotice(`完成，共去除${result.removedCount.toLocaleString()}颗`);
   };
 
+  const handleMirrorPattern = async () => {
+    if (!state.patternResult || !projectId) return;
+
+    const mirroredPattern = mirrorPatternHorizontally(state.patternResult);
+
+    await deleteWorkshopDraft(projectId);
+    removeLocalEditorDraft(projectId);
+    await saveWorkshopProject(projectId, {
+      uploadedImage: state.uploadedImage,
+      cropTransform: state.cropTransform,
+      config: state.config,
+      patternResult: mirroredPattern,
+      viewMode: 'pattern',
+      kind: 'pattern',
+      status: 'ready',
+      beadingState: 'idle',
+      beadingProgress: null,
+      editorState: null,
+      lastOpenedAt: new Date().toISOString(),
+    });
+    actions.setPatternResult(mirroredPattern);
+    showBackgroundRemovalNotice('已水平镜像');
+  };
+
   const handleUploadSelected = async (file: File) => {
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
@@ -226,6 +267,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         onBackToOriginal={() => navigate(`/workshop/create/${projectId ?? createProjectId()}`)}
         onRegenerate={handleGeneratePattern}
         onAutoCropPattern={handleAutoCropPattern}
+        onMirrorPattern={handleMirrorPattern}
         onRemoveBackground={handleRemoveBackground}
         onUploadImage={() => {
           console.debug('[workshop] file input click requested', { projectId, hasInput: Boolean(fileInputRef.current) });
