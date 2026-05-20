@@ -1,14 +1,26 @@
+import { useEffect, useState } from 'react';
 import styles from './EditorSettingsSheet.module.css';
 import { beadBrandKeys, getBeadBrandLabel, type BeadBrandKey } from '../../../lib/pattern/brand';
+import type { EditorBackgroundMode, EditorBeadShape } from './WorkshopEditor.utils';
 
 export type EditorSettingsSheetProps = {
   open: boolean;
   brand: BeadBrandKey;
   cols: number;
   rows: number;
+  minCols: number;
+  minRows: number;
+  showDividers: boolean;
+  showColorCodes: boolean;
+  beadShape: EditorBeadShape;
+  backgroundMode: EditorBackgroundMode;
   onClose: () => void;
   onBrandChange: (brand: BeadBrandKey) => void;
-  onResizeGrid: (direction: 'top' | 'bottom' | 'left' | 'right', count: string) => void;
+  onResizeCanvas: (cols: number, rows: number) => void;
+  onShowDividersChange: (showDividers: boolean) => void;
+  onShowColorCodesChange: (showColorCodes: boolean) => void;
+  onBeadShapeChange: (beadShape: EditorBeadShape) => void;
+  onBackgroundModeChange: (backgroundMode: EditorBackgroundMode) => void;
 };
 
 export function EditorSettingsSheet({
@@ -16,14 +28,49 @@ export function EditorSettingsSheet({
   brand,
   cols,
   rows,
+  minCols,
+  minRows,
+  showDividers,
+  showColorCodes,
+  beadShape,
+  backgroundMode,
   onClose,
   onBrandChange,
-  onResizeGrid,
+  onResizeCanvas,
+  onShowDividersChange,
+  onShowColorCodesChange,
+  onBeadShapeChange,
+  onBackgroundModeChange,
 }: EditorSettingsSheetProps) {
+  const [draftCols, setDraftCols] = useState(String(cols));
+  const [draftRows, setDraftRows] = useState(String(rows));
+
+  useEffect(() => {
+    if (!open) return;
+    setDraftCols(String(cols));
+    setDraftRows(String(rows));
+  }, [cols, open, rows]);
+
   if (!open) return null;
 
-  const handleResize = (direction: 'top' | 'bottom' | 'left' | 'right', countStr: string) => {
-    onResizeGrid(direction, countStr);
+  const applyCanvasSize = () => {
+    const nextCols = Number.parseInt(draftCols, 10);
+    const nextRows = Number.parseInt(draftRows, 10);
+
+    if (!Number.isFinite(nextCols) || !Number.isFinite(nextRows)) {
+      setDraftCols(String(cols));
+      setDraftRows(String(rows));
+      return;
+    }
+
+    setDraftCols(String(Math.max(minCols, Math.floor(nextCols))));
+    setDraftRows(String(Math.max(minRows, Math.floor(nextRows))));
+    onResizeCanvas(nextCols, nextRows);
+  };
+
+  const handleSizeKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    event.currentTarget.blur();
   };
 
   return (
@@ -38,12 +85,11 @@ export function EditorSettingsSheet({
             onClick={onClose}
             aria-label="关闭设置"
           >
-            ×
+            x
           </button>
         </header>
 
         <div className={styles.content}>
-          {/* 品牌选择 */}
           <section className={styles.section}>
             <h3 className={styles.sectionTitle}>拼豆品牌</h3>
             <div className={styles.brandGrid}>
@@ -60,115 +106,111 @@ export function EditorSettingsSheet({
             </div>
           </section>
 
-          {/* 尺寸调整 */}
           <section className={styles.section}>
-            <h3 className={styles.sectionTitle}>尺寸调整</h3>
-            <div className={styles.sizeInfo}>
-              当前尺寸：{cols} x {rows}
+            <h3 className={styles.sectionTitle}>画布尺寸</h3>
+            <div className={styles.sizeEditor}>
+              <label className={styles.sizeField}>
+                <span>宽</span>
+                <input
+                  type="number"
+                  className={styles.sizeInput}
+                  value={draftCols}
+                  min={minCols}
+                  inputMode="numeric"
+                  aria-label="画布宽度"
+                  onChange={(event) => setDraftCols(event.target.value)}
+                  onBlur={applyCanvasSize}
+                  onKeyDown={handleSizeKeyDown}
+                />
+              </label>
+              <span className={styles.sizeSeparator}>x</span>
+              <label className={styles.sizeField}>
+                <span>高</span>
+                <input
+                  type="number"
+                  className={styles.sizeInput}
+                  value={draftRows}
+                  min={minRows}
+                  inputMode="numeric"
+                  aria-label="画布高度"
+                  onChange={(event) => setDraftRows(event.target.value)}
+                  onBlur={applyCanvasSize}
+                  onKeyDown={handleSizeKeyDown}
+                />
+              </label>
             </div>
+            <p className={styles.sizeHint}>
+              失去焦点后生效，最小 {minCols} x {minRows}
+            </p>
+          </section>
 
-            <div className={styles.resizeGrid}>
-              {/* 顶部 */}
-              <div className={styles.resizeRow}>
-                <span className={styles.directionLabel}>
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M8 3L12 8H9V13H7V8H4L8 3Z" fill="currentColor"/>
-                  </svg>
-                  上方
-                </span>
-                <input
-                  id="resize-top"
-                  type="number"
-                  className={styles.input}
-                  defaultValue="1"
-                  min="1"
-                  max="50"
-                />
-                <span className={styles.unit}>行</span>
+          <section className={styles.section}>
+            <h3 className={styles.sectionTitle}>豆子设置</h3>
+            <div className={styles.optionGrid}>
+              <button
+                type="button"
+                className={`${styles.optionBtn} ${beadShape === 'square' ? styles.optionBtnActive : ''}`}
+                onClick={() => onBeadShapeChange('square')}
+              >
+                方形
+              </button>
+              <button
+                type="button"
+                className={`${styles.optionBtn} ${beadShape === 'circle' ? styles.optionBtnActive : ''}`}
+                onClick={() => onBeadShapeChange('circle')}
+              >
+                圆形
+              </button>
+            </div>
+          </section>
+
+          <section className={styles.section}>
+            <h3 className={styles.sectionTitle}>背景设置</h3>
+            <div className={styles.optionGrid}>
+              <button
+                type="button"
+                className={`${styles.optionBtn} ${backgroundMode === 'checker' ? styles.optionBtnActive : ''}`}
+                onClick={() => onBackgroundModeChange('checker')}
+              >
+                棋盘格
+              </button>
+              <button
+                type="button"
+                className={`${styles.optionBtn} ${backgroundMode === 'white' ? styles.optionBtnActive : ''}`}
+                onClick={() => onBackgroundModeChange('white')}
+              >
+                纯白色
+              </button>
+            </div>
+          </section>
+
+          <section className={styles.section}>
+            <h3 className={styles.sectionTitle}>辅助显示</h3>
+            <div className={styles.switchList}>
+              <div className={styles.switchRow}>
+                <span className={styles.switchLabel}>显示分割线</span>
                 <button
                   type="button"
-                  className={styles.addBtn}
-                  onClick={() => handleResize('top', (document.getElementById('resize-top') as HTMLInputElement)?.value || '1')}
+                  className={`${styles.switchBtn} ${showDividers ? styles.switchBtnOn : ''}`}
+                  role="switch"
+                  aria-checked={showDividers}
+                  aria-label="显示分割线"
+                  onClick={() => onShowDividersChange(!showDividers)}
                 >
-                  添加
+                  <span />
                 </button>
               </div>
-
-              {/* 底部 */}
-              <div className={styles.resizeRow}>
-                <span className={styles.directionLabel}>
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M8 13L4 8H7V3H9V8H12L8 13Z" fill="currentColor"/>
-                  </svg>
-                  下方
-                </span>
-                <input
-                  id="resize-bottom"
-                  type="number"
-                  className={styles.input}
-                  defaultValue="1"
-                  min="1"
-                  max="50"
-                />
-                <span className={styles.unit}>行</span>
+              <div className={styles.switchRow}>
+                <span className={styles.switchLabel}>显示色号</span>
                 <button
                   type="button"
-                  className={styles.addBtn}
-                  onClick={() => handleResize('bottom', (document.getElementById('resize-bottom') as HTMLInputElement)?.value || '1')}
+                  className={`${styles.switchBtn} ${showColorCodes ? styles.switchBtnOn : ''}`}
+                  role="switch"
+                  aria-checked={showColorCodes}
+                  aria-label="显示色号"
+                  onClick={() => onShowColorCodesChange(!showColorCodes)}
                 >
-                  添加
-                </button>
-              </div>
-
-              {/* 左侧 */}
-              <div className={styles.resizeRow}>
-                <span className={styles.directionLabel}>
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M3 8L8 4V7H13V9H8V12L3 8Z" fill="currentColor"/>
-                  </svg>
-                  左侧
-                </span>
-                <input
-                  id="resize-left"
-                  type="number"
-                  className={styles.input}
-                  defaultValue="1"
-                  min="1"
-                  max="50"
-                />
-                <span className={styles.unit}>列</span>
-                <button
-                  type="button"
-                  className={styles.addBtn}
-                  onClick={() => handleResize('left', (document.getElementById('resize-left') as HTMLInputElement)?.value || '1')}
-                >
-                  添加
-                </button>
-              </div>
-
-              {/* 右侧 */}
-              <div className={styles.resizeRow}>
-                <span className={styles.directionLabel}>
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M13 8L8 12V9H3V7H8V4L13 8Z" fill="currentColor"/>
-                  </svg>
-                  右侧
-                </span>
-                <input
-                  id="resize-right"
-                  type="number"
-                  className={styles.input}
-                  defaultValue="1"
-                  min="1"
-                  max="50"
-                />
-                <span className={styles.unit}>列</span>
-                <button
-                  type="button"
-                  className={styles.addBtn}
-                  onClick={() => handleResize('right', (document.getElementById('resize-right') as HTMLInputElement)?.value || '1')}
-                >
-                  添加
+                  <span />
                 </button>
               </div>
             </div>

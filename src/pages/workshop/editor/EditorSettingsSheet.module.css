@@ -15,6 +15,8 @@
   background: #ffffff;
   border-radius: 24px 24px 0 0;
   z-index: 201;
+  width: min(100%, 560px);
+  margin: 0 auto;
   max-height: 85vh;
   overflow-y: auto;
   animation: slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
@@ -56,7 +58,7 @@
 }
 
 .content {
-  padding: 16px;
+  padding: 16px 16px 22px;
 }
 
 .section {
@@ -75,20 +77,25 @@
 /* 品牌选择 */
 .brandGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .brandBtn {
-  padding: 10px 12px;
-  border-radius: 12px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 8px 4px;
+  border-radius: 8px;
   background: rgba(93, 83, 74, 0.06);
   border: 2px solid transparent;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 700;
   color: #5d534a;
   cursor: pointer;
   transition: all 0.2s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .brandBtn:hover {
@@ -105,86 +112,152 @@
   background: #b48fcc;
 }
 
-/* 尺寸调整 */
-.sizeInfo {
-  font-size: 14px;
-  color: #9c9188;
-  margin-bottom: 12px;
-  padding: 8px 12px;
-  background: rgba(93, 83, 74, 0.04);
-  border-radius: 8px;
-}
-
-.resizeGrid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.resizeRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+/* 画布尺寸 */
+.sizeEditor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
   background: rgba(93, 83, 74, 0.04);
   border-radius: 12px;
 }
 
-.directionLabel {
+.sizeField {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 6px;
-  font-size: 14px;
-  color: #5d534a;
-  min-width: 70px;
+  min-width: 0;
 }
 
-.directionLabel svg {
+.sizeField span {
+  font-size: 12px;
+  font-weight: 700;
   color: #9c9188;
 }
 
-.input {
-  width: 56px;
-  padding: 6px 8px;
+.sizeInput {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 10px;
   border: 1px solid rgba(93, 83, 74, 0.15);
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 18px;
+  font-weight: 700;
   text-align: center;
   color: #5d534a;
   background: #ffffff;
 }
 
-.input:focus {
+.sizeInput:focus {
   outline: none;
   border-color: #d8b4e2;
   box-shadow: 0 0 0 2px rgba(216, 180, 226, 0.3);
 }
 
-.unit {
+.sizeSeparator {
+  padding-bottom: 11px;
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+  color: #5d534a;
+}
+
+.sizeHint {
+  margin: 8px 2px 0;
   font-size: 13px;
   color: #9c9188;
-  min-width: 20px;
 }
 
-.addBtn {
-  margin-left: auto;
-  padding: 6px 14px;
-  border-radius: 8px;
-  background: #d8b4e2;
-  border: none;
-  font-size: 13px;
-  font-weight: 500;
-  color: #ffffff;
+.optionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(93, 83, 74, 0.04);
+}
+
+.optionBtn {
+  min-height: 44px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #5d534a;
+  font-size: 14px;
+  font-weight: 800;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
 
-.addBtn:hover {
+.optionBtn:hover {
+  background: rgba(216, 180, 226, 0.16);
+}
+
+.optionBtnActive {
+  background: #d8b4e2;
+  border-color: #b48fcc;
+  color: #ffffff;
+}
+
+.optionBtnActive:hover {
   background: #b48fcc;
 }
 
-.addBtn:active {
-  transform: scale(0.97);
+.switchList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.switchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 12px;
+  background: rgba(93, 83, 74, 0.04);
+  border-radius: 12px;
+}
+
+.switchLabel {
+  font-size: 14px;
+  font-weight: 700;
+  color: #5d534a;
+}
+
+.switchBtn {
+  position: relative;
+  width: 48px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(93, 83, 74, 0.12);
+  border-radius: 999px;
+  background: rgba(93, 83, 74, 0.12);
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.switchBtn span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(93, 83, 74, 0.2);
+  transition: transform 0.2s;
+}
+
+.switchBtnOn {
+  background: #d8b4e2;
+  border-color: #b48fcc;
+}
+
+.switchBtnOn span {
+  transform: translateX(20px);
 }
 
 @keyframes fadeIn {
@@ -208,19 +281,16 @@
 /* 移动端适配 */
 @media (max-width: 520px) {
   .brandGrid {
-    grid-template-columns: repeat(2, 1fr);
+    gap: 5px;
   }
 
-  .resizeRow {
-    padding: 10px;
+  .brandBtn {
+    min-height: 38px;
+    padding: 7px 2px;
+    font-size: 11px;
   }
 
-  .input {
-    width: 50px;
-  }
-
-  .directionLabel {
-    min-width: 60px;
-    font-size: 13px;
+  .sizeEditor {
+    gap: 8px;
   }
 }

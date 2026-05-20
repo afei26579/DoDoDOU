@@ -1,4 +1,11 @@
 import type { PatternCell, PatternResult, WorkshopBoardLayout } from '../../../features/workshop/model/types';
+import {
+  drawBeadBoardBorder,
+  drawBeadBoardCells,
+  drawBeadBoardDividers,
+  drawBeadBoardGrid,
+  drawBeadBoardSurface,
+} from '../../../lib/pattern/beadBoardCanvas';
 import { getCellCoordKey, getCellKey, isTransparentCellHex, normalizeHex } from '../../../lib/pattern/beadingPlan';
 
 export type FocusViewport = {
@@ -473,14 +480,7 @@ export function drawFocusCanvas(params: {
       }
     : null;
 
-  ctx.save();
-  ctx.shadowColor = 'rgba(216,180,226,.20)';
-  ctx.shadowBlur = 18;
-  ctx.shadowOffsetY = 4;
-  ctx.fillStyle = 'rgba(255,255,255,.62)';
-  drawRoundRect(ctx, viewport.tx - 6, viewport.ty - 6, boardWidth + 12, boardHeight + 12, 14);
-  ctx.fill();
-  ctx.restore();
+  drawBeadBoardSurface(ctx, viewport.tx, viewport.ty, boardWidth, boardHeight);
 
   if (showGuide && currentBoardCell) {
     ctx.save();
@@ -490,132 +490,39 @@ export function drawFocusCanvas(params: {
     ctx.restore();
   }
 
-  const gap = viewport.cellPx >= 15 ? Math.max(1.2, viewport.cellPx * 0.08) : viewport.cellPx >= 8 ? 0.8 : 0;
-  const drawCircle = viewport.cellPx >= 10;
+  drawBeadBoardCells({
+    ctx,
+    cells: visibleCells,
+    originX: viewport.tx,
+    originY: viewport.ty,
+    cellPx: viewport.cellPx,
+    patternOffsetX: boardLayout.patternOffsetX,
+    patternOffsetY: boardLayout.patternOffsetY,
+    visibleRange: visible,
+    activeColorKey,
+    completedCellKeys,
+    isDrawableCell,
+    getCoordKey: (cell) => cell.coordKey,
+    getColorKey: (cell) => cell.colorKey,
+  });
 
-  for (const cell of visibleCells) {
-    const x = viewport.tx + (boardLayout.patternOffsetX + cell.x) * viewport.cellPx;
-    const y = viewport.ty + (boardLayout.patternOffsetY + cell.y) * viewport.cellPx;
-    const isSelectedColor = activeColorKey ? cell.colorKey === activeColorKey : true;
-    const done = completedCellKeys.has(cell.coordKey);
-    const drawable = isDrawableCell(cell);
+  drawBeadBoardGrid({
+    ctx,
+    originX: viewport.tx,
+    originY: viewport.ty,
+    cellPx: viewport.cellPx,
+    visibleRange: visible,
+  });
 
-    ctx.save();
-    ctx.globalAlpha = isSelectedColor ? 1 : done ? 0.26 : 0.18;
-    if (!drawable) {
-      drawTransparentCell(ctx, x, y, viewport.cellPx);
-    } else if (drawCircle) {
-      ctx.fillStyle = done ? shade(cell.hex, -10, 0.74) : cell.hex;
-      ctx.beginPath();
-      ctx.arc(x + viewport.cellPx / 2, y + viewport.cellPx / 2, Math.max(1.5, viewport.cellPx / 2 - gap), 0, Math.PI * 2);
-      ctx.fill();
-      if (isSelectedColor && viewport.cellPx >= 15) {
-        ctx.strokeStyle = 'rgba(123,79,160,.35)';
-        ctx.lineWidth = Math.max(1, viewport.cellPx * 0.06);
-        ctx.stroke();
-      }
-      if (viewport.cellPx >= 18) {
-        ctx.fillStyle = 'rgba(255,255,255,.35)';
-        ctx.beginPath();
-        ctx.arc(x + viewport.cellPx * 0.38, y + viewport.cellPx * 0.34, viewport.cellPx * 0.12, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      if (done) drawCompletedCellMark(ctx, x, y, viewport.cellPx, true, isSelectedColor, cell.hex);
-    } else {
-      ctx.fillStyle = done ? shade(cell.hex, -10, 0.74) : cell.hex;
-      ctx.fillRect(x, y, Math.ceil(viewport.cellPx) + 0.5, Math.ceil(viewport.cellPx) + 0.5);
-      if (done) drawCompletedCellMark(ctx, x, y, viewport.cellPx, false, isSelectedColor, cell.hex);
-    }
-    ctx.restore();
-  }
-
-  if (viewport.cellPx >= 7) {
-    ctx.save();
-    ctx.strokeStyle = viewport.cellPx >= 18 ? 'rgba(93,83,74,.18)' : 'rgba(93,83,74,.10)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let column = visible.startCol; column <= visible.endCol + 1; column += 1) {
-      const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
-      ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
-      ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
-    }
-    for (let row = visible.startRow; row <= visible.endRow + 1; row += 1) {
-      const y = Math.round(viewport.ty + row * viewport.cellPx) + 0.5;
-      ctx.moveTo(viewport.tx + visible.startCol * viewport.cellPx, y);
-      ctx.lineTo(viewport.tx + (visible.endCol + 1) * viewport.cellPx, y);
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  if (viewport.cellPx >= 4) {
-    // 虚线分割线：每5格，颜色 #C7DFF7
-    ctx.save();
-    ctx.strokeStyle = '#C7DFF7';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 10]);
-    ctx.beginPath();
-
-    // 左手模式：从图纸最右侧开始，往左每5格画一条（不受视图滚动影响）
-    if (params.handedness === 'left') {
-      // 从 pattern.width - 5 开始，向左递减
-      for (let column = boardLayout.boardWidth - 5; column >= 0; column -= 5) {
-        const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
-        ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
-        ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
-      }
-    } else {
-      // 右手模式：从左上开始，往右每5格画一条
-      for (let column = Math.ceil(visible.startCol / 5) * 5; column <= visible.endCol + 1; column += 5) {
-        if (column >= 0 && column < boardLayout.boardWidth) {
-          const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
-          ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
-          ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
-        }
-      }
-    }
-
-    // 横线：两种模式都从顶部开始往下画
-    const dashStartRow = Math.ceil(visible.startRow / 5) * 5;
-    for (let row = dashStartRow; row <= visible.endRow + 1; row += 5) {
-      const y = Math.round(viewport.ty + row * viewport.cellPx) + 0.5;
-      ctx.moveTo(viewport.tx + visible.startCol * viewport.cellPx, y);
-      ctx.lineTo(viewport.tx + (visible.endCol + 1) * viewport.cellPx, y);
-    }
-    ctx.stroke();
-    ctx.restore();
-
-    // 实线分割线：每10格，加粗处理
-    ctx.save();
-    ctx.strokeStyle = 'rgba(180,143,204,.28)';
-    ctx.lineWidth = viewport.cellPx >= 16 ? 3 : 2;
-    ctx.setLineDash([]);
-    ctx.beginPath();
-
-    // 左手模式：从图纸最右侧开始，往左每10格画一条
-    if (params.handedness === 'left') {
-      for (let column = boardLayout.boardWidth - 10; column >= 0; column -= 10) {
-        const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
-        ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
-        ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
-      }
-    } else {
-      // 右手模式：从左上开始，往右每10格画一条
-      for (let column = Math.max(0, Math.ceil(visible.startCol / 10) * 10); column <= visible.endCol + 1; column += 10) {
-        const x = Math.round(viewport.tx + column * viewport.cellPx) + 0.5;
-        ctx.moveTo(x, viewport.ty + visible.startRow * viewport.cellPx);
-        ctx.lineTo(x, viewport.ty + (visible.endRow + 1) * viewport.cellPx);
-      }
-    }
-
-    for (let row = Math.max(0, Math.ceil(visible.startRow / 10) * 10); row <= visible.endRow + 1; row += 10) {
-      const y = Math.round(viewport.ty + row * viewport.cellPx) + 0.5;
-      ctx.moveTo(viewport.tx + visible.startCol * viewport.cellPx, y);
-      ctx.lineTo(viewport.tx + (visible.endCol + 1) * viewport.cellPx, y);
-    }
-    ctx.stroke();
-    ctx.restore();
-  }
+  drawBeadBoardDividers({
+    ctx,
+    originX: viewport.tx,
+    originY: viewport.ty,
+    cellPx: viewport.cellPx,
+    visibleRange: visible,
+    boardWidth: boardLayout.boardWidth,
+    handedness: params.handedness,
+  });
 
   if (currentBoardCell) {
     const x = viewport.tx + currentBoardCell.x * viewport.cellPx;
@@ -734,11 +641,7 @@ export function drawFocusCanvas(params: {
     }
   }
 
-  ctx.save();
-  ctx.strokeStyle = 'rgba(93,83,74,.22)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(viewport.tx, viewport.ty, boardWidth, boardHeight);
-  ctx.restore();
+  drawBeadBoardBorder(ctx, viewport.tx, viewport.ty, boardWidth, boardHeight);
 
   ctx.restore();
 }

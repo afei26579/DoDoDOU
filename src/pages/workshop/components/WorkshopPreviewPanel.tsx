@@ -124,13 +124,25 @@ export function WorkshopPreviewPanel({ previewCanvasRef, bubbleCanvasRef }: Prev
     if (!moved) onTap?.();
   };
 
+  const handlePanelPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('#preview-toggle-btn')) return;
+
+    beginDrag(
+      event,
+      target.closest('[data-resize-handle]') ? 'resize' : 'move',
+      panel.x,
+      panel.y,
+    );
+  };
+
   return (
     <>
       <section
         ref={panelRef}
         className={`${styles.previewPanel} ${open ? '' : styles.previewCollapsed}`}
         style={{ width: panel.w, height: panel.h, left: panel.x, top: panel.y }}
-        onPointerDown={(e) => beginDrag(e, (e.target as HTMLElement).closest('[data-resize-handle]') ? 'resize' : 'move', panel.x, panel.y)}
+        onPointerDown={handlePanelPointerDown}
         onPointerMove={updateDrag}
         onPointerUp={(e) => finishDrag(e)}
         onPointerCancel={(e) => finishDrag(e)}
@@ -138,7 +150,17 @@ export function WorkshopPreviewPanel({ previewCanvasRef, bubbleCanvasRef }: Prev
         <div id="preview-drag-layer" className={styles.previewDragLayer} aria-hidden="true" />
         <div id="preview-canvas-wrap" className={styles.previewCanvasWrap}>
           <canvas ref={previewCanvasRef} id="preview-canvas" className={styles.previewCanvas} />
-          <button id="preview-toggle-btn" type="button" className={styles.previewToggle} onClick={() => setOpen(false)} title="折叠预览">✕</button>
+          <button
+            id="preview-toggle-btn"
+            type="button"
+            className={styles.previewToggle}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => setOpen(false)}
+            aria-label="最小化预览"
+            title="最小化预览"
+          >
+            <span aria-hidden="true" />
+          </button>
         </div>
         <button id="preview-resize-handle" type="button" className={styles.resizeHandle} data-resize-handle aria-label="调整预览大小">⤡</button>
       </section>

@@ -19,6 +19,8 @@ import {
   paintGridToCanvas,
   TRANSPARENT_GRID_LIGHT,
   toCellPoint,
+  type EditorBackgroundMode,
+  type EditorBeadShape,
 } from './editor/WorkshopEditor.utils';
 
 type Tool = 'brush' | 'eraser' | 'fill' | 'picker' | 'pan';
@@ -272,6 +274,28 @@ function cloneGrid(grid: string[][]) {
   return grid.map((row) => [...row]);
 }
 
+function getMinimumCanvasSize(grid: string[][]) {
+  let minCols = 1;
+  let minRows = 1;
+
+  grid.forEach((row, rowIndex) => {
+    row.forEach((hex, colIndex) => {
+      if (!hex || hex === 'transparent') return;
+      minCols = Math.max(minCols, colIndex + 1);
+      minRows = Math.max(minRows, rowIndex + 1);
+    });
+  });
+
+  return { cols: minCols, rows: minRows };
+}
+
+function resizeGridCanvas(grid: string[][], nextCols: number, nextRows: number) {
+  return Array.from({ length: nextRows }, (_, rowIndex) => {
+    const currentRow = grid[rowIndex] ?? [];
+    return Array.from({ length: nextCols }, (_, colIndex) => currentRow[colIndex] ?? '');
+  });
+}
+
 function cloneHistory(history: string[][][]) {
   return history.map((snap) => snap.map((row) => [...row]));
 }
@@ -421,8 +445,13 @@ export function WorkshopEditorPage() {
   const [grid, setGrid] = useState(() => createEmptyGrid(32, 32));
   const [cols, setCols] = useState(32);
   const [rows, setRows] = useState(32);
+  const [baseCanvasSize, setBaseCanvasSize] = useState({ cols: 1, rows: 1 });
   const [bgColor, setBgColor] = useState(TRANSPARENT_GRID_LIGHT);
   const [showGrid, setShowGrid] = useState(true);
+  const [showDividers, setShowDividers] = useState(true);
+  const [showColorCodes, setShowColorCodes] = useState(false);
+  const [beadShape, setBeadShape] = useState<EditorBeadShape>('circle');
+  const [backgroundMode, setBackgroundMode] = useState<EditorBackgroundMode>('checker');
   const [tool, setTool] = useState<Tool>('pan');
   const [brushSize, setBrushSize] = useState(1);
   const [eraserSize, setEraserSize] = useState(1);
@@ -465,6 +494,13 @@ export function WorkshopEditorPage() {
     }),
     [activePaletteGroup, editorBrand, editorPalette],
   );
+  const minimumCanvasSize = useMemo(() => {
+    const contentSize = getMinimumCanvasSize(grid);
+    return {
+      cols: Math.max(baseCanvasSize.cols, contentSize.cols),
+      rows: Math.max(baseCanvasSize.rows, contentSize.rows),
+    };
+  }, [baseCanvasSize.cols, baseCanvasSize.rows, grid]);
 
   useEffect(() => {
     if (!paletteGroups.some((group) => group.key === activePaletteGroup)) {
@@ -596,6 +632,8 @@ export function WorkshopEditorPage() {
       if (project?.patternResult) {
         const { patternResult } = project;
         const nextGrid = restoredGrid ? cloneGrid(restoredGrid) : buildGridFromPattern(patternResult);
+        const isBlankSource = project.sourceType === 'blank';
+        setBaseCanvasSize(isBlankSource ? { cols: 1, rows: 1 } : { cols: patternResult.width, rows: patternResult.height });
 
         console.log('[WorkshopEditorPage] patternResult', patternResult);
         console.log('[WorkshopEditorPage] gridFromPatternResult', nextGrid);
@@ -605,11 +643,13 @@ export function WorkshopEditorPage() {
         setGrid(nextGrid);
         loadedGridForPersistence = cloneGrid(nextGrid);
       } else if (restoredGrid) {
+        setBaseCanvasSize({ cols: 1, rows: 1 });
         setCols(restoredGrid[0]?.length ?? 32);
         setRows(restoredGrid.length);
         setGrid(restoredGrid);
         loadedGridForPersistence = cloneGrid(restoredGrid);
       } else {
+        setBaseCanvasSize({ cols: 1, rows: 1 });
         const initialGrid = cloneGrid(grid);
         loadedGridForPersistence = cloneGrid(initialGrid);
       }
@@ -680,11 +720,16 @@ export function WorkshopEditorPage() {
       rows,
       bgColor,
       showGrid,
+      showDividers,
+      showColorCodes,
+      beadShape,
+      backgroundMode,
+      colorSystem: editorBrand,
       displayWidth,
       displayHeight,
       visibleCellSize: cellSize * scale,
     });
-  }, [bgColor, cols, grid, rows, scale, showGrid, toolbarHeight]);
+  }, [backgroundMode, beadShape, bgColor, cols, editorBrand, grid, rows, scale, showColorCodes, showDividers, showGrid, toolbarHeight]);
 
   useEffect(() => {
     return () => {
@@ -806,6 +851,8 @@ export function WorkshopEditorPage() {
     historyRef.current = nextHistory;
     historyIndexRef.current = nextIndex;
     setHistoryState({ index: nextIndex, length: nextHistory.length });
+    setCols(nextGrid[0]?.length ?? 0);
+    setRows(nextGrid.length);
     setGrid(nextGrid);
     schedulePersistState(nextGrid, nextHistory, nextIndex);
   };
@@ -1472,37 +1519,26 @@ export function WorkshopEditorPage() {
     setClearConfirmOpen(false);
   };
 
-  const handleResizeGrid = (direction: 'top' | 'bottom' | 'left' | 'right', countStr: string) => {
-    const count = parseInt(countStr, 10);
-    if (isNaN(count) || count <= 0) return;
+  const handleResizeCanvas = (nextCols: number, nextRows: number) => {
+    const requestedCols = Math.floor(nextCols);
+    const requestedRows = Math.floor(nextRows);
+    if (!Number.isFinite(requestedCols) || !Number.isFinite(requestedRows)) return;
 
-    const currentGrid = grid;
-    let newGrid: string[][];
+    const safeCols = Math.max(minimumCanvasSize.cols, requestedCols);
+    const safeRows = Math.max(minimumCanvasSize.rows, requestedRows);
+    const didClamp = safeCols !== requestedCols || safeRows !== requestedRows;
 
-    if (direction === 'top') {
-      const emptyRow = Array(currentGrid[0]?.length ?? cols).fill('');
-      newGrid = [...Array(count).fill(emptyRow).map(() => [...emptyRow]), ...currentGrid];
-    } else if (direction === 'bottom') {
-      const emptyRow = Array(currentGrid[0]?.length ?? cols).fill('');
-      newGrid = [...currentGrid, ...Array(count).fill(emptyRow).map(() => [...emptyRow])];
-    } else if (direction === 'left') {
-      newGrid = currentGrid.map((row) => [...Array(count).fill(''), ...row]);
-    } else {
-      newGrid = currentGrid.map((row) => [...row, ...Array(count).fill('')]);
+    if (safeCols === cols && safeRows === rows) {
+      if (didClamp) {
+        showToast(`画布不能小于已编辑范围，最小 ${minimumCanvasSize.cols} × ${minimumCanvasSize.rows}`);
+      }
+      return;
     }
 
-    // Update cols and rows based on direction
-    if (direction === 'top' || direction === 'bottom') {
-      setRows((prev) => prev + count);
-    } else {
-      setCols((prev) => prev + count);
-    }
-
-    commitGrid(newGrid);
-
-    const posLabel = direction === 'top' ? '顶部' : direction === 'bottom' ? '底部' : direction === 'left' ? '左侧' : '右侧';
-    const label = direction === 'top' || direction === 'bottom' ? '行' : '列';
-    setToast(`已在${posLabel}添加 ${count} ${label}`);
+    commitGrid(resizeGridCanvas(grid, safeCols, safeRows));
+    showToast(didClamp
+      ? `画布不能小于已编辑范围，已调整为 ${safeCols} × ${safeRows}`
+      : `画布尺寸已调整为 ${safeCols} × ${safeRows}`);
   };
 
   useEffect(() => {
@@ -1806,12 +1842,22 @@ export function WorkshopEditorPage() {
         brand={editorBrand}
         cols={cols}
         rows={rows}
+        minCols={minimumCanvasSize.cols}
+        minRows={minimumCanvasSize.rows}
+        showDividers={showDividers}
+        showColorCodes={showColorCodes}
+        beadShape={beadShape}
+        backgroundMode={backgroundMode}
         onClose={() => setSettingsOpen(false)}
         onBrandChange={(newBrand) => {
           setEditorBrand(newBrand);
           setDownloadBrand(newBrand);
         }}
-        onResizeGrid={handleResizeGrid}
+        onResizeCanvas={handleResizeCanvas}
+        onShowDividersChange={setShowDividers}
+        onShowColorCodesChange={setShowColorCodes}
+        onBeadShapeChange={setBeadShape}
+        onBackgroundModeChange={setBackgroundMode}
       />
     </main>
   );
