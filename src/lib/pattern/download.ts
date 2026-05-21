@@ -52,13 +52,17 @@ type Layout = {
   swIdFS: number;
   swCntFS: number;
   listTitleFS: number;
+  swAreaW: number;
   swAreaH: number;
   listH: number;
+  contentW: number;
   canvasW: number;
   canvasH: number;
+  xContent: number;
   xRulerL: number;
   xGrid: number;
   xRulerR: number;
+  xSwatches: number;
   yTitle: number;
   yRulerTop: number;
   yGrid: number;
@@ -180,15 +184,21 @@ function calcLayout(cols: number, rows: number, cellSize: number, divStep: numbe
   const swIdFS = Math.max(8, swH * 0.5 * 0.55);
   const swCntFS = Math.max(7, swH * 0.5 * 0.48);
   const listTitleFS = subFS;
+  const swCols = Math.min(paletteCount, SW_COLS);
+  const swAreaW = swCols * swW + Math.max(0, swCols - 1) * swGapX;
   const swAreaH = swRows * swH + Math.max(0, swRows - 1) * swGapY;
   const listH = listTitleFS + padTop * 0.3 + swAreaH;
 
-  const canvasW = padLR + rulerSz + gridW + rulerSz + padLR;
+  const gridGroupW = rulerSz + gridW + rulerSz;
+  const contentW = Math.max(gridGroupW, swAreaW);
+  const canvasW = padLR + contentW + padLR;
   const canvasH = padTop + titleH + padTop + rulerSz + gridH + rulerSz + padTop + listH + swBotPad + padBot;
 
-  const xRulerL = padLR;
-  const xGrid = padLR + rulerSz;
+  const xContent = padLR;
+  const xRulerL = xContent + (contentW - gridGroupW) / 2;
+  const xGrid = xRulerL + rulerSz;
   const xRulerR = xGrid + gridW;
+  const xSwatches = xContent + (contentW - swAreaW) / 2;
   const yTitle = padTop;
   const yRulerTop = padTop + titleH + padTop;
   const yGrid = yRulerTop + rulerSz;
@@ -199,8 +209,8 @@ function calcLayout(cols: number, rows: number, cellSize: number, divStep: numbe
 
   return {
     G, cellSize, divStep, gridW, gridH, cols, rows, padTop, padLR, padBot, rulerSz, rulerFS, titleFS, subFS, titleH,
-    cellLabelFS, swW, swH, swGapX, swGapY, swBotPad, SW_COLS, swRows, swIdFS, swCntFS, listTitleFS, swAreaH, listH,
-    canvasW, canvasH, xRulerL, xGrid, xRulerR, yTitle, yRulerTop, yGrid, yRulerBot, yRulerL, yList, ySwatches,
+    cellLabelFS, swW, swH, swGapX, swGapY, swBotPad, SW_COLS, swRows, swIdFS, swCntFS, listTitleFS, swAreaW, swAreaH, listH,
+    contentW, canvasW, canvasH, xContent, xRulerL, xGrid, xRulerR, xSwatches, yTitle, yRulerTop, yGrid, yRulerBot, yRulerL, yList, ySwatches,
   };
 }
 
@@ -282,13 +292,13 @@ function drawRulerRight(ctx: CanvasContextLike, L: Layout) {
 }
 
 function drawSwatches(ctx: CanvasContextLike, L: Layout, palette: PaletteItem[]) {
-  const { xGrid, ySwatches, swW, swH, swGapX, swGapY, SW_COLS, swIdFS, swCntFS } = L;
+  const { xSwatches, ySwatches, swW, swH, swGapX, swGapY, SW_COLS, swIdFS, swCntFS } = L;
   const halfH = swH / 2;
   const rad = Math.max(3, swH * 0.12);
   palette.forEach((p, i) => {
     const col = i % SW_COLS;
     const row = Math.floor(i / SW_COLS);
-    const sx = xGrid + col * (swW + swGapX);
+    const sx = xSwatches + col * (swW + swGapX);
     const sy = ySwatches + row * (swH + swGapY);
     ctx.save();
     rrect(ctx, sx, sy, swW, swH, rad);
@@ -342,15 +352,15 @@ function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options:
   ctx.textBaseline = 'top';
   ctx.fillStyle = '#1e1a12';
   ctx.font = `700 ${r(L.titleFS)}px "Noto Sans SC", sans-serif`;
-  ctx.fillText(normalizedPatternName, L.xGrid, L.yTitle);
+  ctx.fillText(normalizedPatternName, L.xContent, L.yTitle, L.contentW);
 
   ctx.fillStyle = '#7a6e5e';
   ctx.font = `400 ${r(L.subFS)}px "Noto Sans SC", sans-serif`;
   const total = palette.reduce((s, p) => s + p.count, 0);
   const authorSuffix = normalizedAuthorName ? `  ·  设计：${normalizedAuthorName}` : '';
-  ctx.fillText(`${cols} × ${rows}  ·  共 ${total} 颗  ·  分割线每 ${divStep} 格${authorSuffix}`, L.xGrid, L.yTitle + L.titleFS + L.padTop * 0.4);
+  ctx.fillText(`${cols} × ${rows}  ·  共 ${total} 颗  ·  分割线每 ${divStep} 格${authorSuffix}`, L.xContent, L.yTitle + L.titleFS + L.padTop * 0.4, L.contentW);
   const gridLineColor = gridColor || '#c0b49a';
-  drawDash(ctx, L.xRulerL, L.yRulerTop - L.padTop * 0.22, L.xRulerR + L.rulerSz, L.yRulerTop - L.padTop * 0.22, gridLineColor, Math.max(0.8, L.G / 1200));
+  drawDash(ctx, L.xContent, L.yRulerTop - L.padTop * 0.22, L.xContent + L.contentW, L.yRulerTop - L.padTop * 0.22, gridLineColor, Math.max(0.8, L.G / 1200));
 
   drawRulerTop(ctx, L);
   drawRulerBottom(ctx, L);
@@ -414,11 +424,11 @@ function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options:
   ctx.lineWidth = Math.max(1.5, L.G / 900);
   ctx.strokeRect(Math.round(L.xGrid), Math.round(L.yGrid), Math.round(L.gridW), Math.round(L.gridH));
 
-  drawDash(ctx, L.xRulerL, L.yList - L.padTop * 0.22, L.xRulerR + L.rulerSz, L.yList - L.padTop * 0.22, '#c0b49a', Math.max(0.8, L.G / 1200));
+  drawDash(ctx, L.xContent, L.yList - L.padTop * 0.22, L.xContent + L.contentW, L.yList - L.padTop * 0.22, '#c0b49a', Math.max(0.8, L.G / 1200));
   ctx.textBaseline = 'top';
   ctx.fillStyle = '#1e1a12';
   ctx.font = `600 ${r(L.listTitleFS)}px "Noto Sans SC", sans-serif`;
-  ctx.fillText('物料清单', L.xGrid, L.yList);
+  ctx.fillText('物料清单', L.xContent, L.yList);
 
   if (showSymbolStats) {
     drawSwatches(ctx, L, palette);
@@ -428,7 +438,7 @@ function drawToCanvas(canvas: CanvasLike, patternResult: PatternResult, options:
     ctx.save();
     ctx.fillStyle = 'rgba(93,83,74,0.62)';
     ctx.font = `700 ${r(L.subFS)}px "Noto Sans SC", sans-serif`;
-    ctx.fillText('物料清单已关闭', L.xGrid, L.ySwatches + L.swAreaH + L.swGapY);
+    ctx.fillText('物料清单已关闭', L.xContent, L.ySwatches + L.swAreaH + L.swGapY);
     ctx.restore();
   }
 
