@@ -1,5 +1,21 @@
 import type { CropTransform } from '../../features/workshop/model/types';
 
+function getCropTransformFrameSize(cropTransform: CropTransform, fallbackFrameSize: number) {
+  const safeFallbackFrameSize = Number.isFinite(fallbackFrameSize) && fallbackFrameSize > 0 ? fallbackFrameSize : 1;
+  return typeof cropTransform.frameSize === 'number' && Number.isFinite(cropTransform.frameSize) && cropTransform.frameSize > 0
+    ? cropTransform.frameSize
+    : safeFallbackFrameSize;
+}
+
+export function getCropOffsetForFrame(cropTransform: CropTransform, frameSize: number) {
+  const transformFrameSize = getCropTransformFrameSize(cropTransform, frameSize);
+  const offsetScale = frameSize / transformFrameSize;
+  return {
+    x: cropTransform.x * offsetScale,
+    y: cropTransform.y * offsetScale,
+  };
+}
+
 export function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
@@ -31,6 +47,8 @@ export function createCropCanvas(params: {
   const scale = cropTransform.scale || 1;
   const rotate = cropTransform.rotate ?? 0;
   const renderScale = outputSize / frameSize;
+  const transformFrameSize = getCropTransformFrameSize(cropTransform, frameSize);
+  const offsetScale = outputSize / transformFrameSize;
   const baseScale = Math.min(frameSize / imageWidth, frameSize / imageHeight);
   const drawWidth = imageWidth * baseScale * renderScale;
   const drawHeight = imageHeight * baseScale * renderScale;
@@ -38,9 +56,9 @@ export function createCropCanvas(params: {
   ctx.scale(dpr, dpr);
   ctx.translate(outputSize / 2, outputSize / 2);
   ctx.rotate((rotate * Math.PI) / 180);
-  ctx.translate(cropTransform.x * renderScale, cropTransform.y * renderScale);
+  ctx.translate(cropTransform.x * offsetScale, cropTransform.y * offsetScale);
   ctx.scale(scale, scale);
-  ctx.drawImage(image, -drawWidth / (2 * scale), -drawHeight / (2 * scale), drawWidth / scale, drawHeight / scale);
+  ctx.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
 
   return canvas;
 }

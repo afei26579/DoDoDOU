@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { drawPatternPreview } from '../../../lib/pattern/preview';
+import { getCropOffsetForFrame } from '../../../lib/pattern/crop';
 import type { CropTransform, PatternCell, PatternResult, UploadedImage } from '../../../features/workshop/model/types';
 
 type WorkshopPreviewAreaProps = {
@@ -43,7 +44,7 @@ function WorkshopImageView({
   onPointerUp,
 }: Pick<WorkshopPreviewAreaProps, 'cropTransform' | 'uploadedImage' | 'onPointerDown' | 'onPointerMove' | 'onPointerUp'>) {
   const viewportRef = useRef<HTMLDivElement | null>(null);
-  const [baseSize, setBaseSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+  const [baseSize, setBaseSize] = useState<{ width: number; height: number; frameSize: number }>({ width: 0, height: 0, frameSize: 0 });
 
   useEffect(() => {
     let alive = true;
@@ -55,11 +56,13 @@ function WorkshopImageView({
       if (!viewport || !imageWidth || !imageHeight) return;
       const frameRect = viewport.getBoundingClientRect();
       if (!frameRect.width || !frameRect.height) return;
-      const fitScale = Math.min(frameRect.width / imageWidth, frameRect.height / imageHeight);
+      const frameSize = Math.min(frameRect.width, frameRect.height);
+      const fitScale = Math.min(frameSize / imageWidth, frameSize / imageHeight);
       if (!alive) return;
       setBaseSize({
         width: imageWidth * fitScale,
         height: imageHeight * fitScale,
+        frameSize,
       });
     };
 
@@ -75,10 +78,12 @@ function WorkshopImageView({
         if (!viewport || !previewImageWidth || !previewImageHeight) return;
         const frameRect = viewport.getBoundingClientRect();
         if (!frameRect.width || !frameRect.height) return;
-        const fitScale = Math.min(frameRect.width / previewImageWidth, frameRect.height / previewImageHeight);
+        const frameSize = Math.min(frameRect.width, frameRect.height);
+        const fitScale = Math.min(frameSize / previewImageWidth, frameSize / previewImageHeight);
         setBaseSize({
           width: previewImageWidth * fitScale,
           height: previewImageHeight * fitScale,
+          frameSize,
         });
       };
       image.src = uploadedImage.dataUrl;
@@ -91,25 +96,31 @@ function WorkshopImageView({
     };
   }, [uploadedImage]);
 
+  const cropOffset = baseSize.frameSize
+    ? getCropOffsetForFrame(cropTransform, baseSize.frameSize)
+    : { x: cropTransform.x, y: cropTransform.y };
+
   const imageStyle = baseSize.width && baseSize.height
     ? {
         width: `${baseSize.width}px`,
         height: `${baseSize.height}px`,
-        transform: `translate(-50%, -50%) translate(${cropTransform.x}px, ${cropTransform.y}px) scale(${cropTransform.scale})`,
+        transform: `translate(-50%, -50%) translate(${cropOffset.x}px, ${cropOffset.y}px) scale(${cropTransform.scale})`,
       }
     : {
-        transform: `translate(-50%, -50%) translate(${cropTransform.x}px, ${cropTransform.y}px) scale(${cropTransform.scale})`,
+        transform: `translate(-50%, -50%) translate(${cropOffset.x}px, ${cropOffset.y}px) scale(${cropTransform.scale})`,
       };
 
   return (
     <div className="workshop-canvas__panel workshop-canvas__panel--fade-in">
-      <div ref={viewportRef} className="workshop-canvas__viewport" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}>
-        <img
-          className="workshop-canvas__image"
-          src={uploadedImage?.dataUrl}
-          alt={uploadedImage?.name ?? ''}
-          style={imageStyle}
-        />
+      <div className="workshop-canvas__viewport-shell" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}>
+        <div ref={viewportRef} className="workshop-canvas__viewport">
+          <img
+            className="workshop-canvas__image"
+            src={uploadedImage?.dataUrl}
+            alt={uploadedImage?.name ?? ''}
+            style={imageStyle}
+          />
+        </div>
         <div className="workshop-canvas__crop-frame">
           <div className="workshop-canvas__crop-grid" />
         </div>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CropTransform, PatternResult, WorkshopFlowState } from '../../features/workshop/model/types';
 import { getBeadBrandLabel } from '../../lib/pattern/brand';
-import { createCropCanvas, loadImage } from '../../lib/pattern/crop';
+import { createCropCanvas, getCropOffsetForFrame, loadImage } from '../../lib/pattern/crop';
 import { WorkshopCreateSettingsSheet } from './components/WorkshopCreateSettingsSheet';
 import { WorkshopGenerateButton } from './components/WorkshopGenerateButton';
 import { WorkshopHero } from './components/WorkshopHero';
@@ -82,6 +82,7 @@ export function WorkshopPage({
     originY: number;
     maxOffsetX: number;
     maxOffsetY: number;
+    frameSize: number;
   } | null>(null);
   const [isStatsSheetOpen, setIsStatsSheetOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
@@ -144,27 +145,29 @@ export function WorkshopPage({
     const target = event.target as HTMLElement;
     if (target.closest('button')) return;
 
-    const viewport = event.currentTarget;
-    const frame = viewport.querySelector('.workshop-canvas__crop-frame') as HTMLElement | null;
-    const image = viewport.querySelector('.workshop-canvas__image') as HTMLImageElement | null;
+    const shell = event.currentTarget;
+    const viewport = shell.querySelector('.workshop-canvas__viewport') as HTMLElement | null;
+    const image = shell.querySelector('.workshop-canvas__image') as HTMLImageElement | null;
 
-    if (!frame || !image) return;
+    if (!viewport || !image) return;
 
-    const frameRect = frame.getBoundingClientRect();
-    const currentScale = cropTransform.scale || 1;
+    const frameRect = viewport.getBoundingClientRect();
+    const frameSize = Math.min(frameRect.width, frameRect.height);
+    const currentOffset = getCropOffsetForFrame(cropTransform, frameSize);
     const displayWidth = image.getBoundingClientRect().width;
     const displayHeight = image.getBoundingClientRect().height;
-    const maxOffsetX = Math.max(0, (displayWidth * currentScale - frameRect.width) / 2);
-    const maxOffsetY = Math.max(0, (displayHeight * currentScale - frameRect.height) / 2);
+    const maxOffsetX = Math.max(0, (displayWidth - frameRect.width) / 2);
+    const maxOffsetY = Math.max(0, (displayHeight - frameRect.height) / 2);
 
     dragStateRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
-      originX: cropTransform.x,
-      originY: cropTransform.y,
+      originX: currentOffset.x,
+      originY: currentOffset.y,
       maxOffsetX,
       maxOffsetY,
+      frameSize,
     };
 
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -183,6 +186,7 @@ export function WorkshopPage({
       ...current,
       x: nextX,
       y: nextY,
+      frameSize: dragState.frameSize,
     }));
   };
 

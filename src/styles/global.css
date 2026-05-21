@@ -613,6 +613,12 @@ p { margin: 0; }
 .workshop-canvas__switcher { position: absolute; inset: 0; }
 .workshop-canvas__panel { position: absolute; inset: 0; }
 .workshop-canvas__panel--fade-in { animation: workshop-fade-in 220ms ease-out; }
+.workshop-canvas__viewport-shell {
+  --crop-frame-outset: 7px;
+  position: absolute;
+  inset: var(--crop-frame-outset);
+  touch-action: none;
+}
 .workshop-canvas__viewport {
   position: absolute;
   inset: 0;
@@ -682,27 +688,48 @@ p { margin: 0; }
   pointer-events: none;
   animation: workshop-fade-in 180ms ease-out;
 }
-.workshop-canvas__crop-frame { position: absolute; inset: 0; border: 1px solid #D8B4E2; box-shadow: none; border-radius: 0; pointer-events: none; }
+.workshop-canvas__crop-frame {
+  --crop-frame-line: rgba(255, 255, 255, 0.92);
+  --crop-frame-shadow: rgba(70, 38, 86, 0.78);
+  --crop-frame-corner: #fff7ff;
+  position: absolute;
+  inset: calc(-1 * var(--crop-frame-outset));
+  border: 1px solid var(--crop-frame-line);
+  box-shadow:
+    inset 0 0 0 1px rgba(70, 38, 86, 0.34),
+    0 0 0 1px rgba(255, 255, 255, 0.28);
+  border-radius: 0;
+  pointer-events: none;
+}
 .workshop-canvas__crop-frame::before,
 .workshop-canvas__crop-frame::after { content: ''; position: absolute; inset: 0; pointer-events: none; }
 .workshop-canvas__crop-frame::before {
+  inset: var(--crop-frame-outset);
   background:
-    linear-gradient(to right, transparent 0 calc(50% - 0.5px), #D8B4E2 calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px) 100%),
-    linear-gradient(to bottom, transparent 0 calc(50% - 0.5px), #D8B4E2 calc(50% - 0.5px) calc(50% + 0.5px), transparent calc(50% + 0.5px) 100%);
-  opacity: 0.02;
+    linear-gradient(to right, transparent 0 calc(33.333% - 0.5px), rgba(255, 255, 255, 0.42) calc(33.333% - 0.5px) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px) calc(66.666% - 0.5px), rgba(255, 255, 255, 0.42) calc(66.666% - 0.5px) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px) 100%),
+    linear-gradient(to bottom, transparent 0 calc(33.333% - 0.5px), rgba(255, 255, 255, 0.42) calc(33.333% - 0.5px) calc(33.333% + 0.5px), transparent calc(33.333% + 0.5px) calc(66.666% - 0.5px), rgba(255, 255, 255, 0.42) calc(66.666% - 0.5px) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px) 100%);
+  filter: drop-shadow(0 0 1px rgba(70, 38, 86, 0.72));
 }
 .workshop-canvas__crop-frame::after {
   background:
-    linear-gradient(#D8B4E2, #D8B4E2) left top / 30px 1px no-repeat,
-    linear-gradient(#D8B4E2, #D8B4E2) left top / 1px 30px no-repeat,
-    linear-gradient(#D8B4E2, #D8B4E2) right top / 30px 1px no-repeat,
-    linear-gradient(#D8B4E2, #D8B4E2) right top / 1px 30px no-repeat,
-    linear-gradient(#D8B4E2, #D8B4E2) left bottom / 30px 1px no-repeat,
-    linear-gradient(#D8B4E2, #D8B4E2) left bottom / 1px 30px no-repeat,
-    linear-gradient(#D8B4E2, #D8B4E2) right bottom / 30px 1px no-repeat,
-    linear-gradient(#D8B4E2, #D8B4E2) right bottom / 1px 30px no-repeat;
+    linear-gradient(var(--crop-frame-corner), var(--crop-frame-corner)) left top / 42px 3px no-repeat,
+    linear-gradient(var(--crop-frame-corner), var(--crop-frame-corner)) left top / 3px 42px no-repeat,
+    linear-gradient(var(--crop-frame-corner), var(--crop-frame-corner)) right top / 42px 3px no-repeat,
+    linear-gradient(var(--crop-frame-corner), var(--crop-frame-corner)) right top / 3px 42px no-repeat,
+    linear-gradient(var(--crop-frame-corner), var(--crop-frame-corner)) left bottom / 42px 3px no-repeat,
+    linear-gradient(var(--crop-frame-corner), var(--crop-frame-corner)) left bottom / 3px 42px no-repeat,
+    linear-gradient(var(--crop-frame-corner), var(--crop-frame-corner)) right bottom / 42px 3px no-repeat,
+    linear-gradient(var(--crop-frame-corner), var(--crop-frame-corner)) right bottom / 3px 42px no-repeat,
+    linear-gradient(var(--crop-frame-shadow), var(--crop-frame-shadow)) left top / 46px 7px no-repeat,
+    linear-gradient(var(--crop-frame-shadow), var(--crop-frame-shadow)) left top / 7px 46px no-repeat,
+    linear-gradient(var(--crop-frame-shadow), var(--crop-frame-shadow)) right top / 46px 7px no-repeat,
+    linear-gradient(var(--crop-frame-shadow), var(--crop-frame-shadow)) right top / 7px 46px no-repeat,
+    linear-gradient(var(--crop-frame-shadow), var(--crop-frame-shadow)) left bottom / 46px 7px no-repeat,
+    linear-gradient(var(--crop-frame-shadow), var(--crop-frame-shadow)) left bottom / 7px 46px no-repeat,
+    linear-gradient(var(--crop-frame-shadow), var(--crop-frame-shadow)) right bottom / 46px 7px no-repeat,
+    linear-gradient(var(--crop-frame-shadow), var(--crop-frame-shadow)) right bottom / 7px 46px no-repeat;
 }
-.workshop-canvas__crop-grid { position: absolute; inset: 0; background-image: linear-gradient(to right, rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.1) 1px, transparent 1px); background-size: 33.333% 100%, 100% 33.333%; border-radius: 0; }
+.workshop-canvas__crop-grid { position: absolute; inset: var(--crop-frame-outset); background-image: linear-gradient(to right, rgba(70,38,86,0.16) 1px, transparent 1px), linear-gradient(to bottom, rgba(70,38,86,0.16) 1px, transparent 1px); background-size: 33.333% 100%, 100% 33.333%; border-radius: 0; mix-blend-mode: multiply; }
 .workshop-canvas__crop-hint { position: absolute; left: 16px; bottom: 16px; padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,0.86); color: var(--accent-strong); font-size: 12px; font-weight: 700; }
 .workshop-canvas__actions { position: absolute; right: 14px; bottom: 14px; display: flex; gap: 10px; }
 .workshop-canvas__action { width: 48px; height: 48px; border: 0; border-radius: 18px; background: rgba(255,255,255,0.92); color: var(--accent-strong); display: grid; place-items: center; box-shadow: 0 14px 24px rgba(93,83,74,0.15); }

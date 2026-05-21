@@ -19,6 +19,7 @@ export type CropTransform = {
   x: number;
   y: number;
   rotate?: number;
+  frameSize?: number;
 };
 
 export type WorkshopConfig = {
