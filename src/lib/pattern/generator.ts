@@ -1,8 +1,6 @@
 import { buildPalette, getVendorCode, type PatternPaletteColor, type PatternRgb } from './color-system';
-import { findClosestPaletteColorP0 } from './color-match';
 import { createCropCanvas, loadImage as loadCropImage } from './crop';
-import { getPaletteLabCache } from './palette-cache';
-import { getP0TopK, getPatternSizeTier } from './pattern-size';
+import { generatePatternCore } from './generate-core';
 import type { CropTransform, PatternCell, PatternResult, WorkshopConfig, WorkshopStyle } from '../../features/workshop/model/types';
 
 function colorDistance(a: PatternRgb, b: PatternRgb) {
@@ -170,8 +168,15 @@ export async function generatePatternFromImage(params: {
   const height = config.canvasSize;
   const palette = buildPalette(config.brand);
   const algorithm = config.algorithm ?? 'legacy';
-  const p0PaletteCache = algorithm === 'perceptual-p0' ? getPaletteLabCache(palette) : null;
-  const p0TopK = getP0TopK(getPatternSizeTier(config.canvasSize));
+  if (algorithm === 'perceptual-p0') {
+    return generatePatternCore({
+      imageData,
+      canvasSize: config.canvasSize,
+      palette,
+      config,
+    }).pattern;
+  }
+
   const rawCells: PatternCell[] = [];
   const cellWidth = canvas.width / width;
   const cellHeight = canvas.height / height;
@@ -203,9 +208,7 @@ export async function generatePatternFromImage(params: {
         continue;
       }
 
-      const closest = p0PaletteCache
-        ? findClosestPaletteColorP0(representative, p0PaletteCache.colors, p0TopK).color
-        : findClosestPaletteColor(representative, palette);
+      const closest = findClosestPaletteColor(representative, palette);
       rawCells.push({
         x,
         y,

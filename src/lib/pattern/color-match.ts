@@ -1,4 +1,4 @@
-import { labDistance, rgbToLab } from './color-convert';
+import { labDistance, rgbToLab, type LabColor } from './color-convert';
 import type { PatternRgb } from './color-system';
 import { deltaE2000 } from './delta-e';
 import type { PatternPaletteColorLab } from './palette-cache';
@@ -8,10 +8,10 @@ export type PatternColorMatch = {
   bestDeltaE: number;
   secondBestDeltaE: number;
   deltaGap: number;
+  ciedeCallCount: number;
 };
 
-export function findClosestPaletteColorP0(target: PatternRgb, palette: PatternPaletteColorLab[], topK: number): PatternColorMatch {
-  const targetLab = rgbToLab(target);
+export function findClosestPaletteColorByLabP0(targetLab: LabColor, palette: PatternPaletteColorLab[], topK: number): PatternColorMatch {
   const candidates = palette
     .map((color) => ({
       color,
@@ -44,5 +44,10 @@ export function findClosestPaletteColorP0(target: PatternRgb, palette: PatternPa
     bestDeltaE,
     secondBestDeltaE,
     deltaGap: Math.max(0, secondBestDeltaE - bestDeltaE),
+    ciedeCallCount: candidates.length,
   };
+}
+
+export function findClosestPaletteColorP0(target: PatternRgb, palette: PatternPaletteColorLab[], topK: number): PatternColorMatch {
+  return findClosestPaletteColorByLabP0(rgbToLab(target), palette, topK);
 }
