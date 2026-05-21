@@ -64,7 +64,6 @@ export async function fetchGalleryList(query: GalleryListQuery = {}): Promise<Ga
   } catch (error) {
     if (!shouldUseMockFallback(error)) throw error;
 
-    console.debug('[gallery] server unavailable, using mock list', error);
     const list = getMockGalleryList();
     const pageSize = query.pageSize ?? 12;
     const page = query.page ?? 1;
@@ -89,7 +88,6 @@ export async function fetchGalleryDetail(itemId: string): Promise<GalleryDetailR
   } catch (error) {
     if (!shouldUseMockFallback(error)) throw error;
 
-    console.debug('[gallery] server unavailable, using mock detail', error);
     const item = getMockGalleryDetail(itemId);
     if (!item) throw error;
     return { item };

@@ -55,16 +55,6 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     void markWorkshopProjectOpened(projectId);
   }, [projectId]);
 
-  useEffect(() => {
-    console.debug('[WorkshopShell] current project snapshot', {
-      projectId,
-      beadingState: state.beadingState,
-      hasPatternResult: Boolean(state.patternResult),
-      viewMode: state.viewMode,
-      mode,
-    });
-  }, [mode, projectId, state.beadingState, state.patternResult, state.viewMode]);
-
   const [isPublishOpen, setIsPublishOpen] = useState(false);
 
   useEffect(() => {
@@ -270,14 +260,9 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         onMirrorPattern={handleMirrorPattern}
         onRemoveBackground={handleRemoveBackground}
         onUploadImage={() => {
-          console.debug('[workshop] file input click requested', { projectId, hasInput: Boolean(fileInputRef.current) });
           fileInputRef.current?.click();
-          window.setTimeout(() => {
-            console.debug('[workshop] file input click finished', { activeElement: document.activeElement?.tagName });
-          }, 0);
         }}
         onReuploadImage={() => {
-          console.debug('[workshop] reupload requested', { projectId });
           fileInputRef.current?.click();
         }}
         onViewPattern={() => navigate(`/workshop/result/${projectId ?? createProjectId()}`)}

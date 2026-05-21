@@ -639,13 +639,8 @@ export function WorkshopEditorPage() {
   };
 
   const handleBack = async () => {
-    try {
-      await persistEditorSnapshot();
-    } catch (error) {
-      console.error('[WorkshopEditorPage] back save failed', error);
-    } finally {
-      navigate(-1);
-    }
+    await persistEditorSnapshot().catch(() => undefined);
+    navigate(-1);
   };
 
   const openRenameDialog = () => {
@@ -676,8 +671,7 @@ export function WorkshopEditorPage() {
       setProjectTitle(nextTitle);
       setRenameOpen(false);
       showToast('图纸名称已更新');
-    } catch (error) {
-      console.error('[WorkshopEditorPage] rename failed', error);
+    } catch {
       showToast('名称保存失败，请稍后再试');
     } finally {
       setTitleSaving(false);
@@ -703,17 +697,11 @@ export function WorkshopEditorPage() {
     try {
       await persistEditorSnapshot();
       navigate(`/workshop/focus/${projectId}`, { state: { returnTo: `/workshop/editor/${projectId}` } });
-    } catch (error) {
-      console.error('[WorkshopEditorPage] open focus mode save failed', error);
+    } catch {
       showToast('保存失败，请稍后再试');
     }
   };
 
-  useEffect(() => {
-    if (!downloadModalOpen) return;
-    console.log('[WorkshopEditorPage] download grid', grid);
-    console.log('[WorkshopEditorPage] download patternResult', downloadPatternResult);
-  }, [downloadModalOpen, downloadPatternResult, grid]);
   const isDownloadModalOpen = downloadModalOpen;
 
   useEffect(() => {
@@ -767,16 +755,6 @@ export function WorkshopEditorPage() {
       setEditorBrand(projectBrand);
       setDownloadBrand(projectBrand);
 
-      console.log('[WorkshopEditorPage] project status snapshot', {
-        projectId,
-        beadingState: project?.beadingState ?? null,
-        status: project?.status ?? null,
-        kind: project?.kind ?? null,
-        hasPatternResult: Boolean(project?.patternResult),
-        hasEditorState: Boolean(project?.editorState),
-        hasDraftState: Boolean(restoredState),
-      });
-
       let loadedGridForPersistence: string[][] | null = null;
 
       if (project?.patternResult) {
@@ -784,9 +762,6 @@ export function WorkshopEditorPage() {
         const nextGrid = restoredGrid ? cloneGrid(restoredGrid) : buildGridFromPattern(patternResult);
         const isBlankSource = project.sourceType === 'blank';
         setBaseCanvasSize(isBlankSource ? { cols: 1, rows: 1 } : { cols: patternResult.width, rows: patternResult.height });
-
-        console.log('[WorkshopEditorPage] patternResult', patternResult);
-        console.log('[WorkshopEditorPage] gridFromPatternResult', nextGrid);
 
         setCols(nextGrid[0]?.length ?? patternResult.width);
         setRows(nextGrid.length || patternResult.height);

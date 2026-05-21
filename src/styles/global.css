@@ -1411,6 +1411,22 @@ p { margin: 0; }
   font-weight: 900;
   color: var(--ink);
 }
+.workshop-create-settings-sheet__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.workshop-create-settings-sheet__text-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(181, 234, 215, 0.34);
+  color: #3d7869;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
 .workshop-create-settings-sheet__segmented {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1433,6 +1449,35 @@ p { margin: 0; }
   background: #ffffff;
   color: var(--ink);
   box-shadow: 0 8px 18px rgba(93, 83, 74, 0.08), inset 0 0 0 1px rgba(181, 234, 215, 0.66);
+}
+.workshop-create-settings-sheet__ranges {
+  display: grid;
+  gap: 12px;
+}
+.workshop-create-settings-sheet__range {
+  display: grid;
+  gap: 8px;
+}
+.workshop-create-settings-sheet__range > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.workshop-create-settings-sheet__range strong {
+  color: rgba(93, 83, 74, 0.84);
+  font-size: 13px;
+}
+.workshop-create-settings-sheet__range output {
+  min-width: 34px;
+  text-align: right;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 900;
+}
+.workshop-create-settings-sheet__range input {
+  width: 100%;
+  accent-color: #b5ead7;
 }
 .workshop-control {
   display: grid;

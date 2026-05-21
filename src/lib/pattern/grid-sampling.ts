@@ -3,7 +3,8 @@ import { labDistance, rgbToLab } from './color-convert';
 import type { PatternRgb } from './color-system';
 import type { WorkingCell } from './algo-types';
 import type { PatternSizeTier } from './pattern-size';
-import type { WorkshopStyle } from '../../features/workshop/model/types';
+import type { WorkshopAdvancedConfig, WorkshopStyle } from '../../features/workshop/model/types';
+import { clampAdvancedValue, getAdvancedOffset } from './advanced-config';
 
 const ALPHA_THRESHOLD = 128;
 
@@ -18,18 +19,19 @@ type GridSamplingParams = {
   height: number;
   sizeTier: PatternSizeTier;
   style: WorkshopStyle;
+  advanced: WorkshopAdvancedConfig;
 };
 
-function getTrimRatio(sizeTier: PatternSizeTier) {
-  if (sizeTier === 'small') return 0.06;
-  if (sizeTier === 'medium') return 0.1;
-  return 0.14;
+function getTrimRatio(sizeTier: PatternSizeTier, noiseReduction: number) {
+  const base = sizeTier === 'small' ? 0.06 : sizeTier === 'medium' ? 0.1 : 0.14;
+  const normalized = clampAdvancedValue(noiseReduction) / 100;
+  return Math.max(0, Math.min(0.26, base * (0.55 + normalized * 0.9)));
 }
 
-function getMinAlphaRatio(sizeTier: PatternSizeTier) {
-  if (sizeTier === 'small') return 0.18;
-  if (sizeTier === 'medium') return 0.14;
-  return 0.14;
+function getMinAlphaRatio(sizeTier: PatternSizeTier, alphaSensitivity: number) {
+  const base = sizeTier === 'small' ? 0.18 : sizeTier === 'medium' ? 0.14 : 0.14;
+  const sensitivity = getAdvancedOffset(alphaSensitivity);
+  return Math.max(0.04, Math.min(0.38, base * (1 + sensitivity * 0.5)));
 }
 
 function getDarkPreserveThreshold(sizeTier: PatternSizeTier, style: WorkshopStyle) {
@@ -37,16 +39,16 @@ function getDarkPreserveThreshold(sizeTier: PatternSizeTier, style: WorkshopStyl
   return style === '写实' ? base + 0.06 : base;
 }
 
-function getDominantBucketSize(sizeTier: PatternSizeTier) {
-  if (sizeTier === 'small') return 32;
-  if (sizeTier === 'medium') return 24;
-  return 20;
+function getDominantBucketSize(sizeTier: PatternSizeTier, noiseReduction: number) {
+  const base = sizeTier === 'small' ? 32 : sizeTier === 'medium' ? 24 : 20;
+  const normalized = clampAdvancedValue(noiseReduction) / 100;
+  return Math.max(12, Math.round(base * (0.75 + normalized * 0.5)));
 }
 
-function getDominantRatioThreshold(sizeTier: PatternSizeTier) {
-  if (sizeTier === 'small') return 0.16;
-  if (sizeTier === 'medium') return 0.18;
-  return 0.22;
+function getDominantRatioThreshold(sizeTier: PatternSizeTier, noiseReduction: number) {
+  const base = sizeTier === 'small' ? 0.16 : sizeTier === 'medium' ? 0.18 : 0.22;
+  const noiseOffset = getAdvancedOffset(noiseReduction);
+  return Math.max(0.1, Math.min(0.3, base - noiseOffset * 0.04));
 }
 
 function getLuminance(rgb: PatternRgb) {
@@ -191,13 +193,13 @@ function sampleCell(params: GridSamplingParams, x: number, y: number): WorkingCe
 
   const index = y * width + x;
   const alphaRatio = samples.length / totalPixels;
-  if (samples.length === 0 || alphaRatio < getMinAlphaRatio(sizeTier)) {
+  if (samples.length === 0 || alphaRatio < getMinAlphaRatio(sizeTier, params.advanced.alphaSensitivity)) {
     return createTransparentWorkingCell(x, y, index, alphaRatio);
   }
 
   const preliminaryLab = averageLab(samples);
   const sorted = [...samples].sort((a, b) => labDistance(a.lab, preliminaryLab) - labDistance(b.lab, preliminaryLab));
-  const keepCount = Math.max(1, Math.ceil(sorted.length * (1 - getTrimRatio(sizeTier))));
+  const keepCount = Math.max(1, Math.ceil(sorted.length * (1 - getTrimRatio(sizeTier, params.advanced.noiseReduction))));
   const kept = sorted.slice(0, keepCount);
   const sourceLab = averageLab(kept);
   const sourceRgb = averageRgb(kept);
@@ -208,8 +210,8 @@ function sampleCell(params: GridSamplingParams, x: number, y: number): WorkingCe
   if (darkSamples.length / samples.length >= getDarkPreserveThreshold(sizeTier, params.style)) {
     representative = getRepresentativeFromSamples(darkSamples);
   } else if (params.style !== '写实') {
-    const dominantSamples = getDominantBucketSamples(samples, getDominantBucketSize(sizeTier));
-    if (dominantSamples.length / samples.length >= getDominantRatioThreshold(sizeTier)) {
+    const dominantSamples = getDominantBucketSamples(samples, getDominantBucketSize(sizeTier, params.advanced.noiseReduction));
+    if (dominantSamples.length / samples.length >= getDominantRatioThreshold(sizeTier, params.advanced.noiseReduction)) {
       representative = getRepresentativeFromSamples(dominantSamples);
     }
   }

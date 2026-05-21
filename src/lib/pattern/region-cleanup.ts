@@ -1,7 +1,9 @@
 import type { WorkingCell } from './algo-types';
+import { getAdvancedOffset } from './advanced-config';
 import { deltaE2000 } from './delta-e';
 import type { PatternPaletteColorLab } from './palette-cache';
 import type { PatternSizeTier } from './pattern-size';
+import type { WorkshopAdvancedConfig } from '../../features/workshop/model/types';
 
 type RegionInfo = {
   id: number;
@@ -18,14 +20,32 @@ export type RegionCleanupStats = {
   preservedCellCount: number;
 };
 
-function getCleanupParams(sizeTier: PatternSizeTier) {
+function getCleanupParams(sizeTier: PatternSizeTier, advanced: WorkshopAdvancedConfig) {
+  const detailOffset = getAdvancedOffset(advanced.detailPreserve);
+  const alphaOffset = getAdvancedOffset(advanced.alphaSensitivity);
+  const tune = (base: {
+    maxArea: number;
+    maxNeighborDeltaE: number;
+    highConfidence: number;
+    dominanceRatio: number;
+    transparentRatio: number;
+    lowAlphaRatio: number;
+  }) => ({
+    maxArea: Math.max(1, Math.round(base.maxArea * (1 - detailOffset * 0.45))),
+    maxNeighborDeltaE: Math.max(2.8, base.maxNeighborDeltaE - detailOffset * 1.2),
+    highConfidence: Math.max(0.28, Math.min(0.82, base.highConfidence - detailOffset * 0.12)),
+    dominanceRatio: Math.max(0.44, Math.min(0.72, base.dominanceRatio + detailOffset * 0.08)),
+    transparentRatio: Math.max(0.48, Math.min(0.74, base.transparentRatio - alphaOffset * 0.08)),
+    lowAlphaRatio: Math.max(0.22, Math.min(0.66, base.lowAlphaRatio + alphaOffset * 0.08)),
+  });
+
   if (sizeTier === 'small') {
-    return { maxArea: 1, maxNeighborDeltaE: 4.5, highConfidence: 0.52, dominanceRatio: 0.58, transparentRatio: 0.58, lowAlphaRatio: 0.52 };
+    return tune({ maxArea: 1, maxNeighborDeltaE: 4.5, highConfidence: 0.52, dominanceRatio: 0.58, transparentRatio: 0.58, lowAlphaRatio: 0.52 });
   }
   if (sizeTier === 'medium') {
-    return { maxArea: 2, maxNeighborDeltaE: 5.5, highConfidence: 0.6, dominanceRatio: 0.55, transparentRatio: 0.62, lowAlphaRatio: 0.45 };
+    return tune({ maxArea: 2, maxNeighborDeltaE: 5.5, highConfidence: 0.6, dominanceRatio: 0.55, transparentRatio: 0.62, lowAlphaRatio: 0.45 });
   }
-  return { maxArea: 4, maxNeighborDeltaE: 6.5, highConfidence: 0.64, dominanceRatio: 0.52, transparentRatio: 0.66, lowAlphaRatio: 0.38 };
+  return tune({ maxArea: 4, maxNeighborDeltaE: 6.5, highConfidence: 0.64, dominanceRatio: 0.52, transparentRatio: 0.66, lowAlphaRatio: 0.38 });
 }
 
 function getNeighborIndices(index: number, width: number, height: number) {
@@ -149,9 +169,10 @@ export function cleanupSmallColorRegions(params: {
   height: number;
   palette: PatternPaletteColorLab[];
   sizeTier: PatternSizeTier;
+  advanced: WorkshopAdvancedConfig;
 }): { cells: WorkingCell[]; stats: RegionCleanupStats } {
-  const { cells, width, height, palette, sizeTier } = params;
-  const cleanupParams = getCleanupParams(sizeTier);
+  const { cells, width, height, palette, sizeTier, advanced } = params;
+  const cleanupParams = getCleanupParams(sizeTier, advanced);
   const paletteByColorId = new Map(palette.map((color) => [color.colorId, color] as const));
   const regions = collectRegions(cells, width, height);
   const nextCells = cells.map((cell) => ({ ...cell }));

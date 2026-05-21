@@ -5,6 +5,13 @@ export type ColorSystem = BeadBrandKey;
 export type WorkshopStyle = '写实' | '动漫' | '极简';
 export type PatternAlgorithm = 'legacy' | 'perceptual-p0';
 
+export type WorkshopAdvancedConfig = {
+  detailPreserve: number;
+  noiseReduction: number;
+  colorSimplify: number;
+  alphaSensitivity: number;
+};
+
 export type UploadedImage = {
   name: string;
   type: string;
@@ -28,6 +35,7 @@ export type WorkshopConfig = {
   style: WorkshopStyle;
   colorMergeThreshold: number;
   algorithm?: PatternAlgorithm;
+  advanced?: WorkshopAdvancedConfig;
 };
 
 export type PatternCell = {

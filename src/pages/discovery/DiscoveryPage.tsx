@@ -106,9 +106,7 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
         if (!alive) return;
         setInspirationItems(response.items.slice(0, 5));
       })
-      .catch((error) => {
-        console.debug('[discovery] inspiration gallery load failed', error);
-      });
+      .catch(() => undefined);
 
     return () => {
       alive = false;

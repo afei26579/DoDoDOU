@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CropTransform, PatternResult, WorkshopFlowState } from '../../features/workshop/model/types';
 import { getBeadBrandLabel } from '../../lib/pattern/brand';
 import { createCropCanvas, getCropOffsetForFrame, loadImage } from '../../lib/pattern/crop';
+import { generatePatternFromImage } from '../../lib/pattern/generator';
 import { WorkshopCreateSettingsSheet } from './components/WorkshopCreateSettingsSheet';
 import { WorkshopGenerateButton } from './components/WorkshopGenerateButton';
 import { WorkshopHero } from './components/WorkshopHero';
@@ -43,6 +44,27 @@ type WorkshopPageProps = {
   isHome: boolean;
   backgroundRemovalNotice?: string | null;
 };
+
+function getResultGenerationKey(params: {
+  uploadedImage: WorkshopFlowState['uploadedImage'];
+  cropTransform: CropTransform;
+  config: WorkshopFlowState['config'];
+}) {
+  const { uploadedImage, cropTransform, config } = params;
+  return JSON.stringify({
+    image: uploadedImage
+      ? {
+          name: uploadedImage.name,
+          size: uploadedImage.size,
+          width: uploadedImage.width,
+          height: uploadedImage.height,
+          dataLength: uploadedImage.dataUrl.length,
+        }
+      : null,
+    cropTransform,
+    config,
+  });
+}
 
 export function WorkshopPage({
   flowState,
@@ -87,6 +109,8 @@ export function WorkshopPage({
   const [isStatsSheetOpen, setIsStatsSheetOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [isCreateSettingsOpen, setIsCreateSettingsOpen] = useState(false);
+  const resultRegenerateRequestRef = useRef(0);
+  const resultRegenerateKeyRef = useRef<string | null>(null);
   const [isCropPreviewOpen, setIsCropPreviewOpen] = useState(false);
   const [cropPreviewDataUrl, setCropPreviewDataUrl] = useState<string | null>(null);
   const [cropPreviewSize, setCropPreviewSize] = useState({ width: 420, height: 300 });
@@ -116,6 +140,43 @@ export function WorkshopPage({
       alive = false;
     };
   }, [uploadedImage?.dataUrl]);
+
+  useEffect(() => {
+    if (!isCreateSettingsOpen || mode !== 'result' || !uploadedImage?.dataUrl) return;
+    resultRegenerateKeyRef.current = getResultGenerationKey({ uploadedImage, cropTransform, config });
+  }, [isCreateSettingsOpen]);
+
+  useEffect(() => {
+    if (!isCreateSettingsOpen || mode !== 'result' || !uploadedImage?.dataUrl || !onPatternResultChange) {
+      resultRegenerateRequestRef.current += 1;
+      return;
+    }
+
+    const generationKey = getResultGenerationKey({ uploadedImage, cropTransform, config });
+    if (resultRegenerateKeyRef.current === generationKey) return;
+
+    const requestId = resultRegenerateRequestRef.current + 1;
+    resultRegenerateRequestRef.current = requestId;
+
+    const timer = window.setTimeout(() => {
+      generatePatternFromImage({
+        imageUrl: uploadedImage.dataUrl,
+        config,
+        cropTransform,
+        cropFrameSize: 1200,
+      })
+        .then((result) => {
+          if (resultRegenerateRequestRef.current !== requestId) return;
+          resultRegenerateKeyRef.current = generationKey;
+          onPatternResultChange(result);
+        })
+        .catch(() => undefined);
+    }, 420);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [config, cropTransform, isCreateSettingsOpen, mode, onPatternResultChange, uploadedImage]);
 
   useEffect(() => {
     if (!isCropPreviewOpen || !uploadedImage) return;
@@ -267,7 +328,7 @@ export function WorkshopPage({
         projectId={projectId}
         mode={mode}
         algorithm={config.algorithm ?? 'legacy'}
-        onOpenSettings={!isHome && mode === 'create' ? () => setIsCreateSettingsOpen(true) : undefined}
+        onOpenSettings={!isHome ? () => setIsCreateSettingsOpen(true) : undefined}
       />
       <WorkshopPreviewArea
         mode={mode}
@@ -436,7 +497,7 @@ export function WorkshopPage({
       />
 
       <WorkshopCreateSettingsSheet
-        open={!isHome && mode === 'create' && isCreateSettingsOpen}
+        open={!isHome && isCreateSettingsOpen}
         config={config}
         onConfigChange={onConfigChange}
         onClose={() => setIsCreateSettingsOpen(false)}

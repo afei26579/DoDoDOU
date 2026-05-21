@@ -15,7 +15,7 @@ export function WorkshopHero({ projectId, mode = 'create', algorithm = 'legacy',
   return (
     <section className="page-hero" aria-label="工坊引导">
       <h2>灵感在这里碰撞成画</h2>
-      {mode === 'create' && onOpenSettings ? (
+      {onOpenSettings ? (
         <button type="button" className="workshop-create-settings-button" aria-label="打开生成设置" title="设置" onClick={onOpenSettings}>
           <span className="workshop-create-settings-button__badge">{getAlgorithmLabel(algorithm)}</span>
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">

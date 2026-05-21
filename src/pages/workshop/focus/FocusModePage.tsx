@@ -607,22 +607,6 @@ export function FocusModePage() {
     [currentBlock],
   );
   const currentBlockCompleted = currentBlock ? isBlockCompleted(currentBlock, completedCellKeySet) : false;
-  useEffect(() => {
-    if (!currentBlock) return;
-    const exitPoint = getBlockExitPoint(currentBlock, handedness, horizontalDirection, verticalDirection);
-    console.debug('[FocusModePage] selected block exit point', {
-      blockKey: currentBlock.key,
-      colorKey: currentBlock.colorKey,
-      label: currentBlock.label,
-      cellCount: currentBlock.cells.length,
-      handedness,
-      horizontalDirection,
-      verticalDirection,
-      resolvedHorizontalDirection: resolveHorizontalDirection(handedness, horizontalDirection),
-      resolvedVerticalDirection: resolveVerticalDirection(verticalDirection),
-      exitPoint,
-    });
-  }, [currentBlock, handedness, horizontalDirection, verticalDirection]);
   const effectiveActiveColorKey = currentBlock?.colorKey ?? activeColorKey;
   const currentColor = useMemo(
     () => palette.find((item) => getColorKey(item) === effectiveActiveColorKey) ?? null,
