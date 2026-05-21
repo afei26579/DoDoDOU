@@ -17,7 +17,7 @@
   z-index: 201;
   width: min(100%, 560px);
   margin: 0 auto;
-  max-height: 85vh;
+  max-height: calc(100dvh - var(--safe-top, env(safe-area-inset-top, 0px)) - 16px);
   overflow-y: auto;
   animation: slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
   box-shadow: 0 -4px 32px rgba(216, 180, 226, 0.28);
@@ -58,7 +58,7 @@
 }
 
 .content {
-  padding: 16px 16px 22px;
+  padding: 16px 16px calc(22px + var(--safe-bottom, env(safe-area-inset-bottom, 0px)));
 }
 
 .section {
@@ -77,7 +77,7 @@
 /* 品牌选择 */
 .brandGrid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
   gap: 6px;
 }
 

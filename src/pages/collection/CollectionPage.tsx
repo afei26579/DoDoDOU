@@ -159,13 +159,6 @@ export function CollectionPage() {
   const favoriteItemIdSet = useMemo(() => new Set(favoriteItemIds), [favoriteItemIds]);
   const sortFavoriteItemIdSet = useMemo(() => new Set(sortFavoriteItemIds), [sortFavoriteItemIds]);
   const visibleGalleryItems = useMemo(() => sortGalleryItems(items, activeFilter, sortFavoriteItemIdSet), [activeFilter, items, sortFavoriteItemIdSet]);
-  const visibleGalleryColumns = useMemo(() => {
-    const columns: GalleryItemCard[][] = [[], []];
-    visibleGalleryItems.forEach((item, index) => {
-      columns[index % 2].push(item);
-    });
-    return columns;
-  }, [visibleGalleryItems]);
   const favoriteItems = useMemo(() => items.filter((item) => favoriteItemIdSet.has(item.id)), [favoriteItemIdSet, items]);
   const myPatternCards = useMemo(() => [
     ...favoriteItems.map((item, index) => ({
@@ -414,11 +407,11 @@ export function CollectionPage() {
           {loading ? <div className="collection-empty">正在加载画册…</div> : null}
           {error ? <div className="collection-empty">{error}</div> : null}
           {!loading && !error ? (
-            visibleGalleryColumns.map((column, columnIndex) => (
-              <div key={columnIndex} className="collection-masonry__column">
-                {column.map((item, itemIndex) => renderGalleryCard(item, itemIndex * 2 + columnIndex))}
-              </div>
-            ))
+            visibleGalleryItems.length > 0 ? (
+              visibleGalleryItems.map((item, index) => renderGalleryCard(item, index))
+            ) : (
+              <div className="collection-empty">暂时没有符合条件的作品</div>
+            )
           ) : null}
         </section>
       ) : null}
