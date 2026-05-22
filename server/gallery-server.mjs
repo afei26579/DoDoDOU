@@ -3,7 +3,10 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createAuthRouter } from './auth.mjs';
 import { prisma } from './db.mjs';
+import { createInventoryRouter } from './inventory.mjs';
+import { createProjectsRouter } from './projects.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -92,7 +95,8 @@ function applyCors(req, res, next) {
 
   if (origin && (allowAnyOrigin || config.allowedOrigins.includes(origin))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Internal-Token');
     res.setHeader('Access-Control-Max-Age', '600');
   }
@@ -152,6 +156,9 @@ const publishRateLimiter = createRateLimiter({
 
 app.use(applyCors);
 app.use(globalRateLimiter);
+app.use('/api/auth', createAuthRouter(prisma));
+app.use('/api/inventory', createInventoryRouter(prisma));
+app.use('/api/projects', createProjectsRouter(prisma));
 
 async function ensureDirs() {
   await mkdir(itemsDir, { recursive: true });

@@ -23,17 +23,124 @@ enum GalleryItemStatus {
   offline
 }
 
+enum UserRole {
+  user
+  admin
+}
+
+enum UserStatus {
+  active
+  disabled
+  deleted
+}
+
+enum WorkshopProjectStatus {
+  editing
+  ready
+  paused
+  completed
+  archived
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String?        @unique
+  phone         String?        @unique
+  passwordHash  String?
+  name          String?
+  avatarUrl     String?
+  role          UserRole       @default(user)
+  status        UserStatus     @default(active)
+  sessions      Session[]
+  oauthAccounts OAuthAccount[]
+  inventory     BeadInventoryItem[]
+  projects      WorkshopProject[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  userAgent String?
+  ipAddress String?
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model OAuthAccount {
+  id                String   @id @default(cuid())
+  userId            String
+  provider          String
+  providerAccountId String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model BeadInventoryItem {
+  id                String   @id @default(cuid())
+  userId            String
+  brandKey          String
+  code              String
+  hex               String
+  quantity          Int
+  lowStockThreshold Int?
+  location          String?
+  favorite          Boolean  @default(false)
+  note              String?
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([userId, brandKey, code])
+  @@index([userId])
+}
+
+model WorkshopProject {
+  id              String                @id @default(cuid())
+  userId          String
+  clientProjectId String
+  title           String
+  status          WorkshopProjectStatus @default(editing)
+  sourceType      String
+  sourceItemId    String?
+  coverUrl        String?
+  previewUrl      String?
+  width           Int?
+  height          Int?
+  beadCount       Int?
+  paletteCount    Int?
+  payloadJson     Json
+  lastOpenedAt    DateTime?
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@unique([userId, clientProjectId])
+  @@index([userId, updatedAt])
+}
+
 model GalleryAuthor {
-  id        String       @id
+  id        String        @id
   name      String
   avatarUrl String?
   items     GalleryItem[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 }
 
 model GalleryAsset {
-  id             String   @id
+  id             String       @id
   type           String
   url            String
   thumbUrl       String?
@@ -46,13 +153,13 @@ model GalleryAsset {
   previewForItem GalleryItem? @relation("PreviewAssetRelation")
   sourceForItem  GalleryItem? @relation("SourceAssetRelation")
   exportForItem  GalleryItem? @relation("ExportAssetRelation")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 }
 
 model GalleryPatternDetail {
-  id                 String       @id @default(cuid())
-  itemId             String       @unique
+  id                 String      @id @default(cuid())
+  itemId             String      @unique
   width              Int
   height             Int
   beadCount          Int
@@ -61,44 +168,44 @@ model GalleryPatternDetail {
   configJson         Json
   patternPayloadJson Json
   sourceMetadataJson Json?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
-  item               GalleryItem  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  item               GalleryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
 }
 
 model GalleryItem {
-  id             String             @id
+  id             String                @id
   title          String
   description    String?
-  sourceType     GallerySourceType   @default(community)
-  visibility     GalleryVisibility   @default(public)
-  status         GalleryItemStatus   @default(published)
+  sourceType     GallerySourceType     @default(community)
+  visibility     GalleryVisibility     @default(public)
+  status         GalleryItemStatus     @default(published)
   authorId       String
-  author         GalleryAuthor       @relation(fields: [authorId], references: [id])
-  coverAssetId   String @unique
-  coverAsset     GalleryAsset        @relation("CoverAssetRelation", fields: [coverAssetId], references: [id])
-  previewAssetId String @unique
-  previewAsset   GalleryAsset        @relation("PreviewAssetRelation", fields: [previewAssetId], references: [id])
-  sourceAssetId  String? @unique
-  sourceAsset    GalleryAsset?       @relation("SourceAssetRelation", fields: [sourceAssetId], references: [id])
-  exportAssetId  String? @unique
-  exportAsset    GalleryAsset?       @relation("ExportAssetRelation", fields: [exportAssetId], references: [id])
+  author         GalleryAuthor         @relation(fields: [authorId], references: [id])
+  coverAssetId   String                @unique
+  coverAsset     GalleryAsset          @relation("CoverAssetRelation", fields: [coverAssetId], references: [id])
+  previewAssetId String                @unique
+  previewAsset   GalleryAsset          @relation("PreviewAssetRelation", fields: [previewAssetId], references: [id])
+  sourceAssetId  String?               @unique
+  sourceAsset    GalleryAsset?         @relation("SourceAssetRelation", fields: [sourceAssetId], references: [id])
+  exportAssetId  String?               @unique
+  exportAsset    GalleryAsset?         @relation("ExportAssetRelation", fields: [exportAssetId], references: [id])
   patternDetail  GalleryPatternDetail?
   style          String
   brand          String
   canvasSize     Int
   tagsJson       Json
-  viewCount      Int                @default(0)
-  likeCount      Int                @default(0)
-  favoriteCount  Int                @default(0)
-  downloadCount  Int                @default(0)
-  shareCount     Int                @default(0)
-  hotScore       Int                @default(0)
+  viewCount      Int                   @default(0)
+  likeCount      Int                   @default(0)
+  favoriteCount  Int                   @default(0)
+  downloadCount  Int                   @default(0)
+  shareCount     Int                   @default(0)
+  hotScore       Int                   @default(0)
   coverWidth     Int?
   coverHeight    Int?
-  sortWeight     Int                @default(0)
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
+  sortWeight     Int                   @default(0)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
   publishedAt    DateTime?
 
   @@index([publishedAt])

@@ -1,13 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../../features/auth/model/AuthProvider';
 import { fetchGalleryList } from '../../features/gallery/model/api';
 import type { GalleryItemCard, GallerySortKey } from '../../features/gallery/model/types';
 import {
   groupWorkshopProjects,
+  listLocalWorkshopProjects,
   listWorkshopProjects,
   type WorkshopProjectCard,
   type WorkshopProjectRecord,
 } from '../../features/workshop/model/projectStore';
+import { syncRemoteWorkshopProjects } from '../../features/workshop/model/projectApi';
 
 const collectionFilters = [
   { label: '全部', tab: 'all', iconSrc: '/assets/system_icons/all.png', activeIconSrc: '/assets/system_icons/all_active.png' },
@@ -96,6 +99,7 @@ function formatMyProjectSummary(project: WorkshopProjectCard) {
 export function CollectionPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { status: authStatus, user, isAuthenticated } = useAuth();
   const [items, setItems] = useState<GalleryItemCard[]>([]);
   const [myItems, setMyItems] = useState<WorkshopProjectRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,8 +109,12 @@ export function CollectionPage() {
   const [sortFavoriteItemIds] = useState<string[]>(() => readFavoriteGalleryItemIds());
   const [patternsExpanded, setPatternsExpanded] = useState(false);
   const [beadingExpanded, setBeadingExpanded] = useState(false);
+  const [localProjectCount, setLocalProjectCount] = useState(0);
+  const [isSyncingProjects, setIsSyncingProjects] = useState(false);
+  const [projectSyncMessage, setProjectSyncMessage] = useState('');
   const activeFilter = useMemo(() => getFilterFromParams(searchParams), [searchParams]);
   const gallerySort = useMemo(() => getSortFromFilter(activeFilter), [activeFilter]);
+  const migrationStorageKey = user ? `dodoudou.projects.migration.completed.${user.id}` : '';
 
   useEffect(() => {
     let alive = true;
@@ -132,6 +140,7 @@ export function CollectionPage() {
   }, [gallerySort]);
 
   useEffect(() => {
+    if (authStatus === 'loading') return;
     let alive = true;
     setMyLoading(true);
     listWorkshopProjects()
@@ -150,7 +159,66 @@ export function CollectionPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [authStatus, isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !migrationStorageKey) {
+      setLocalProjectCount(0);
+      return;
+    }
+
+    if (localStorage.getItem(migrationStorageKey) === 'true') {
+      setLocalProjectCount(0);
+      return;
+    }
+
+    let alive = true;
+    void listLocalWorkshopProjects()
+      .then((projects) => {
+        if (!alive) return;
+        setLocalProjectCount(projects.length);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setLocalProjectCount(0);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [isAuthenticated, migrationStorageKey]);
+
+  const handleSyncLocalProjects = async () => {
+    if (!migrationStorageKey || isSyncingProjects) return;
+
+    setIsSyncingProjects(true);
+    setProjectSyncMessage('');
+    try {
+      const localProjects = await listLocalWorkshopProjects();
+      if (!localProjects.length) {
+        localStorage.setItem(migrationStorageKey, 'true');
+        setLocalProjectCount(0);
+        return;
+      }
+
+      const response = await syncRemoteWorkshopProjects(localProjects);
+      localStorage.setItem(migrationStorageKey, 'true');
+      setLocalProjectCount(0);
+      setMyItems(response.items);
+      setProjectSyncMessage(`已同步 ${response.stats.created + response.stats.updated + response.stats.conflicted} 个作品`);
+    } catch (err) {
+      setProjectSyncMessage(err instanceof Error ? err.message : '作品同步失败，请稍后再试');
+    } finally {
+      setIsSyncingProjects(false);
+    }
+  };
+
+  const dismissLocalProjectSync = () => {
+    if (!migrationStorageKey) return;
+    localStorage.setItem(migrationStorageKey, 'true');
+    setLocalProjectCount(0);
+    setProjectSyncMessage('');
+  };
 
   const myGroups = useMemo(() => groupWorkshopProjects(myItems), [myItems]);
   const myRecentItems = myGroups.recent.slice(0, 5);
@@ -275,9 +343,35 @@ export function CollectionPage() {
 
       {activeFilter === '我的' ? (
         <section className="collection-my-library" aria-label="我的作品">
+          <section className={`inventory-sync-panel ${isAuthenticated ? 'is-remote' : ''}`} aria-label="作品同步状态">
+            <div>
+              <strong>{isAuthenticated ? '云端作品' : '本地作品'}</strong>
+              <span>
+                {authStatus === 'loading'
+                  ? '正在读取账号状态'
+                  : isAuthenticated
+                    ? projectSyncMessage || user?.email || user?.name || '当前账号'
+                    : '登录后可同步图纸、草稿和拼豆进度'}
+              </span>
+            </div>
+            {isAuthenticated && localProjectCount > 0 ? (
+              <div className="inventory-sync-panel__actions">
+                <button type="button" onClick={handleSyncLocalProjects} disabled={isSyncingProjects}>
+                  {isSyncingProjects ? '同步中...' : `同步本地 ${localProjectCount} 个`}
+                </button>
+                <button type="button" onClick={dismissLocalProjectSync}>
+                  暂不处理
+                </button>
+              </div>
+            ) : !isAuthenticated && authStatus !== 'loading' ? (
+              <button type="button" onClick={() => navigate('/login?redirect=/collection?tab=my')}>
+                登录
+              </button>
+            ) : null}
+          </section>
          
 
-          {myLoading ? <div className="collection-empty">正在读取本地作品…</div> : null}
+          {myLoading ? <div className="collection-empty">正在读取作品…</div> : null}
 
           {!myLoading && myItems.length === 0 && favoriteItems.length === 0 ? (
             <div className="collection-empty">这里会显示你保存的图纸、草稿、收藏和最近进度。</div>
