@@ -43,20 +43,22 @@ enum WorkshopProjectStatus {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  email         String?        @unique
-  phone         String?        @unique
-  passwordHash  String?
-  name          String?
-  avatarUrl     String?
-  role          UserRole       @default(user)
-  status        UserStatus     @default(active)
-  sessions      Session[]
-  oauthAccounts OAuthAccount[]
-  inventory     BeadInventoryItem[]
-  projects      WorkshopProject[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id               String              @id @default(cuid())
+  email            String?             @unique
+  phone            String?             @unique
+  passwordHash     String?
+  name             String?
+  avatarUrl        String?
+  role             UserRole            @default(user)
+  status           UserStatus          @default(active)
+  sessions         Session[]
+  oauthAccounts    OAuthAccount[]
+  inventory        BeadInventoryItem[]
+  projects         WorkshopProject[]
+  galleryAuthors   GalleryAuthor[]
+  galleryFavorites GalleryFavorite[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
 }
 
 model Session {
@@ -132,8 +134,10 @@ model WorkshopProject {
 
 model GalleryAuthor {
   id        String        @id
+  userId    String?       @unique
   name      String
   avatarUrl String?
+  user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   items     GalleryItem[]
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
@@ -201,6 +205,7 @@ model GalleryItem {
   downloadCount  Int                   @default(0)
   shareCount     Int                   @default(0)
   hotScore       Int                   @default(0)
+  favorites      GalleryFavorite[]
   coverWidth     Int?
   coverHeight    Int?
   sortWeight     Int                   @default(0)
@@ -211,4 +216,17 @@ model GalleryItem {
   @@index([publishedAt])
   @@index([sortWeight])
   @@index([hotScore])
+}
+
+model GalleryFavorite {
+  id        String      @id @default(cuid())
+  userId    String
+  itemId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      GalleryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+
+  @@unique([userId, itemId])
+  @@index([userId, createdAt])
+  @@index([itemId])
 }

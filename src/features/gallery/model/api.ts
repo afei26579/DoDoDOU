@@ -1,4 +1,12 @@
-import type { GalleryDetailResponse, GalleryListQuery, GalleryListResponse, PublishGalleryPayload, PublishGalleryResponse } from './types';
+import type {
+  GalleryDetailResponse,
+  GalleryFavoriteResponse,
+  GalleryFavoritesResponse,
+  GalleryListQuery,
+  GalleryListResponse,
+  PublishGalleryPayload,
+  PublishGalleryResponse,
+} from './types';
 import { getMockGalleryDetail, getMockGalleryList, makePublishedResponse } from './mock';
 
 function resolveApiBaseUrl() {
@@ -21,17 +29,19 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...(init?.headers ?? {}),
     },
   });
 
+  const payload = await response.json().catch(() => null) as { message?: string } | null;
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    throw new Error(payload?.message || `Request failed: ${response.status}`);
   }
 
-  return (await response.json()) as T;
+  return payload as T;
 }
 
 function shouldUseMockFallback(error: unknown) {
@@ -102,5 +112,58 @@ export async function publishGalleryItem(payload: PublishGalleryPayload): Promis
   return requestJson<PublishGalleryResponse>(`/api/gallery/publish`, {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchMyGalleryItems(): Promise<GalleryListResponse> {
+  if (USE_MOCK) {
+    return { items: [], nextPage: null, total: 0 };
+  }
+
+  return requestJson<GalleryListResponse>('/api/gallery/my-items');
+}
+
+export async function fetchFavoriteGalleryItems(): Promise<GalleryFavoritesResponse> {
+  if (USE_MOCK) {
+    return { itemIds: [], items: [] };
+  }
+
+  return requestJson<GalleryFavoritesResponse>('/api/gallery/favorites');
+}
+
+export async function syncFavoriteGalleryItems(itemIds: string[]): Promise<GalleryFavoritesResponse> {
+  if (USE_MOCK) {
+    return { itemIds, items: [] };
+  }
+
+  return requestJson<GalleryFavoritesResponse>('/api/gallery/favorites/sync', {
+    method: 'POST',
+    body: JSON.stringify({ itemIds }),
+  });
+}
+
+export async function addGalleryFavorite(itemId: string): Promise<GalleryFavoriteResponse> {
+  if (USE_MOCK) {
+    const item = getMockGalleryDetail(itemId);
+    if (!item) throw new Error('Gallery item not found');
+    return { item };
+  }
+
+  return requestJson<GalleryFavoriteResponse>(`/api/gallery/items/${encodeURIComponent(itemId)}/favorite`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function removeGalleryFavorite(itemId: string): Promise<GalleryFavoriteResponse> {
+  if (USE_MOCK) {
+    const item = getMockGalleryDetail(itemId);
+    if (!item) throw new Error('Gallery item not found');
+    return { item };
+  }
+
+  return requestJson<GalleryFavoriteResponse>(`/api/gallery/items/${encodeURIComponent(itemId)}/favorite`, {
+    method: 'DELETE',
+    body: JSON.stringify({}),
   });
 }

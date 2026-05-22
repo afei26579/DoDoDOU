@@ -24,6 +24,7 @@ export type GalleryMediaAsset = {
 export type GalleryAuthor = {
   id: string;
   name: string;
+  avatarUrl?: string | null;
   avatarAssetId?: string | null;
 };
 
@@ -127,7 +128,11 @@ export type GalleryItemCard = {
     paletteCount: number;
   };
   stats: Pick<GalleryStats, 'viewCount' | 'likeCount' | 'favoriteCount' | 'hotScore'>;
+  visibility?: GalleryVisibility;
+  status?: GalleryItemStatus;
+  isFavorite?: boolean;
   createdAt: string;
+  updatedAt?: string;
   publishedAt?: string | null;
 };
 
@@ -177,7 +182,6 @@ export type GalleryDetailResponse = {
 export type PublishGalleryPayload = {
   title: string;
   description?: string;
-  authorId: string;
   sourceType?: GallerySourceType;
   tags?: string[];
   coverUrl?: string;
@@ -193,4 +197,13 @@ export type PublishGalleryResponse = {
   itemId: string;
   status: GalleryItemStatus;
   publishedAt?: string | null;
+};
+
+export type GalleryFavoriteResponse = {
+  item: GalleryItemCard;
+};
+
+export type GalleryFavoritesResponse = {
+  itemIds: string[];
+  items: GalleryItemCard[];
 };

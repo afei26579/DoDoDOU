@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../features/auth/model/AuthProvider';
-import { fetchGalleryList } from '../../features/gallery/model/api';
+import {
+  addGalleryFavorite,
+  fetchGalleryList,
+  fetchMyGalleryItems,
+  removeGalleryFavorite,
+  syncFavoriteGalleryItems,
+} from '../../features/gallery/model/api';
 import type { GalleryItemCard, GallerySortKey } from '../../features/gallery/model/types';
 import {
   groupWorkshopProjects,
@@ -72,6 +78,29 @@ function getPatternMeta(item: GalleryItemCard) {
   };
 }
 
+function getGalleryStatusLabel(status: GalleryItemCard['status']) {
+  if (status === 'pending_review') return '待审核';
+  if (status === 'published') return '已发布';
+  if (status === 'rejected') return '未通过';
+  if (status === 'offline') return '已下架';
+  return '草稿';
+}
+
+function upsertGalleryItem(items: GalleryItemCard[], item: GalleryItemCard) {
+  const index = items.findIndex((current) => current.id === item.id);
+  if (index === -1) return [item, ...items];
+  const next = [...items];
+  next[index] = { ...next[index], ...item };
+  return next;
+}
+
+function applyFavoriteState(items: GalleryItemCard[], favoriteIds: Set<string>) {
+  return items.map((item) => ({
+    ...item,
+    isFavorite: favoriteIds.has(item.id),
+  }));
+}
+
 function readFavoriteGalleryItemIds() {
   if (typeof window === 'undefined') return [];
   try {
@@ -102,11 +131,15 @@ export function CollectionPage() {
   const { status: authStatus, user, isAuthenticated } = useAuth();
   const [items, setItems] = useState<GalleryItemCard[]>([]);
   const [myItems, setMyItems] = useState<WorkshopProjectRecord[]>([]);
+  const [myPublishedItems, setMyPublishedItems] = useState<GalleryItemCard[]>([]);
+  const [favoriteGalleryItems, setFavoriteGalleryItems] = useState<GalleryItemCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [myLoading, setMyLoading] = useState(true);
+  const [publishedLoading, setPublishedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [favoriteItemIds, setFavoriteItemIds] = useState<string[]>(() => readFavoriteGalleryItemIds());
-  const [sortFavoriteItemIds] = useState<string[]>(() => readFavoriteGalleryItemIds());
+  const [favoriteSyncMessage, setFavoriteSyncMessage] = useState('');
+  const [favoriteUpdatingIds, setFavoriteUpdatingIds] = useState<string[]>([]);
   const [patternsExpanded, setPatternsExpanded] = useState(false);
   const [beadingExpanded, setBeadingExpanded] = useState(false);
   const [localProjectCount, setLocalProjectCount] = useState(0);
@@ -122,7 +155,8 @@ export function CollectionPage() {
     fetchGalleryList({ pageSize: 24, sort: gallerySort })
       .then((response) => {
         if (!alive) return;
-        setItems(response.items);
+        const favoriteIds = new Set(favoriteItemIds);
+        setItems(applyFavoriteState(response.items, favoriteIds));
         setError(null);
       })
       .catch((err) => {
@@ -137,7 +171,7 @@ export function CollectionPage() {
     return () => {
       alive = false;
     };
-  }, [gallerySort]);
+  }, [favoriteItemIds, gallerySort]);
 
   useEffect(() => {
     if (authStatus === 'loading') return;
@@ -156,6 +190,69 @@ export function CollectionPage() {
         if (!alive) return;
         setMyLoading(false);
       });
+    return () => {
+      alive = false;
+    };
+  }, [authStatus, isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    if (authStatus === 'loading') return;
+    if (!isAuthenticated) {
+      setMyPublishedItems([]);
+      setPublishedLoading(false);
+      return;
+    }
+
+    let alive = true;
+    setPublishedLoading(true);
+    fetchMyGalleryItems()
+      .then((response) => {
+        if (!alive) return;
+        setMyPublishedItems(response.items);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setMyPublishedItems([]);
+      })
+      .finally(() => {
+        if (!alive) return;
+        setPublishedLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [authStatus, isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    if (authStatus === 'loading') return;
+
+    if (!isAuthenticated) {
+      const localFavoriteIds = readFavoriteGalleryItemIds();
+      setFavoriteItemIds(localFavoriteIds);
+      setFavoriteGalleryItems([]);
+      setFavoriteSyncMessage('');
+      return;
+    }
+
+    let alive = true;
+    const localFavoriteIds = readFavoriteGalleryItemIds();
+    setFavoriteSyncMessage('正在同步收藏');
+    syncFavoriteGalleryItems(localFavoriteIds)
+      .then((response) => {
+        if (!alive) return;
+        writeFavoriteGalleryItemIds(response.itemIds);
+        setFavoriteItemIds(response.itemIds);
+        setFavoriteGalleryItems(response.items);
+        const favoriteIds = new Set(response.itemIds);
+        setItems((current) => applyFavoriteState(current, favoriteIds));
+        setFavoriteSyncMessage(response.itemIds.length ? `已同步 ${response.itemIds.length} 个收藏` : '收藏已与账号同步');
+      })
+      .catch((err) => {
+        if (!alive) return;
+        setFavoriteSyncMessage(err instanceof Error ? err.message : '收藏同步失败');
+      });
+
     return () => {
       alive = false;
     };
@@ -225,9 +322,15 @@ export function CollectionPage() {
   const myPatterns = myGroups.patterns;
   const myProgressing = myGroups.progressing;
   const favoriteItemIdSet = useMemo(() => new Set(favoriteItemIds), [favoriteItemIds]);
-  const sortFavoriteItemIdSet = useMemo(() => new Set(sortFavoriteItemIds), [sortFavoriteItemIds]);
-  const visibleGalleryItems = useMemo(() => sortGalleryItems(items, activeFilter, sortFavoriteItemIdSet), [activeFilter, items, sortFavoriteItemIdSet]);
-  const favoriteItems = useMemo(() => items.filter((item) => favoriteItemIdSet.has(item.id)), [favoriteItemIdSet, items]);
+  const visibleGalleryItems = useMemo(() => sortGalleryItems(items, activeFilter, favoriteItemIdSet), [activeFilter, favoriteItemIdSet, items]);
+  const favoriteItems = useMemo(() => {
+    const byId = new Map<string, GalleryItemCard>();
+    [...items, ...favoriteGalleryItems].forEach((item) => byId.set(item.id, item));
+    return favoriteItemIds.flatMap((itemId) => {
+      const item = byId.get(itemId);
+      return item ? [{ ...item, isFavorite: true }] : [];
+    });
+  }, [favoriteGalleryItems, favoriteItemIds, items]);
   const myPatternCards = useMemo(() => [
     ...favoriteItems.map((item, index) => ({
       id: `favorite-${item.id}`,
@@ -257,17 +360,46 @@ export function CollectionPage() {
   const visiblePatternCards = patternsExpanded ? myPatternCards : myPatternCards.slice(0, 2);
   const visibleBeadingItems = beadingExpanded ? myProgressing : myProgressing.slice(0, 3);
 
-  const toggleFavorite = (itemId: string) => {
-    setFavoriteItemIds((current) => {
-      const next = current.includes(itemId) ? current.filter((id) => id !== itemId) : [...current, itemId];
-      writeFavoriteGalleryItemIds(next);
-      return next;
-    });
+  const toggleFavorite = async (item: GalleryItemCard) => {
+    const itemId = item.id;
+    const wasFavorite = favoriteItemIdSet.has(itemId);
+    const nextFavoriteIds = wasFavorite ? favoriteItemIds.filter((id) => id !== itemId) : [...favoriteItemIds, itemId];
+    const previousFavoriteIds = favoriteItemIds;
+    const nextFavoriteIdSet = new Set(nextFavoriteIds);
+
+    writeFavoriteGalleryItemIds(nextFavoriteIds);
+    setFavoriteItemIds(nextFavoriteIds);
+    setItems((current) => applyFavoriteState(current, nextFavoriteIdSet));
+
+    if (!isAuthenticated) return;
+
+    setFavoriteUpdatingIds((current) => [...current, itemId]);
+    setFavoriteSyncMessage('');
+    try {
+      const response = wasFavorite
+        ? await removeGalleryFavorite(itemId)
+        : await addGalleryFavorite(itemId);
+      const updatedItem = { ...response.item, isFavorite: !wasFavorite };
+      setItems((current) => current.map((currentItem) => currentItem.id === itemId ? { ...currentItem, ...updatedItem } : currentItem));
+      setFavoriteGalleryItems((current) => wasFavorite
+        ? current.filter((currentItem) => currentItem.id !== itemId)
+        : upsertGalleryItem(current, updatedItem));
+      setFavoriteSyncMessage(wasFavorite ? '已取消收藏' : '已同步收藏');
+    } catch (err) {
+      const previousFavoriteIdSet = new Set(previousFavoriteIds);
+      writeFavoriteGalleryItemIds(previousFavoriteIds);
+      setFavoriteItemIds(previousFavoriteIds);
+      setItems((current) => applyFavoriteState(current, previousFavoriteIdSet));
+      setFavoriteSyncMessage(err instanceof Error ? err.message : '收藏操作失败');
+    } finally {
+      setFavoriteUpdatingIds((current) => current.filter((id) => id !== itemId));
+    }
   };
 
   const renderGalleryCard = (item: GalleryItemCard, index: number) => {
     const meta = getPatternMeta(item);
     const isFavorite = favoriteItemIdSet.has(item.id);
+    const isUpdatingFavorite = favoriteUpdatingIds.includes(item.id);
     return (
       <article
         key={item.id}
@@ -291,9 +423,10 @@ export function CollectionPage() {
             className={`collection-card__favorite ${isFavorite ? 'is-active' : ''}`}
             aria-label={isFavorite ? '取消收藏图纸' : '收藏图纸'}
             aria-pressed={isFavorite}
+            disabled={isUpdatingFavorite}
             onClick={(event) => {
               event.stopPropagation();
-              toggleFavorite(item.id);
+              void toggleFavorite(item);
             }}
           >
             <svg viewBox="0 0 24 24" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -350,7 +483,7 @@ export function CollectionPage() {
                 {authStatus === 'loading'
                   ? '正在读取账号状态'
                   : isAuthenticated
-                    ? projectSyncMessage || user?.email || user?.name || '当前账号'
+                    ? projectSyncMessage || favoriteSyncMessage || user?.email || user?.name || '当前账号'
                     : '登录后可同步图纸、草稿和拼豆进度'}
               </span>
             </div>
@@ -369,11 +502,50 @@ export function CollectionPage() {
               </button>
             ) : null}
           </section>
-         
+
+          {isAuthenticated ? (
+            <section>
+              <div className="collection-my-section__header">
+                <h4>我的发布</h4>
+                <span>{publishedLoading ? '读取中' : `${myPublishedItems.length} 项`}</span>
+              </div>
+              <div className="collection-my-list">
+                {publishedLoading ? <div className="collection-empty collection-empty--inline">正在读取发布记录…</div> : null}
+                {!publishedLoading && myPublishedItems.length > 0 ? myPublishedItems.slice(0, 6).map((item, index) => {
+                  const meta = getPatternMeta(item);
+                  return (
+                    <article
+                      key={item.id}
+                      className="collection-my-card"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => navigate(`/collection/${encodeURIComponent(item.id)}`)}
+                    >
+                      <div className="collection-my-card__media" style={{ background: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }} aria-hidden="true">
+                        {item.coverUrl ? <img src={item.coverUrl} alt="" /> : null}
+                        <span className="collection-my-card__badge is-mine">{getGalleryStatusLabel(item.status)}</span>
+                      </div>
+                      <div className="collection-my-card__body">
+                        <strong>{item.title}</strong>
+                        <div className="collection-card__meta" aria-label={formatPatternSummary(item)}>
+                          <span className="collection-card__pill collection-card__pill--size">{meta.size}</span>
+                          <span className="collection-card__pill collection-card__pill--color">{meta.colors}</span>
+                          <span className="collection-card__pill collection-card__pill--count">{meta.beads}</span>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                }) : null}
+                {!publishedLoading && myPublishedItems.length === 0 ? (
+                  <div className="collection-empty collection-empty--inline">发布到画册后会显示在这里。</div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
 
           {myLoading ? <div className="collection-empty">正在读取作品…</div> : null}
 
-          {!myLoading && myItems.length === 0 && favoriteItems.length === 0 ? (
+          {!myLoading && myItems.length === 0 && favoriteItems.length === 0 && myPublishedItems.length === 0 ? (
             <div className="collection-empty">这里会显示你保存的图纸、草稿、收藏和最近进度。</div>
           ) : null}
 
