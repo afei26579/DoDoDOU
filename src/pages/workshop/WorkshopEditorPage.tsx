@@ -517,6 +517,7 @@ export function WorkshopEditorPage() {
     scaleOffsetX: 0,
     scaleOffsetY: 0,
   });
+  const [canvasViewport, setCanvasViewport] = useState({ width: 0, height: 0 });
   const historyRef = useRef<string[][][]>([]);
   const historyIndexRef = useRef(0);
   const toastTimerRef = useRef<number | null>(null);
@@ -727,6 +728,36 @@ export function WorkshopEditorPage() {
   }, []);
 
   useEffect(() => {
+    const updateCanvasViewport = () => {
+      const stage = canvasStageRef.current;
+      if (!stage) return;
+
+      const rect = stage.getBoundingClientRect();
+      const nextViewport = {
+        width: Math.max(0, Math.round(rect.width)),
+        height: Math.max(0, Math.round(rect.height)),
+      };
+
+      setCanvasViewport((current) => (
+        current.width === nextViewport.width && current.height === nextViewport.height
+          ? current
+          : nextViewport
+      ));
+    };
+
+    updateCanvasViewport();
+    window.addEventListener('resize', updateCanvasViewport);
+
+    const observer = canvasStageRef.current ? new ResizeObserver(updateCanvasViewport) : null;
+    if (observer && canvasStageRef.current) observer.observe(canvasStageRef.current);
+
+    return () => {
+      window.removeEventListener('resize', updateCanvasViewport);
+      observer?.disconnect();
+    };
+  }, [toolbarHeight]);
+
+  useEffect(() => {
     let alive = true;
 
     async function loadProjectPattern() {
@@ -814,26 +845,30 @@ export function WorkshopEditorPage() {
   useEffect(() => {
     if (!canvasRef.current || !previewCanvasRef.current) return;
 
-    const headerHeight = 56;
-    const availableHeight = Math.max(0, window.innerHeight - headerHeight - toolbarHeight);
-    const availableWidth = window.innerWidth;
-    const cellSize = Math.max(1, Math.floor(availableWidth / cols));
+    const stage = canvasStageRef.current;
+    const stageRect = stage?.getBoundingClientRect();
+    const availableWidth = Math.max(1, canvasViewport.width || Math.round(stageRect?.width ?? window.innerWidth));
+    const availableHeight = Math.max(1, canvasViewport.height || Math.round(stageRect?.height ?? window.innerHeight));
+    const cellSize = Math.max(1, Math.floor(Math.min(availableWidth / cols, availableHeight / rows)));
     const displayWidth = cols * cellSize;
     const displayHeight = rows * cellSize;
-    const yOffset = Math.max(0, (availableHeight - displayHeight) / 2);
-    const scaleOffsetX = Math.max(0, (availableWidth - displayWidth) / 2);
+    const fitScale = Math.min(1, availableWidth / displayWidth, availableHeight / displayHeight);
+    const xOffset = Math.max(0, (availableWidth - displayWidth * fitScale) / 2);
+    const yOffset = Math.max(0, (availableHeight - displayHeight * fitScale) / 2);
 
     setCanvasLayout((current) => ({
       ...current,
       width: displayWidth,
       height: displayHeight,
+      scale: fitScale,
       offsetY: yOffset,
-      scaleOffsetX,
+      scaleOffsetX: xOffset,
       scaleOffsetY: yOffset,
     }));
 
     if (!hasUserAdjustedViewRef.current) {
-      setOffset({ x: scaleOffsetX, y: yOffset });
+      if (Math.abs(scale - fitScale) > 0.001) setScale(fitScale);
+      setOffset({ x: xOffset, y: yOffset });
     }
 
     paintGridToCanvas({
@@ -852,9 +887,9 @@ export function WorkshopEditorPage() {
       colorSystem: editorBrand,
       displayWidth,
       displayHeight,
-      visibleCellSize: cellSize * scale,
+      visibleCellSize: cellSize * (hasUserAdjustedViewRef.current ? scale : fitScale),
     });
-  }, [backgroundMode, beadShape, bgColor, cols, editorBrand, grid, rows, scale, showColorCodes, showDividers, showGrid, toolbarHeight]);
+  }, [backgroundMode, beadShape, bgColor, canvasViewport.height, canvasViewport.width, cols, editorBrand, grid, rows, scale, showColorCodes, showDividers, showGrid]);
 
   useEffect(() => {
     return () => {
@@ -934,8 +969,8 @@ export function WorkshopEditorPage() {
   const clampScale = (nextScale: number) => Math.min(12, Math.max(0.2, +nextScale.toFixed(2)));
 
   const getCenteredOffset = (nextScale = 1) => ({
-    x: Math.max(0, (window.innerWidth - canvasLayout.width * nextScale) / 2),
-    y: Math.max(0, (window.innerHeight - headerHeight - toolbarHeight - canvasLayout.height * nextScale) / 2),
+    x: Math.max(0, ((canvasStageRef.current?.getBoundingClientRect().width ?? window.innerWidth) - canvasLayout.width * nextScale) / 2),
+    y: Math.max(0, ((canvasStageRef.current?.getBoundingClientRect().height ?? window.innerHeight) - canvasLayout.height * nextScale) / 2),
   });
 
   const applyZoom = (nextScale: number, focalPoint?: PointerPoint) => {
@@ -1374,7 +1409,6 @@ export function WorkshopEditorPage() {
     const isToolbar = Boolean(toolbarRef.current?.contains(target));
 
     if (isToolbar) {
-      beginDrag(event, 'toolbar', toolbarPos.x, toolbarPos.y);
       return;
     }
 
@@ -1590,7 +1624,10 @@ export function WorkshopEditorPage() {
 
   const handleToolbarPointerDown = (event: React.PointerEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
-    if (target.closest('button') || target.closest('input') || target.closest('select')) return;
+    if (target.closest('button') || target.closest('input') || target.closest('select')) {
+      event.stopPropagation();
+      return;
+    }
 
     beginDrag(event, 'toolbar', toolbarPos.x, toolbarPos.y);
   };
@@ -1692,9 +1729,8 @@ export function WorkshopEditorPage() {
     };
   }, [projectId]);
 
-  const headerHeight = 56;
   const canvasStageStyle = {
-    top: `${headerHeight}px`,
+    top: 0,
     bottom: `${Math.max(0, toolbarHeight + 18)}px`,
   };
 

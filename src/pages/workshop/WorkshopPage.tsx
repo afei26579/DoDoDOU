@@ -516,6 +516,9 @@ export function WorkshopPage({
         }
         .crop-preview-modal {
           position: relative;
+          max-width: calc(100vw - 24px);
+          max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 24px);
+          min-width: 0;
           border-radius: 22px;
           background: #fff;
           box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
@@ -546,6 +549,7 @@ export function WorkshopPage({
         .crop-preview-modal__header h3 {
           margin: 0;
           font-size: 16px;
+          line-height: 1.2;
         }
         .crop-preview-modal__close {
           width: 36px;
@@ -560,6 +564,7 @@ export function WorkshopPage({
         .crop-preview-modal__body {
           background: #f4efe9;
           padding: 12px;
+          min-height: 0;
           overflow: hidden;
         }
         .crop-preview-modal__image,
@@ -588,6 +593,32 @@ export function WorkshopPage({
           background:
             linear-gradient(135deg, transparent 0 40%, rgba(93, 83, 74, 0.32) 40% 50%, transparent 50% 65%, rgba(93, 83, 74, 0.32) 65% 75%, transparent 75% 100%);
           border-bottom-right-radius: 16px;
+        }
+        @media (max-width: 420px), (max-height: 520px) {
+          .crop-preview-modal__backdrop {
+            padding: 12px;
+          }
+          .crop-preview-modal {
+            max-width: calc(100vw - 16px);
+            max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
+          }
+          .crop-preview-modal__header {
+            padding: 10px 10px 8px;
+          }
+          .crop-preview-modal__header p {
+            font-size: 10px;
+          }
+          .crop-preview-modal__header h3 {
+            font-size: 14px;
+          }
+          .crop-preview-modal__close {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+          }
+          .crop-preview-modal__body {
+            padding: 8px;
+          }
         }
       `}</style>
     </main>
