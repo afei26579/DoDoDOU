@@ -635,14 +635,17 @@ export function FocusModePage() {
   const paletteOptions = useMemo(() => palette.map((item) => {
     const colorKey = getColorKey(item);
     const blocks = planBlocks.filter((block) => block.colorKey === colorKey);
+    const colorCells = cells.filter((cell) => cell.colorKey === colorKey && validCellKeys.has(cell.coordKey));
+    const completedColorCellCount = colorCells.filter((cell) => completedCellKeySet.has(cell.coordKey)).length;
     return {
       ...item,
       colorKey,
       totalBlocks: blocks.length,
       completedBlocks: blocks.filter((block) => isBlockCompleted(block, completedCellKeySet)).length,
+      colorProgress: colorCells.length > 0 ? completedColorCellCount / colorCells.length : 0,
       active: colorKey === effectiveActiveColorKey,
     };
-  }), [completedCellKeySet, effectiveActiveColorKey, palette, planBlocks]);
+  }), [cells, completedCellKeySet, effectiveActiveColorKey, palette, planBlocks, validCellKeys]);
 
   const computedCompletedColorKeys = useMemo(() => {
     if (!patternResult) return [];

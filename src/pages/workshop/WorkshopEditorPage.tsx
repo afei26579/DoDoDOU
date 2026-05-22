@@ -1731,7 +1731,7 @@ export function WorkshopEditorPage() {
 
   const canvasStageStyle = {
     top: 0,
-    bottom: `${Math.max(0, toolbarHeight + 18)}px`,
+    bottom: `${Math.max(0, toolbarHeight + 32)}px`,
   };
 
   const canvasTransformStyle = {

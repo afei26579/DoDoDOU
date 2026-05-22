@@ -6,6 +6,7 @@ export type FocusPaletteOption = BeadingPaletteItem & {
   colorKey: string;
   totalBlocks: number;
   completedBlocks: number;
+  colorProgress: number;
   active: boolean;
 };
 
@@ -113,6 +114,10 @@ export function FocusToolbar({
         <div className={styles.paletteList}>
           {paletteOptions.map((item) => {
             const done = item.totalBlocks > 0 && item.completedBlocks >= item.totalBlocks;
+            const paletteSwatchStyle = {
+              '--palette-color': item.hex,
+              '--palette-progress': `${Math.max(0, Math.min(1, item.colorProgress)) * 360}deg`,
+            } as CSSProperties;
             return (
               <button
                 type="button"
@@ -120,7 +125,7 @@ export function FocusToolbar({
                 className={`${styles.paletteItem} ${item.active ? styles.paletteItemActive : ''}`}
                 onClick={() => onSelectPaletteColor(item.colorKey)}
               >
-                <span className={styles.paletteSwatch} style={{ '--palette-color': item.hex } as CSSProperties} />
+                <span className={styles.paletteSwatch} style={paletteSwatchStyle} />
                 <span className={styles.paletteMeta}>
                   <span className={styles.paletteCode}>{item.vendorCode}</span>
                   <span className={styles.paletteCount}>{item.count}颗 · {item.completedBlocks}/{item.totalBlocks}块</span>

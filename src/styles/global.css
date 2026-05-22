@@ -472,6 +472,11 @@ p { margin: 0; }
   justify-items: stretch;
   overflow: hidden;
 }
+.workshop-page--home .workshop-canvas,
+.workshop-page--create .workshop-canvas,
+.workshop-page--result .workshop-canvas {
+  justify-self: center;
+}
 .workshop-canvas__frame {
   width: calc(100% - var(--workshop-frame-margin) - var(--workshop-frame-margin));
   max-width: none;
