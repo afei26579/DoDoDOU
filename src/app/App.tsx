@@ -63,6 +63,7 @@ export function App() {
     location.pathname.startsWith('/workshop/focus/');
   const showBottomNav = !shouldHideBottomNav;
   const isFullScreenRoute =
+    normalizedPath === '/login' ||
     normalizedPath.startsWith('/workshop/focus') ||
     normalizedPath.startsWith('/workshop/editor') ||
     normalizedPath === '/collection/detail';
