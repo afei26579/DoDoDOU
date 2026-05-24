@@ -86,7 +86,7 @@ type PatternResult = {
 
 ### 1.4 当前主要缺口
 
-和 v2.1 方案相比，当前缺少：
+当前缺少：
 
 - 固定测试图片、baseline JSON、baseline 截图和可量化指标。
 - Lab 色彩空间转换。

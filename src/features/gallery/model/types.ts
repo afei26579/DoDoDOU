@@ -178,8 +178,10 @@ export type PublishGalleryPayload = {
   title: string;
   description?: string;
   authorId: string;
+  authorName?: string;
   sourceType?: GallerySourceType;
   tags?: string[];
+  sortWeight?: number;
   coverUrl?: string;
   previewUrl?: string;
   coverWidth?: number;

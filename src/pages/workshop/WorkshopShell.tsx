@@ -20,7 +20,10 @@ function createProjectId() {
 }
 
 const WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX = 'dodoudou:workshop-editor-local-draft:';
-const ENABLE_GALLERY_PUBLISH = import.meta.env.VITE_ENABLE_GALLERY_PUBLISH === 'true';
+const galleryPublishFlag = import.meta.env.VITE_ENABLE_GALLERY_PUBLISH;
+const ENABLE_GALLERY_PUBLISH =
+  galleryPublishFlag === 'true' ||
+  (galleryPublishFlag === undefined && import.meta.env.DEV);
 
 function removeLocalEditorDraft(projectId: string) {
   if (typeof window === 'undefined') return;

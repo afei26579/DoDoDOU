@@ -4,6 +4,10 @@ import { publishGalleryItem } from '../../../features/gallery/model/api';
 import { generatePatternCover } from '../../../lib/pattern/cover';
 import { drawPatternPreview } from '../../../lib/pattern/preview';
 
+const OFFICIAL_AUTHOR_ID = 'official';
+const OFFICIAL_AUTHOR_NAME = '官方推荐';
+const OFFICIAL_DEFAULT_TAGS = '官方, 免费, 拼豆';
+
 export type GalleryPublishSheetProps = {
   open: boolean;
   titleSeed?: string;
@@ -20,6 +24,12 @@ function splitTags(input: string) {
     .split(/[,，\n]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function normalizeOfficialTags(input: string) {
+  const tags = splitTags(input);
+  const merged = ['官方', '免费', ...tags];
+  return Array.from(new Set(merged)).slice(0, 10);
 }
 
 function buildPreviewDataUrl(patternResult: PatternResult) {
@@ -48,7 +58,7 @@ export function GalleryPublishSheet({
   const [previewUrl, setPreviewUrl] = useState<string | undefined>(undefined);
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [description, setDescription] = useState('');
-  const [tags, setTags] = useState('自然, 治愈, 可爱');
+  const [tags, setTags] = useState(OFFICIAL_DEFAULT_TAGS);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,9 +82,11 @@ export function GalleryPublishSheet({
       const response = await publishGalleryItem({
         title: title.trim(),
         description: description.trim() || undefined,
-        authorId: 'local-official',
-        sourceType: 'community',
-        tags: splitTags(tags),
+        authorId: OFFICIAL_AUTHOR_ID,
+        authorName: OFFICIAL_AUTHOR_NAME,
+        sourceType: 'official',
+        tags: normalizeOfficialTags(tags),
+        sortWeight: 100,
         coverUrl: cover.dataUrl || coverUrl,
         previewUrl,
         coverWidth: cover.width,
@@ -115,9 +127,9 @@ export function GalleryPublishSheet({
 
         <header className="gallery-publish-modal__header">
           <div>
-            <p className="gallery-publish-modal__eyebrow">画册发布</p>
-            <h3>上传到画册</h3>
-            <span>将当前图纸保存为服务器 JSON 数据</span>
+            <p className="gallery-publish-modal__eyebrow">开发发布</p>
+            <h3>上传官方免费图纸</h3>
+            <span>将当前图纸写入数据库，并标记为官方公开图纸</span>
           </div>
           <button type="button" className="gallery-publish-modal__close" aria-label="关闭" onClick={onClose}>
             ×
