@@ -11,6 +11,7 @@
     "color-system:build": "node scripts/build-color-system.mjs",
     "color-system:validate": "node scripts/validate-color-system.mjs",
     "gallery:server": "node server/gallery-server.mjs",
+    "gallery:clear": "node scripts/clear-gallery-data.mjs",
     "dev:all": "node scripts/dev-all.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",

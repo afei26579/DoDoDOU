@@ -77,6 +77,7 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
   const [isPaused, setIsPaused] = useState(false);
   const [inspirationItems, setInspirationItems] = useState<GalleryItemCard[]>([]);
   const [continueBeadingItems, setContinueBeadingItems] = useState<WorkshopProjectCard[]>([]);
+  const shouldLoopInspiration = inspirationItems.length > 1;
 
   const handleImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -260,8 +261,11 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
           onFocus={() => setIsPaused(true)}
           onBlur={() => setIsPaused(false)}
         >
-          <div className={`inspiration-track ${isPaused ? 'is-paused' : ''}`} style={{ animationPlayState: isPaused ? 'paused' : 'running' }}>
-            {Array.from({ length: 2 }).flatMap((_, repeatIndex) =>
+          <div
+            className={`inspiration-track ${isPaused || !shouldLoopInspiration ? 'is-paused' : ''}`}
+            style={{ animationPlayState: isPaused || !shouldLoopInspiration ? 'paused' : 'running' }}
+          >
+            {Array.from({ length: shouldLoopInspiration ? 2 : 1 }).flatMap((_, repeatIndex) =>
               inspirationItems.map((item, index) => (
                 <article
                   key={`${repeatIndex}-${item.id}`}
