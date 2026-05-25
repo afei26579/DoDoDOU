@@ -21,7 +21,7 @@
 .primaryBtn { height: 28px; border-radius: 10px; padding: 0 12px; background: #d8b4e2; color: #fff; font-weight: 700; white-space: nowrap; }
 .layout { position: fixed; inset: calc(var(--safe-top, env(safe-area-inset-top, 0px)) + 66px) 0 0 0; overflow: hidden; background: transparent; touch-action: none; }
 .canvasStage { position: absolute; inset: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-.canvas { position: absolute; left: 0; top: 0; display: block; image-rendering: pixelated; box-shadow: 0 6px 40px rgba(93,83,74,.16); transform-origin: 0 0; }
+.canvas { position: absolute; left: 0; top: 0; display: block; image-rendering: auto; box-shadow: 0 6px 40px rgba(93,83,74,.16); transform-origin: 0 0; will-change: transform; backface-visibility: hidden; contain: paint; }
 .zoomBar { position: absolute; left: 50%; bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 168px); transform: translateX(-50%); display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 16px; background: rgba(255,255,255,.86); box-shadow: 0 8px 18px rgba(93,83,74,.08); }
 .miniBtn { width: 30px; height: 30px; border-radius: 10px; background: rgba(216,180,226,.18); font-weight: 800; }
 .canvasActions { position: absolute; top: 14px; right: 14px; z-index: 460; display: flex; align-items: center; gap: 8px; padding: 0; border-radius: 18px; background: transparent; border: 0; box-shadow: none; backdrop-filter: none; }
