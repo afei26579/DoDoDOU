@@ -1,7 +1,8 @@
 import type { GalleryDetailResponse, GalleryListQuery, GalleryListResponse, PublishGalleryPayload, PublishGalleryResponse } from './types';
 
 function resolveApiBaseUrl() {
-  const configured = import.meta.env.VITE_API_BASE_URL?.trim() || '';
+  const configured = import.meta.env.VITE_API_BASE_URL?.trim() || 'auto';
+  if (configured === 'same-origin') return '';
   if (configured !== 'auto') return configured.replace(/\/$/, '');
 
   if (typeof window === 'undefined') return '';
@@ -14,10 +15,6 @@ const API_BASE_URL = resolveApiBaseUrl();
 const GALLERY_WRITE_TOKEN = import.meta.env.VITE_GALLERY_WRITE_TOKEN?.trim() || '';
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  if (!API_BASE_URL) {
-    throw new Error('API_BASE_URL is not configured');
-  }
-
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
