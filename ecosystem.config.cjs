@@ -12,6 +12,8 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3001,
         DATABASE_URL: 'file:./dev.db',
+	GALLERY_ALLOWED_ORIGINS: 'https://ylongf.xyz,https://www.ylongf.xyz',
+        GALLERY_SERVER_HOST: '127.0.0.1',
       },
       // 异常时自动重启
       watch: false,
