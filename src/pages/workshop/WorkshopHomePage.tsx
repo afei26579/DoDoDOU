@@ -52,7 +52,6 @@ export function WorkshopHomePage({
   };
 
   const handleUploadImage = async () => {
-    console.debug('[workshop] home upload trigger', { hasInput: Boolean(fileInputRef.current) });
     fileInputRef.current?.click();
   };
 

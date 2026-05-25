@@ -60,7 +60,10 @@ export function App() {
     location.pathname.startsWith('/workshop/editor/') ||
     location.pathname.startsWith('/workshop/focus/');
   const showBottomNav = !shouldHideBottomNav;
-  const isFullScreenRoute = normalizedPath.startsWith('/workshop/focus') || normalizedPath.startsWith('/workshop/editor');
+  const isFullScreenRoute =
+    normalizedPath.startsWith('/workshop/focus') ||
+    normalizedPath.startsWith('/workshop/editor') ||
+    normalizedPath === '/collection/detail';
 
   const handleUploadToWorkshop = async (image: { name: string; type: string; size: number; dataUrl: string }) => {
     const dimensions = await new Promise<{ width: number; height: number }>((resolve, reject) => {

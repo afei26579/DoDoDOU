@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { prisma } from './db.mjs';
@@ -8,8 +8,38 @@ import { prisma } from './db.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
-const dataDir = path.join(rootDir, 'public', 'data', 'gallery');
-const itemsDir = path.join(dataDir, 'items');
+const initialEnvKeys = new Set(Object.keys(process.env));
+
+function loadEnvFile(filePath, { override = false } = {}) {
+  try {
+    const content = readFileSync(filePath, 'utf8');
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+      if (!match) continue;
+
+      const key = match[1];
+      if (initialEnvKeys.has(key)) continue;
+      if (!override && process.env[key] !== undefined) continue;
+
+      let value = match[2].trim();
+      if (
+        (value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
+        value = value.slice(1, -1);
+      }
+      process.env[key] = value;
+    }
+  } catch {
+    // Optional local env files are allowed to be missing.
+  }
+}
+
+loadEnvFile(path.join(rootDir, '.env'));
+loadEnvFile(path.join(rootDir, '.env.local'), { override: true });
 
 function parseBoolean(value, fallback) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -153,14 +183,6 @@ const publishRateLimiter = createRateLimiter({
 app.use(applyCors);
 app.use(globalRateLimiter);
 
-async function ensureDirs() {
-  await mkdir(itemsDir, { recursive: true });
-}
-
-async function writeJsonFile(filePath, value) {
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-}
-
 function toSlug(value) {
   return value
     .trim()
@@ -168,15 +190,6 @@ function toSlug(value) {
     .replace(/[^\w\u4e00-\u9fa5]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 48) || 'gallery-item';
-}
-
-function resolveGalleryItemFilePath(itemId) {
-  const filePath = path.resolve(itemsDir, `${itemId}.json`);
-  const relativePath = path.relative(itemsDir, filePath);
-  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
-    throw new Error('Resolved gallery item path escaped target directory');
-  }
-  return filePath;
 }
 
 function isPlainObject(value) {
@@ -458,7 +471,6 @@ function mapItem(item, assets = {}) {
     },
     createdAt: item.createdAt.toISOString(),
     publishedAt: item.publishedAt?.toISOString() ?? null,
-    detailPath: `/data/gallery/items/${item.id}.json`,
   };
 }
 
@@ -607,15 +619,6 @@ app.post('/api/gallery/publish', requirePublishAccess, publishRateLimiter, expre
     });
   });
 
-  const detailPath = resolveGalleryItemFilePath(id);
-  await ensureDirs();
-  await writeJsonFile(detailPath, {
-    itemId: result.id,
-    title: result.title,
-    sourceType: result.sourceType,
-    publishedAt: now.toISOString(),
-  });
-
   res.json({
     itemId: result.id,
     status: 'published',
@@ -642,11 +645,9 @@ app.use((err, req, res, next) => {
   });
 });
 
-await ensureDirs();
 app.listen(config.port, config.host, () => {
   console.log(`Gallery server listening on http://${config.host}:${config.port}`);
   console.log(`SQLite database via Prisma`);
-  console.log(`Writing gallery JSON to ${dataDir}`);
   console.log(`Gallery publish enabled: ${config.publishEnabled ? 'yes' : 'no'}`);
   console.log(`Allowed origins: ${allowAnyOrigin ? '*' : config.allowedOrigins.join(', ')}`);
 });

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CropTransform, PatternResult, WorkshopFlowState } from '../../features/workshop/model/types';
 import { getBeadBrandLabel } from '../../lib/pattern/brand';
 import { createCropCanvas, getCropOffsetForFrame, loadImage } from '../../lib/pattern/crop';
+import { generatePatternFromImage } from '../../lib/pattern/generator';
 import { WorkshopCreateSettingsSheet } from './components/WorkshopCreateSettingsSheet';
 import { WorkshopGenerateButton } from './components/WorkshopGenerateButton';
 import { WorkshopHero } from './components/WorkshopHero';
@@ -43,6 +44,27 @@ type WorkshopPageProps = {
   isHome: boolean;
   backgroundRemovalNotice?: string | null;
 };
+
+function getResultGenerationKey(params: {
+  uploadedImage: WorkshopFlowState['uploadedImage'];
+  cropTransform: CropTransform;
+  config: WorkshopFlowState['config'];
+}) {
+  const { uploadedImage, cropTransform, config } = params;
+  return JSON.stringify({
+    image: uploadedImage
+      ? {
+          name: uploadedImage.name,
+          size: uploadedImage.size,
+          width: uploadedImage.width,
+          height: uploadedImage.height,
+          dataLength: uploadedImage.dataUrl.length,
+        }
+      : null,
+    cropTransform,
+    config,
+  });
+}
 
 export function WorkshopPage({
   flowState,
@@ -87,6 +109,8 @@ export function WorkshopPage({
   const [isStatsSheetOpen, setIsStatsSheetOpen] = useState(false);
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
   const [isCreateSettingsOpen, setIsCreateSettingsOpen] = useState(false);
+  const resultRegenerateRequestRef = useRef(0);
+  const resultRegenerateKeyRef = useRef<string | null>(null);
   const [isCropPreviewOpen, setIsCropPreviewOpen] = useState(false);
   const [cropPreviewDataUrl, setCropPreviewDataUrl] = useState<string | null>(null);
   const [cropPreviewSize, setCropPreviewSize] = useState({ width: 420, height: 300 });
@@ -116,6 +140,43 @@ export function WorkshopPage({
       alive = false;
     };
   }, [uploadedImage?.dataUrl]);
+
+  useEffect(() => {
+    if (!isCreateSettingsOpen || mode !== 'result' || !uploadedImage?.dataUrl) return;
+    resultRegenerateKeyRef.current = getResultGenerationKey({ uploadedImage, cropTransform, config });
+  }, [isCreateSettingsOpen]);
+
+  useEffect(() => {
+    if (!isCreateSettingsOpen || mode !== 'result' || !uploadedImage?.dataUrl || !onPatternResultChange) {
+      resultRegenerateRequestRef.current += 1;
+      return;
+    }
+
+    const generationKey = getResultGenerationKey({ uploadedImage, cropTransform, config });
+    if (resultRegenerateKeyRef.current === generationKey) return;
+
+    const requestId = resultRegenerateRequestRef.current + 1;
+    resultRegenerateRequestRef.current = requestId;
+
+    const timer = window.setTimeout(() => {
+      generatePatternFromImage({
+        imageUrl: uploadedImage.dataUrl,
+        config,
+        cropTransform,
+        cropFrameSize: 1200,
+      })
+        .then((result) => {
+          if (resultRegenerateRequestRef.current !== requestId) return;
+          resultRegenerateKeyRef.current = generationKey;
+          onPatternResultChange(result);
+        })
+        .catch(() => undefined);
+    }, 420);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [config, cropTransform, isCreateSettingsOpen, mode, onPatternResultChange, uploadedImage]);
 
   useEffect(() => {
     if (!isCropPreviewOpen || !uploadedImage) return;
@@ -267,7 +328,7 @@ export function WorkshopPage({
         projectId={projectId}
         mode={mode}
         algorithm={config.algorithm ?? 'legacy'}
-        onOpenSettings={!isHome && mode === 'create' ? () => setIsCreateSettingsOpen(true) : undefined}
+        onOpenSettings={!isHome ? () => setIsCreateSettingsOpen(true) : undefined}
       />
       <WorkshopPreviewArea
         mode={mode}
@@ -436,7 +497,7 @@ export function WorkshopPage({
       />
 
       <WorkshopCreateSettingsSheet
-        open={!isHome && mode === 'create' && isCreateSettingsOpen}
+        open={!isHome && isCreateSettingsOpen}
         config={config}
         onConfigChange={onConfigChange}
         onClose={() => setIsCreateSettingsOpen(false)}
@@ -455,6 +516,9 @@ export function WorkshopPage({
         }
         .crop-preview-modal {
           position: relative;
+          max-width: calc(100vw - 24px);
+          max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 24px);
+          min-width: 0;
           border-radius: 22px;
           background: #fff;
           box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
@@ -485,6 +549,7 @@ export function WorkshopPage({
         .crop-preview-modal__header h3 {
           margin: 0;
           font-size: 16px;
+          line-height: 1.2;
         }
         .crop-preview-modal__close {
           width: 36px;
@@ -499,6 +564,7 @@ export function WorkshopPage({
         .crop-preview-modal__body {
           background: #f4efe9;
           padding: 12px;
+          min-height: 0;
           overflow: hidden;
         }
         .crop-preview-modal__image,
@@ -527,6 +593,32 @@ export function WorkshopPage({
           background:
             linear-gradient(135deg, transparent 0 40%, rgba(93, 83, 74, 0.32) 40% 50%, transparent 50% 65%, rgba(93, 83, 74, 0.32) 65% 75%, transparent 75% 100%);
           border-bottom-right-radius: 16px;
+        }
+        @media (max-width: 420px), (max-height: 520px) {
+          .crop-preview-modal__backdrop {
+            padding: 12px;
+          }
+          .crop-preview-modal {
+            max-width: calc(100vw - 16px);
+            max-height: calc(100dvh - var(--safe-top) - var(--safe-bottom) - 16px);
+          }
+          .crop-preview-modal__header {
+            padding: 10px 10px 8px;
+          }
+          .crop-preview-modal__header p {
+            font-size: 10px;
+          }
+          .crop-preview-modal__header h3 {
+            font-size: 14px;
+          }
+          .crop-preview-modal__close {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+          }
+          .crop-preview-modal__body {
+            padding: 8px;
+          }
         }
       `}</style>
     </main>

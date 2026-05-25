@@ -68,8 +68,42 @@ function appendOrigin(value, origin) {
   return origins.join(',');
 }
 
+function applyDevGalleryDefaults(env) {
+  const nextEnv = { ...env };
+
+  if (nextEnv.GALLERY_PUBLISH_ENABLED === undefined) {
+    nextEnv.GALLERY_PUBLISH_ENABLED = 'true';
+  }
+
+  if (nextEnv.GALLERY_REQUIRE_WRITE_TOKEN === undefined) {
+    nextEnv.GALLERY_REQUIRE_WRITE_TOKEN = 'false';
+  }
+
+  if (nextEnv.VITE_ENABLE_GALLERY_PUBLISH === undefined) {
+    nextEnv.VITE_ENABLE_GALLERY_PUBLISH = 'true';
+  }
+
+  if (nextEnv.GALLERY_JSON_BODY_LIMIT === undefined) {
+    nextEnv.GALLERY_JSON_BODY_LIMIT = '20mb';
+  }
+
+  if (nextEnv.GALLERY_MAX_PATTERN_CELLS === undefined) {
+    nextEnv.GALLERY_MAX_PATTERN_CELLS = '50000';
+  }
+
+  if (nextEnv.GALLERY_MAX_DATA_URL_CHARS === undefined) {
+    nextEnv.GALLERY_MAX_DATA_URL_CHARS = '5000000';
+  }
+
+  if (nextEnv.GALLERY_WRITE_TOKEN && !nextEnv.VITE_GALLERY_WRITE_TOKEN) {
+    nextEnv.VITE_GALLERY_WRITE_TOKEN = nextEnv.GALLERY_WRITE_TOKEN;
+  }
+
+  return nextEnv;
+}
+
 function makeChildEnv() {
-  const env = { ...mergedEnv };
+  const env = applyDevGalleryDefaults(mergedEnv);
   const lanEnabled = parseBoolean(env.GALLERY_DEV_LAN_ENABLED, false);
 
   if (!lanEnabled) return env;

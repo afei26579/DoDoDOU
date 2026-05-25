@@ -7,7 +7,9 @@ import type {
   WorkshopEditorState,
   WorkshopViewMode,
 } from './types';
+import { defaultWorkshopConfig } from './defaults';
 import { normalizeBeadBrandKey } from '../../../lib/pattern/brand';
+import { normalizePatternAdvancedConfig } from '../../../lib/pattern/advanced-config';
 import { generatePatternCover } from '../../../lib/pattern/cover';
 
 const DB_NAME = 'dodoudou-workshop';
@@ -82,11 +84,8 @@ export type WorkshopProjectGroups = {
 
 function getDefaultConfig(): WorkshopConfig {
   return {
-    canvasSize: 100,
-    brand: 'MARD',
-    style: '动漫',
-    colorMergeThreshold: 30,
-    algorithm: 'legacy',
+    ...defaultWorkshopConfig,
+    advanced: normalizePatternAdvancedConfig(defaultWorkshopConfig.advanced),
   };
 }
 
@@ -182,6 +181,7 @@ function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
     ...defaultRecord.config,
     ...record.config,
     brand: normalizeBeadBrandKey(record.config?.brand),
+    advanced: normalizePatternAdvancedConfig(record.config?.advanced),
   };
 
   return {
@@ -216,30 +216,6 @@ function withSyncedPatternCover(record: WorkshopProjectRecord, shouldSync: boole
     coverUrl,
     previewUrl: coverUrl,
   };
-}
-
-function logPatternSave(projectId: string, record: WorkshopProjectRecord) {
-  const pattern = record.patternResult;
-  console.debug('[workshop-project] save pattern', {
-    projectId,
-    title: record.title,
-    kind: record.kind,
-    status: record.status,
-    beadingState: record.beadingState,
-    sourceType: record.sourceType,
-    pattern: pattern
-      ? {
-          width: pattern.width,
-          height: pattern.height,
-          beadCount: pattern.stats.totalCells,
-          colorCount: pattern.stats.colorCount,
-          paletteCount: pattern.palette.length,
-        }
-      : null,
-    hasCoverUrl: Boolean(record.coverUrl),
-    hasPreviewUrl: Boolean(record.previewUrl),
-    updatedAt: record.updatedAt,
-  });
 }
 
 function getPatternSummary(patternResult: PatternResult | null) {
@@ -392,9 +368,6 @@ export async function ensureWorkshopProject(projectId: string, patch: WorkshopPr
     createdAt: current.createdAt,
     updatedAt: new Date().toISOString(),
   }), shouldSyncPatternCover);
-  if (definedPatch.patternResult !== undefined) {
-    logPatternSave(projectId, next);
-  }
   MEMORY_CACHE.set(projectId, next);
   await writeRecord(next);
   return next;

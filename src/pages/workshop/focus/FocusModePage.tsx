@@ -607,22 +607,6 @@ export function FocusModePage() {
     [currentBlock],
   );
   const currentBlockCompleted = currentBlock ? isBlockCompleted(currentBlock, completedCellKeySet) : false;
-  useEffect(() => {
-    if (!currentBlock) return;
-    const exitPoint = getBlockExitPoint(currentBlock, handedness, horizontalDirection, verticalDirection);
-    console.debug('[FocusModePage] selected block exit point', {
-      blockKey: currentBlock.key,
-      colorKey: currentBlock.colorKey,
-      label: currentBlock.label,
-      cellCount: currentBlock.cells.length,
-      handedness,
-      horizontalDirection,
-      verticalDirection,
-      resolvedHorizontalDirection: resolveHorizontalDirection(handedness, horizontalDirection),
-      resolvedVerticalDirection: resolveVerticalDirection(verticalDirection),
-      exitPoint,
-    });
-  }, [currentBlock, handedness, horizontalDirection, verticalDirection]);
   const effectiveActiveColorKey = currentBlock?.colorKey ?? activeColorKey;
   const currentColor = useMemo(
     () => palette.find((item) => getColorKey(item) === effectiveActiveColorKey) ?? null,
@@ -651,14 +635,17 @@ export function FocusModePage() {
   const paletteOptions = useMemo(() => palette.map((item) => {
     const colorKey = getColorKey(item);
     const blocks = planBlocks.filter((block) => block.colorKey === colorKey);
+    const colorCells = cells.filter((cell) => cell.colorKey === colorKey && validCellKeys.has(cell.coordKey));
+    const completedColorCellCount = colorCells.filter((cell) => completedCellKeySet.has(cell.coordKey)).length;
     return {
       ...item,
       colorKey,
       totalBlocks: blocks.length,
       completedBlocks: blocks.filter((block) => isBlockCompleted(block, completedCellKeySet)).length,
+      colorProgress: colorCells.length > 0 ? completedColorCellCount / colorCells.length : 0,
       active: colorKey === effectiveActiveColorKey,
     };
-  }), [completedCellKeySet, effectiveActiveColorKey, palette, planBlocks]);
+  }), [cells, completedCellKeySet, effectiveActiveColorKey, palette, planBlocks, validCellKeys]);
 
   const computedCompletedColorKeys = useMemo(() => {
     if (!patternResult) return [];

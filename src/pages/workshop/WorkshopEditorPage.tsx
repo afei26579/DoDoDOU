@@ -16,9 +16,11 @@ import { getBeadBrandLabel, type BeadBrandKey } from '../../lib/pattern/brand';
 import {
   createEmptyGrid,
   floodFill,
+  paintGridCellsToCanvas,
   paintGridToCanvas,
   TRANSPARENT_GRID_LIGHT,
   toCellPoint,
+  type EditorCanvasRenderMeta,
   type EditorBackgroundMode,
   type EditorBeadShape,
 } from './editor/WorkshopEditor.utils';
@@ -34,6 +36,8 @@ type DragState = {
   originY: number;
   originOffsetX: number;
   originOffsetY: number;
+  currentOffsetX?: number;
+  currentOffsetY?: number;
   moved?: boolean;
   lastCell?: string;
 };
@@ -133,6 +137,7 @@ const TOOL_ITEMS: Array<{ id: Tool; label: string; icon?: string; iconSrc?: stri
 const DEFAULT_COLORS = ['#000000', '#FFFFFF', '#FF6600', '#FFDAC1', '#D8B4E2'];
 const HISTORY_LIMIT = 80;
 const SAVE_DEBOUNCE_MS = 800;
+const EDITOR_CANVAS_MAX_SIDE = 200;
 const WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX = 'dodoudou:workshop-editor-local-draft:';
 const ALL_PALETTE_GROUP = 'all';
 const DEFAULT_UNTITLED_PROJECT_TITLE = '未命名作品';
@@ -389,6 +394,7 @@ function paintCellBlock(
   paintTool: PaintSession['tool'],
   color: string,
   size: number,
+  changedCells?: Array<{ row: number; col: number }>,
 ) {
   const rowCount = targetGrid.length;
   const colCount = targetGrid[0]?.length ?? 0;
@@ -406,6 +412,7 @@ function paintCellBlock(
       if (targetGrid[r][c] === nextColor) continue;
 
       targetGrid[r][c] = nextColor;
+      changedCells?.push({ row: r, col: c });
       changed = true;
     }
   }
@@ -517,12 +524,17 @@ export function WorkshopEditorPage() {
     scaleOffsetX: 0,
     scaleOffsetY: 0,
   });
+  const [canvasViewport, setCanvasViewport] = useState({ width: 0, height: 0 });
   const historyRef = useRef<string[][][]>([]);
   const historyIndexRef = useRef(0);
   const toastTimerRef = useRef<number | null>(null);
   const saveTimerRef = useRef<number | null>(null);
+  const renderScaleTimerRef = useRef<number | null>(null);
+  const transformFrameRef = useRef<number | null>(null);
+  const pendingTransformRef = useRef<{ offset: { x: number; y: number }; scale: number } | null>(null);
   const projectReadyRef = useRef(false);
   const pendingPersistRef = useRef<WorkshopEditorState | null>(null);
+  const canvasRenderMetaRef = useRef<EditorCanvasRenderMeta | null>(null);
 
   const [grid, setGrid] = useState(() => createEmptyGrid(32, 32));
   const [cols, setCols] = useState(32);
@@ -545,7 +557,10 @@ export function WorkshopEditorPage() {
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [scale, setScale] = useState(1);
+  const [renderScale, setRenderScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const offsetRef = useRef(offset);
+  const scaleRef = useRef(scale);
   const [projectTitle, setProjectTitle] = useState('');
   const [projectCreatedAt, setProjectCreatedAt] = useState<string | null>(null);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -572,7 +587,10 @@ export function WorkshopEditorPage() {
     () => getDisplayProjectTitle(projectTitle, projectCreatedAt),
     [projectCreatedAt, projectTitle],
   );
-  const downloadPatternResult = gridToPatternResult(grid, downloadBrand);
+  const downloadPatternResult = useMemo(
+    () => (downloadModalOpen ? gridToPatternResult(grid, downloadBrand) : null),
+    [downloadBrand, downloadModalOpen, grid],
+  );
   const editorPalette = useMemo(() => buildPalette(editorBrand), [editorBrand]);
   const currentColorCode = useMemo(
     () => getDisplayVendorCodeForColor(currentColor, editorBrand, editorPalette),
@@ -639,13 +657,8 @@ export function WorkshopEditorPage() {
   };
 
   const handleBack = async () => {
-    try {
-      await persistEditorSnapshot();
-    } catch (error) {
-      console.error('[WorkshopEditorPage] back save failed', error);
-    } finally {
-      navigate(-1);
-    }
+    await persistEditorSnapshot().catch(() => undefined);
+    navigate(-1);
   };
 
   const openRenameDialog = () => {
@@ -676,8 +689,7 @@ export function WorkshopEditorPage() {
       setProjectTitle(nextTitle);
       setRenameOpen(false);
       showToast('图纸名称已更新');
-    } catch (error) {
-      console.error('[WorkshopEditorPage] rename failed', error);
+    } catch {
       showToast('名称保存失败，请稍后再试');
     } finally {
       setTitleSaving(false);
@@ -703,22 +715,64 @@ export function WorkshopEditorPage() {
     try {
       await persistEditorSnapshot();
       navigate(`/workshop/focus/${projectId}`, { state: { returnTo: `/workshop/editor/${projectId}` } });
-    } catch (error) {
-      console.error('[WorkshopEditorPage] open focus mode save failed', error);
+    } catch {
       showToast('保存失败，请稍后再试');
     }
   };
 
-  useEffect(() => {
-    if (!downloadModalOpen) return;
-    console.log('[WorkshopEditorPage] download grid', grid);
-    console.log('[WorkshopEditorPage] download patternResult', downloadPatternResult);
-  }, [downloadModalOpen, downloadPatternResult, grid]);
   const isDownloadModalOpen = downloadModalOpen;
+
+  const writeCanvasTransform = (nextOffset = offsetRef.current, nextScale = scaleRef.current) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    canvas.style.transform = `translate3d(${nextOffset.x}px, ${nextOffset.y}px, 0) scale(${nextScale})`;
+  };
+
+  const scheduleCanvasTransform = (nextOffset: { x: number; y: number }, nextScale = scaleRef.current) => {
+    offsetRef.current = nextOffset;
+    scaleRef.current = nextScale;
+    pendingTransformRef.current = { offset: nextOffset, scale: nextScale };
+
+    if (transformFrameRef.current !== null) return;
+
+    transformFrameRef.current = window.requestAnimationFrame(() => {
+      transformFrameRef.current = null;
+      const pendingTransform = pendingTransformRef.current;
+      if (!pendingTransform) return;
+      pendingTransformRef.current = null;
+      writeCanvasTransform(pendingTransform.offset, pendingTransform.scale);
+    });
+  };
 
   useEffect(() => {
     projectReadyRef.current = projectReady;
   }, [projectReady]);
+
+  useEffect(() => {
+    offsetRef.current = offset;
+    scaleRef.current = scale;
+    writeCanvasTransform(offset, scale);
+  }, [offset, scale]);
+
+  useEffect(() => {
+    if (renderScaleTimerRef.current) {
+      window.clearTimeout(renderScaleTimerRef.current);
+    }
+
+    renderScaleTimerRef.current = window.setTimeout(() => {
+      renderScaleTimerRef.current = null;
+      if (dragRef.current?.kind === 'pan') return;
+      setRenderScale(scaleRef.current);
+    }, 180);
+
+    return () => {
+      if (renderScaleTimerRef.current) {
+        window.clearTimeout(renderScaleTimerRef.current);
+        renderScaleTimerRef.current = null;
+      }
+    };
+  }, [scale]);
 
   useEffect(() => {
     const updateToolbarHeight = () => {
@@ -737,6 +791,36 @@ export function WorkshopEditorPage() {
       observer?.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    const updateCanvasViewport = () => {
+      const stage = canvasStageRef.current;
+      if (!stage) return;
+
+      const rect = stage.getBoundingClientRect();
+      const nextViewport = {
+        width: Math.max(0, Math.round(rect.width)),
+        height: Math.max(0, Math.round(rect.height)),
+      };
+
+      setCanvasViewport((current) => (
+        current.width === nextViewport.width && current.height === nextViewport.height
+          ? current
+          : nextViewport
+      ));
+    };
+
+    updateCanvasViewport();
+    window.addEventListener('resize', updateCanvasViewport);
+
+    const observer = canvasStageRef.current ? new ResizeObserver(updateCanvasViewport) : null;
+    if (observer && canvasStageRef.current) observer.observe(canvasStageRef.current);
+
+    return () => {
+      window.removeEventListener('resize', updateCanvasViewport);
+      observer?.disconnect();
+    };
+  }, [toolbarHeight]);
 
   useEffect(() => {
     let alive = true;
@@ -767,16 +851,6 @@ export function WorkshopEditorPage() {
       setEditorBrand(projectBrand);
       setDownloadBrand(projectBrand);
 
-      console.log('[WorkshopEditorPage] project status snapshot', {
-        projectId,
-        beadingState: project?.beadingState ?? null,
-        status: project?.status ?? null,
-        kind: project?.kind ?? null,
-        hasPatternResult: Boolean(project?.patternResult),
-        hasEditorState: Boolean(project?.editorState),
-        hasDraftState: Boolean(restoredState),
-      });
-
       let loadedGridForPersistence: string[][] | null = null;
 
       if (project?.patternResult) {
@@ -784,9 +858,6 @@ export function WorkshopEditorPage() {
         const nextGrid = restoredGrid ? cloneGrid(restoredGrid) : buildGridFromPattern(patternResult);
         const isBlankSource = project.sourceType === 'blank';
         setBaseCanvasSize(isBlankSource ? { cols: 1, rows: 1 } : { cols: patternResult.width, rows: patternResult.height });
-
-        console.log('[WorkshopEditorPage] patternResult', patternResult);
-        console.log('[WorkshopEditorPage] gridFromPatternResult', nextGrid);
 
         setCols(nextGrid[0]?.length ?? patternResult.width);
         setRows(nextGrid.length || patternResult.height);
@@ -839,52 +910,64 @@ export function WorkshopEditorPage() {
   useEffect(() => {
     if (!canvasRef.current || !previewCanvasRef.current) return;
 
-    const headerHeight = 56;
-    const availableHeight = Math.max(0, window.innerHeight - headerHeight - toolbarHeight);
-    const availableWidth = window.innerWidth;
-    const cellSize = Math.max(1, Math.floor(availableWidth / cols));
-    const displayWidth = cols * cellSize;
-    const displayHeight = rows * cellSize;
-    const yOffset = Math.max(0, (availableHeight - displayHeight) / 2);
-    const scaleOffsetX = Math.max(0, (availableWidth - displayWidth) / 2);
+    const frame = window.requestAnimationFrame(() => {
+      if (!canvasRef.current || !previewCanvasRef.current) return;
 
-    setCanvasLayout((current) => ({
-      ...current,
-      width: displayWidth,
-      height: displayHeight,
-      offsetY: yOffset,
-      scaleOffsetX,
-      scaleOffsetY: yOffset,
-    }));
+      const stage = canvasStageRef.current;
+      const stageRect = stage?.getBoundingClientRect();
+      const availableWidth = Math.max(1, canvasViewport.width || Math.round(stageRect?.width ?? window.innerWidth));
+      const availableHeight = Math.max(1, canvasViewport.height || Math.round(stageRect?.height ?? window.innerHeight));
+      const cellSize = Math.max(1, Math.floor(Math.min(availableWidth / cols, availableHeight / rows)));
+      const displayWidth = cols * cellSize;
+      const displayHeight = rows * cellSize;
+      const fitScale = Math.min(1, availableWidth / displayWidth, availableHeight / displayHeight);
+      const xOffset = Math.max(0, (availableWidth - displayWidth * fitScale) / 2);
+      const yOffset = Math.max(0, (availableHeight - displayHeight * fitScale) / 2);
 
-    if (!hasUserAdjustedViewRef.current) {
-      setOffset({ x: scaleOffsetX, y: yOffset });
-    }
+      setCanvasLayout((current) => ({
+        ...current,
+        width: displayWidth,
+        height: displayHeight,
+        scale: fitScale,
+        offsetY: yOffset,
+        scaleOffsetX: xOffset,
+        scaleOffsetY: yOffset,
+      }));
 
-    paintGridToCanvas({
-      canvas: canvasRef.current,
-      previewCanvas: previewCanvasRef.current,
-      bubbleCanvas: bubbleCanvasRef.current,
-      grid,
-      cols,
-      rows,
-      bgColor,
-      showGrid,
-      showDividers,
-      showColorCodes,
-      beadShape,
-      backgroundMode,
-      colorSystem: editorBrand,
-      displayWidth,
-      displayHeight,
-      visibleCellSize: cellSize * scale,
+      if (!hasUserAdjustedViewRef.current) {
+        if (Math.abs(scale - fitScale) > 0.001) setScale(fitScale);
+        setOffset({ x: xOffset, y: yOffset });
+      }
+
+      canvasRenderMetaRef.current = paintGridToCanvas({
+        canvas: canvasRef.current,
+        previewCanvas: previewCanvasRef.current,
+        bubbleCanvas: bubbleCanvasRef.current,
+        grid,
+        cols,
+        rows,
+        bgColor,
+        showGrid,
+        showDividers,
+        showColorCodes,
+        beadShape,
+        backgroundMode,
+        colorSystem: editorBrand,
+        displayWidth,
+        displayHeight,
+        visibleCellSize: cellSize * (hasUserAdjustedViewRef.current ? renderScale : fitScale),
+      });
     });
-  }, [backgroundMode, beadShape, bgColor, cols, editorBrand, grid, rows, scale, showColorCodes, showDividers, showGrid, toolbarHeight]);
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [backgroundMode, beadShape, bgColor, canvasViewport.height, canvasViewport.width, cols, editorBrand, grid, renderScale, rows, showColorCodes, showDividers, showGrid]);
 
   useEffect(() => {
     return () => {
       if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
+      if (renderScaleTimerRef.current) window.clearTimeout(renderScaleTimerRef.current);
+      if (transformFrameRef.current !== null) window.cancelAnimationFrame(transformFrameRef.current);
       globalPaintCleanupRef.current?.();
     };
   }, []);
@@ -922,8 +1005,8 @@ export function WorkshopEditorPage() {
 
   const schedulePersistState = (nextGrid: string[][], nextHistory: string[][][], nextIndex: number) => {
     pendingPersistRef.current = {
-      grid: cloneGrid(nextGrid),
-      history: cloneHistory(nextHistory),
+      grid: nextGrid,
+      history: nextHistory,
       historyIndex: nextIndex,
     };
 
@@ -959,8 +1042,8 @@ export function WorkshopEditorPage() {
   const clampScale = (nextScale: number) => Math.min(12, Math.max(0.2, +nextScale.toFixed(2)));
 
   const getCenteredOffset = (nextScale = 1) => ({
-    x: Math.max(0, (window.innerWidth - canvasLayout.width * nextScale) / 2),
-    y: Math.max(0, (window.innerHeight - headerHeight - toolbarHeight - canvasLayout.height * nextScale) / 2),
+    x: Math.max(0, ((canvasStageRef.current?.getBoundingClientRect().width ?? window.innerWidth) - canvasLayout.width * nextScale) / 2),
+    y: Math.max(0, ((canvasStageRef.current?.getBoundingClientRect().height ?? window.innerHeight) - canvasLayout.height * nextScale) / 2),
   });
 
   const applyZoom = (nextScale: number, focalPoint?: PointerPoint) => {
@@ -968,33 +1051,28 @@ export function WorkshopEditorPage() {
     const stage = canvasStageRef.current;
     if (!canvas || !stage) return;
 
-    const currentScale = scale;
+    const currentScale = scaleRef.current;
     const clampedScale = clampScale(nextScale);
     if (clampedScale === currentScale) return;
 
     const stageRect = stage.getBoundingClientRect();
     const scaleRatio = clampedScale / currentScale;
+    const currentOffset = offsetRef.current;
+    const nextOffset = !focalPoint
+      ? getCenteredOffset(clampedScale)
+      : {
+          x: (focalPoint.clientX - stageRect.left) - ((focalPoint.clientX - stageRect.left) - currentOffset.x) * scaleRatio,
+          y: (focalPoint.clientY - stageRect.top) - ((focalPoint.clientY - stageRect.top) - currentOffset.y) * scaleRatio,
+        };
 
     hasUserAdjustedViewRef.current = true;
-    setOffset((current) => {
-      if (!focalPoint) {
-        return getCenteredOffset(clampedScale);
-      }
-
-      const pointX = focalPoint.clientX - stageRect.left;
-      const pointY = focalPoint.clientY - stageRect.top;
-
-      return {
-        x: pointX - (pointX - current.x) * scaleRatio,
-        y: pointY - (pointY - current.y) * scaleRatio,
-      };
-    });
-
+    scheduleCanvasTransform(nextOffset, clampedScale);
+    setOffset(nextOffset);
     setScale(clampedScale);
   };
 
   const zoomAt = (clientX: number, clientY: number, factor: number) => {
-    applyZoom(scale * factor, { clientX, clientY });
+    applyZoom(scaleRef.current * factor, { clientX, clientY });
   };
 
   const persistEditorState = (nextGrid: string[][], nextHistory: string[][][], nextIndex: number) => {
@@ -1017,6 +1095,29 @@ export function WorkshopEditorPage() {
     persistEditorState(nextGrid, trimmedHistory, nextIndex);
   };
 
+  const paintChangedCellsImmediately = (nextGrid: string[][], changedCells: Array<{ row: number; col: number }>) => {
+    if (!changedCells.length || !canvasRef.current || !previewCanvasRef.current) return;
+    const renderMeta = canvasRenderMetaRef.current;
+    if (!renderMeta) return;
+
+    paintGridCellsToCanvas({
+      canvas: canvasRef.current,
+      previewCanvas: previewCanvasRef.current,
+      bubbleCanvas: bubbleCanvasRef.current,
+      grid: nextGrid,
+      changedCells,
+      cols,
+      rows,
+      showGrid,
+      showDividers,
+      showColorCodes,
+      beadShape,
+      backgroundMode,
+      colorSystem: editorBrand,
+      visibleCellSize: renderMeta.visibleCellSize,
+    });
+  };
+
   const continuePaintStroke = (pointerId: number, clientX: number, clientY: number) => {
     const drag = dragRef.current;
     const paintSession = paintSessionRef.current;
@@ -1031,6 +1132,7 @@ export function WorkshopEditorPage() {
     drag.lastCell = key;
 
     let changed = false;
+    const changedCells: Array<{ row: number; col: number }> = [];
     for (const nextCell of getInterpolatedCells(paintSession.lastCell, cell)) {
       changed = paintCellBlock(
         paintSession.grid,
@@ -1039,12 +1141,13 @@ export function WorkshopEditorPage() {
         paintSession.tool,
         paintSession.color,
         paintSession.size,
+        changedCells,
       ) || changed;
     }
 
     paintSession.lastCell = cell;
     paintSession.changed = paintSession.changed || changed;
-    if (changed) setGrid(cloneGrid(paintSession.grid));
+    if (changed) paintChangedCellsImmediately(paintSession.grid, changedCells);
     drag.moved = true;
   };
 
@@ -1086,7 +1189,8 @@ export function WorkshopEditorPage() {
 
     const size = tool === 'eraser' ? eraserSize : brushSize;
     const nextGrid = cloneGrid(grid);
-    const changed = paintCellBlock(nextGrid, cell.row, cell.col, tool, currentColor, size);
+    const changedCells: Array<{ row: number; col: number }> = [];
+    const changed = paintCellBlock(nextGrid, cell.row, cell.col, tool, currentColor, size, changedCells);
 
     paintSessionRef.current = {
       grid: nextGrid,
@@ -1109,7 +1213,7 @@ export function WorkshopEditorPage() {
       lastCell: `${cell.row},${cell.col}`,
     };
 
-    if (changed) setGrid(nextGrid);
+    if (changed) paintChangedCellsImmediately(nextGrid, changedCells);
     bindGlobalPaintEvents(pointerId);
   };
 
@@ -1175,6 +1279,8 @@ export function WorkshopEditorPage() {
       originY,
       originOffsetX: originX,
       originOffsetY: originY,
+      currentOffsetX: originX,
+      currentOffsetY: originY,
       moved: false,
       lastCell: '',
     };
@@ -1192,6 +1298,11 @@ export function WorkshopEditorPage() {
 
     if (drag.kind === 'pan') {
       hasUserAdjustedViewRef.current = true;
+      setOffset({
+        x: drag.currentOffsetX ?? drag.originOffsetX,
+        y: drag.currentOffsetY ?? drag.originOffsetY,
+      });
+      setRenderScale(scaleRef.current);
     }
 
     dragRef.current = null;
@@ -1366,14 +1477,14 @@ export function WorkshopEditorPage() {
             <button
               type="button"
               className={styles.smallActionBtn}
-              onClick={() => applyZoom(scale - 0.1)}
+              onClick={() => applyZoom(scaleRef.current - 0.1)}
             >
               -
             </button>
             <button
               type="button"
               className={styles.smallActionBtn}
-              onClick={() => applyZoom(scale + 0.1)}
+              onClick={() => applyZoom(scaleRef.current + 0.1)}
             >
               +
             </button>
@@ -1381,7 +1492,9 @@ export function WorkshopEditorPage() {
               type="button"
               className={styles.smallActionBtn}
               onClick={() => {
-                setOffset(getCenteredOffset(1));
+                const nextOffset = getCenteredOffset(1);
+                scheduleCanvasTransform(nextOffset, 1);
+                setOffset(nextOffset);
                 setScale(1);
                 showToast('视图已重置');
               }}
@@ -1399,7 +1512,6 @@ export function WorkshopEditorPage() {
     const isToolbar = Boolean(toolbarRef.current?.contains(target));
 
     if (isToolbar) {
-      beginDrag(event, 'toolbar', toolbarPos.x, toolbarPos.y);
       return;
     }
 
@@ -1415,8 +1527,8 @@ export function WorkshopEditorPage() {
         const dy = b.y - a.y;
         pinchRef.current = {
           startDistance: Math.hypot(dx, dy),
-          startScale: scale,
-          startOffset: { ...offset },
+          startScale: scaleRef.current,
+          startOffset: { ...offsetRef.current },
           center: {
             x: (a.x + b.x) / 2,
             y: (a.y + b.y) / 2,
@@ -1430,7 +1542,7 @@ export function WorkshopEditorPage() {
 
     if (tool === 'pan') {
       if (isDownloadModalOpen) return;
-      beginDrag(event, 'pan', offset.x, offset.y);
+      beginDrag(event, 'pan', offsetRef.current.x, offsetRef.current.y);
       return;
     }
 
@@ -1482,11 +1594,13 @@ export function WorkshopEditorPage() {
         const centerX = pinchRef.current.center.x - rect.left;
         const centerY = pinchRef.current.center.y - rect.top;
         const scaleRatio = nextScale / pinchRef.current.startScale;
-
-        setOffset({
+        const nextOffset = {
           x: centerX - (centerX - pinchRef.current.startOffset.x) * scaleRatio,
           y: centerY - (centerY - pinchRef.current.startOffset.y) * scaleRatio,
-        });
+        };
+
+        scheduleCanvasTransform(nextOffset, nextScale);
+        setOffset(nextOffset);
         setScale(nextScale);
         return;
       }
@@ -1520,12 +1634,15 @@ export function WorkshopEditorPage() {
     if (drag && drag.pointerId === event.pointerId && drag.kind === 'pan') {
       const dx = event.clientX - drag.startX;
       const dy = event.clientY - drag.startY;
-      drag.moved = true;
-      hasUserAdjustedViewRef.current = true;
-      setOffset({
+      const nextOffset = {
         x: drag.originOffsetX + dx,
         y: drag.originOffsetY + dy,
-      });
+      };
+      drag.moved = true;
+      drag.currentOffsetX = nextOffset.x;
+      drag.currentOffsetY = nextOffset.y;
+      hasUserAdjustedViewRef.current = true;
+      scheduleCanvasTransform(nextOffset);
       return;
     }
 
@@ -1535,11 +1652,14 @@ export function WorkshopEditorPage() {
     const dy = event.clientY - drag.startY;
 
     if (drag.kind === 'pan') {
-      drag.moved = true;
-      setOffset({
+      const nextOffset = {
         x: drag.originOffsetX + dx,
         y: drag.originOffsetY + dy,
-      });
+      };
+      drag.moved = true;
+      drag.currentOffsetX = nextOffset.x;
+      drag.currentOffsetY = nextOffset.y;
+      scheduleCanvasTransform(nextOffset);
       return;
     }
 
@@ -1602,6 +1722,14 @@ export function WorkshopEditorPage() {
     if (!drag || drag.pointerId !== event.pointerId) return;
 
     if (drag.kind === 'paint') finishPaintStroke(event.pointerId);
+    if (drag.kind === 'pan') {
+      hasUserAdjustedViewRef.current = true;
+      setOffset({
+        x: drag.currentOffsetX ?? drag.originOffsetX,
+        y: drag.currentOffsetY ?? drag.originOffsetY,
+      });
+      setRenderScale(scaleRef.current);
+    }
 
     dragRef.current = null;
     pinchRef.current = null;
@@ -1615,7 +1743,10 @@ export function WorkshopEditorPage() {
 
   const handleToolbarPointerDown = (event: React.PointerEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
-    if (target.closest('button') || target.closest('input') || target.closest('select')) return;
+    if (target.closest('button') || target.closest('input') || target.closest('select')) {
+      event.stopPropagation();
+      return;
+    }
 
     beginDrag(event, 'toolbar', toolbarPos.x, toolbarPos.y);
   };
@@ -1674,8 +1805,8 @@ export function WorkshopEditorPage() {
     const requestedRows = Math.floor(nextRows);
     if (!Number.isFinite(requestedCols) || !Number.isFinite(requestedRows)) return;
 
-    const safeCols = Math.max(minimumCanvasSize.cols, requestedCols);
-    const safeRows = Math.max(minimumCanvasSize.rows, requestedRows);
+    const safeCols = Math.max(minimumCanvasSize.cols, Math.min(EDITOR_CANVAS_MAX_SIDE, requestedCols));
+    const safeRows = Math.max(minimumCanvasSize.rows, Math.min(EDITOR_CANVAS_MAX_SIDE, requestedRows));
     const didClamp = safeCols !== requestedCols || safeRows !== requestedRows;
 
     if (safeCols === cols && safeRows === rows) {
@@ -1717,16 +1848,15 @@ export function WorkshopEditorPage() {
     };
   }, [projectId]);
 
-  const headerHeight = 56;
   const canvasStageStyle = {
-    top: `${headerHeight}px`,
-    bottom: `${Math.max(0, toolbarHeight + 18)}px`,
+    top: 0,
+    bottom: `${Math.max(0, toolbarHeight + 32)}px`,
   };
 
   const canvasTransformStyle = {
     width: `${canvasLayout.width}px`,
     height: `${canvasLayout.height}px`,
-    transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+    transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${scale})`,
   };
 
   return (
@@ -1801,7 +1931,7 @@ export function WorkshopEditorPage() {
         onPointerCancel={handleCanvasPointerUp}
         onWheel={(event) => {
           const factor = event.deltaY < 0 ? 1.12 : 0.9;
-          applyZoom(scale * factor, { clientX: event.clientX, clientY: event.clientY });
+          applyZoom(scaleRef.current * factor, { clientX: event.clientX, clientY: event.clientY });
         }}
         style={{ outline: 'none' }}
       >
@@ -2028,6 +2158,8 @@ export function WorkshopEditorPage() {
         rows={rows}
         minCols={minimumCanvasSize.cols}
         minRows={minimumCanvasSize.rows}
+        maxCols={Math.max(minimumCanvasSize.cols, EDITOR_CANVAS_MAX_SIDE)}
+        maxRows={Math.max(minimumCanvasSize.rows, EDITOR_CANVAS_MAX_SIDE)}
         showDividers={showDividers}
         showColorCodes={showColorCodes}
         beadShape={beadShape}

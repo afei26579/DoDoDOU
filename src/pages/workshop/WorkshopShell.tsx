@@ -20,7 +20,10 @@ function createProjectId() {
 }
 
 const WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX = 'dodoudou:workshop-editor-local-draft:';
-const ENABLE_GALLERY_PUBLISH = import.meta.env.VITE_ENABLE_GALLERY_PUBLISH === 'true';
+const galleryPublishFlag = import.meta.env.VITE_ENABLE_GALLERY_PUBLISH;
+const ENABLE_GALLERY_PUBLISH =
+  galleryPublishFlag === 'true' ||
+  (galleryPublishFlag === undefined && import.meta.env.DEV);
 
 function removeLocalEditorDraft(projectId: string) {
   if (typeof window === 'undefined') return;
@@ -54,16 +57,6 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     if (!projectId) return;
     void markWorkshopProjectOpened(projectId);
   }, [projectId]);
-
-  useEffect(() => {
-    console.debug('[WorkshopShell] current project snapshot', {
-      projectId,
-      beadingState: state.beadingState,
-      hasPatternResult: Boolean(state.patternResult),
-      viewMode: state.viewMode,
-      mode,
-    });
-  }, [mode, projectId, state.beadingState, state.patternResult, state.viewMode]);
 
   const [isPublishOpen, setIsPublishOpen] = useState(false);
 
@@ -270,14 +263,9 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         onMirrorPattern={handleMirrorPattern}
         onRemoveBackground={handleRemoveBackground}
         onUploadImage={() => {
-          console.debug('[workshop] file input click requested', { projectId, hasInput: Boolean(fileInputRef.current) });
           fileInputRef.current?.click();
-          window.setTimeout(() => {
-            console.debug('[workshop] file input click finished', { activeElement: document.activeElement?.tagName });
-          }, 0);
         }}
         onReuploadImage={() => {
-          console.debug('[workshop] reupload requested', { projectId });
           fileInputRef.current?.click();
         }}
         onViewPattern={() => navigate(`/workshop/result/${projectId ?? createProjectId()}`)}

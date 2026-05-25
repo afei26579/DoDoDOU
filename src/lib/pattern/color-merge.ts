@@ -1,4 +1,5 @@
 import type { WorkingCell } from './algo-types';
+import { clampAdvancedValue } from './advanced-config';
 import { deltaE2000 } from './delta-e';
 import type { PatternPaletteColorLab } from './palette-cache';
 import type { PatternSizeTier } from './pattern-size';
@@ -14,6 +15,10 @@ export type ColorMergeStats = {
   changedCellCount: number;
   removedColorCount: number;
 };
+
+function getEffectiveMergeInput(input: number, colorSimplify: number) {
+  return Math.max(0, Math.min(100, input + (clampAdvancedValue(colorSimplify) - 50) * 0.7));
+}
 
 function getMergeDeltaThreshold(input: number, style: WorkshopStyle) {
   const normalized = Math.max(0, Math.min(100, input)) / 100;
@@ -50,13 +55,15 @@ export function mergeSimilarWorkingColors(params: {
   palette: PatternPaletteColorLab[];
   sizeTier: PatternSizeTier;
   colorMergeThreshold: number;
+  colorSimplify: number;
   style: WorkshopStyle;
 }): { cells: WorkingCell[]; stats: ColorMergeStats } {
-  const { cells, palette, sizeTier, colorMergeThreshold, style } = params;
+  const { cells, palette, sizeTier, colorMergeThreshold, colorSimplify, style } = params;
   const paletteByColorId = new Map(palette.map((color) => [color.colorId, color] as const));
   const totalDrawableCells = cells.filter((cell) => !cell.isTransparent).length;
-  const rareCountLimit = getRareCountLimit(totalDrawableCells, sizeTier, colorMergeThreshold);
-  const deltaThreshold = getMergeDeltaThreshold(colorMergeThreshold, style);
+  const effectiveMergeInput = getEffectiveMergeInput(colorMergeThreshold, colorSimplify);
+  const rareCountLimit = getRareCountLimit(totalDrawableCells, sizeTier, effectiveMergeInput);
+  const deltaThreshold = getMergeDeltaThreshold(effectiveMergeInput, style);
   const summaries = summarizeColors(cells).sort((a, b) => a.count - b.count);
   const summaryByColorId = new Map(summaries.map((summary) => [summary.colorId, summary] as const));
   const replacements = new Map<string, PatternPaletteColorLab>();

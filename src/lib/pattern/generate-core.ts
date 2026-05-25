@@ -1,4 +1,5 @@
 import type { GeneratePatternCoreResult, WorkingCell } from './algo-types';
+import { resolvePatternAdvancedConfig } from './advanced-config';
 import { applyCellConfidence } from './confidence';
 import { findClosestPaletteColorByLabP0 } from './color-match';
 import { mergeSimilarWorkingColors } from './color-merge';
@@ -88,10 +89,11 @@ export function generatePatternCore(params: GeneratePatternCoreParams): Generate
   const sizeTier = getPatternSizeTier(canvasSize);
   const topK = getP0TopK(sizeTier);
   const paletteCache = getPaletteLabCache(palette);
+  const advanced = resolvePatternAdvancedConfig(config);
   const debug = createEmptyDebugInfo({ topK, paletteCacheHit: paletteCache.cacheHit });
 
   const samplingStart = getTimestamp();
-  let cells = sampleGridCells({ imageData, width, height, sizeTier, style: config.style });
+  let cells = sampleGridCells({ imageData, width, height, sizeTier, style: config.style, advanced });
   debug.samplingTimeMs = roundMs(getTimestamp() - samplingStart);
 
   const matchingStart = getTimestamp();
@@ -121,6 +123,7 @@ export function generatePatternCore(params: GeneratePatternCoreParams): Generate
     palette: paletteCache.colors,
     sizeTier,
     colorMergeThreshold: config.colorMergeThreshold,
+    colorSimplify: advanced.colorSimplify,
     style: config.style,
   });
   cells = merged.cells;
@@ -133,6 +136,7 @@ export function generatePatternCore(params: GeneratePatternCoreParams): Generate
     height,
     palette: paletteCache.colors,
     sizeTier,
+    advanced,
   });
   cells = cleaned.cells;
   debug.cleanedCellCount = merged.stats.changedCellCount + cleaned.stats.cleanedCellCount;

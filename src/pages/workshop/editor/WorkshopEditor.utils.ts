@@ -3,6 +3,7 @@ import type { ColorSystem } from '../../../features/workshop/model/types';
 import {
   drawBeadBoard,
   type BeadBoardCell,
+  type BeadBoardVisibleRange,
   type BeadShape,
   type TransparentCellBackground,
 } from '../../../lib/pattern/beadBoardCanvas';
@@ -32,9 +33,15 @@ export const EDITOR_GRID_LINE_VISIBLE_CELL_PX = 18;
 const COLOR_CODE_MIN_VISIBLE_CELL_PX = 12;
 const COLOR_CODE_DARK_TEXT = '#5D534A';
 const COLOR_CODE_LIGHT_TEXT = '#FFFFFF';
-const MAX_MAIN_CANVAS_DIMENSION = 8192;
+const MAX_MAIN_CANVAS_DIMENSION = 6144;
 export type EditorBeadShape = Exclude<BeadShape, 'auto'>;
 export type EditorBackgroundMode = TransparentCellBackground;
+export type EditorCanvasRenderMeta = {
+  cellSize: number;
+  cssWidth: number;
+  cssHeight: number;
+  visibleCellSize: number;
+};
 
 export function createEmptyGrid(cols: number, rows: number) {
   return Array.from({ length: rows }, () => Array(cols).fill(''));
@@ -236,6 +243,12 @@ function drawColorCodes(
   grid: string[][],
   cellSize: number,
   colorSystem: ColorSystem,
+  range: BeadBoardVisibleRange = {
+    startCol: 0,
+    endCol: (grid[0]?.length ?? 1) - 1,
+    startRow: 0,
+    endRow: grid.length - 1,
+  },
 ) {
   const codeCache = new Map<string, string>();
   const palette = buildPalette(colorSystem);
@@ -245,40 +258,46 @@ function drawColorCodes(
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
 
-  grid.forEach((row, r) => row.forEach((hex, c) => {
-    if (isTransparentCell(hex)) return;
+  for (let r = range.startRow; r <= range.endRow; r += 1) {
+    const row = grid[r];
+    if (!row) continue;
 
-    const normalizedHex = hex.toUpperCase();
-    const code = codeCache.get(normalizedHex) ?? getDisplayVendorCode(normalizedHex, colorSystem, palette);
-    codeCache.set(normalizedHex, code);
-    if (!code) return;
+    for (let c = range.startCol; c <= range.endCol; c += 1) {
+      const hex = row[c];
+      if (isTransparentCell(hex)) continue;
 
-    const fontSize = Math.max(
-      4,
-      Math.min(cellSize * 0.34, (cellSize - 5) / Math.max(1, code.length * 0.68)),
-    );
-    const fillColor = getReadableCodeTextColor(normalizedHex);
-    const strokeColor = fillColor === COLOR_CODE_LIGHT_TEXT
-      ? 'rgba(93, 83, 74, 0.32)'
-      : 'rgba(255, 255, 255, 0.62)';
+      const normalizedHex = hex.toUpperCase();
+      const code = codeCache.get(normalizedHex) ?? getDisplayVendorCode(normalizedHex, colorSystem, palette);
+      codeCache.set(normalizedHex, code);
+      if (!code) continue;
 
-    ctx.font = `700 ${fontSize}px Nunito, Arial, sans-serif`;
-    ctx.strokeStyle = strokeColor;
-    ctx.lineWidth = Math.max(1.4, fontSize * 0.22);
-    ctx.fillStyle = fillColor;
-    ctx.strokeText(
-      code,
-      (c * cellSize) + (cellSize / 2),
-      (r * cellSize) + (cellSize / 2),
-      cellSize - 2,
-    );
-    ctx.fillText(
-      code,
-      (c * cellSize) + (cellSize / 2),
-      (r * cellSize) + (cellSize / 2),
-      cellSize - 2,
-    );
-  }));
+      const fontSize = Math.max(
+        4,
+        Math.min(cellSize * 0.34, (cellSize - 5) / Math.max(1, code.length * 0.68)),
+      );
+      const fillColor = getReadableCodeTextColor(normalizedHex);
+      const strokeColor = fillColor === COLOR_CODE_LIGHT_TEXT
+        ? 'rgba(93, 83, 74, 0.32)'
+        : 'rgba(255, 255, 255, 0.62)';
+
+      ctx.font = `700 ${fontSize}px Nunito, Arial, sans-serif`;
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = Math.max(1.4, fontSize * 0.22);
+      ctx.fillStyle = fillColor;
+      ctx.strokeText(
+        code,
+        (c * cellSize) + (cellSize / 2),
+        (r * cellSize) + (cellSize / 2),
+        cellSize - 2,
+      );
+      ctx.fillText(
+        code,
+        (c * cellSize) + (cellSize / 2),
+        (r * cellSize) + (cellSize / 2),
+        cellSize - 2,
+      );
+    }
+  }
 
   ctx.restore();
 }
@@ -297,6 +316,91 @@ function buildBoardCellsFromGrid(grid: string[][]): BeadBoardCell[] {
     y,
     hex: hex || 'transparent',
   })));
+}
+
+function buildBoardCellsFromRange(grid: string[][], range: BeadBoardVisibleRange): BeadBoardCell[] {
+  const cells: BeadBoardCell[] = [];
+
+  for (let y = range.startRow; y <= range.endRow; y += 1) {
+    const row = grid[y];
+    if (!row) continue;
+
+    for (let x = range.startCol; x <= range.endCol; x += 1) {
+      cells.push({
+        x,
+        y,
+        hex: row[x] || 'transparent',
+      });
+    }
+  }
+
+  return cells;
+}
+
+function getChangedCellRange(
+  changedCells: Array<{ row: number; col: number }>,
+  cols: number,
+  rows: number,
+): BeadBoardVisibleRange | null {
+  if (!changedCells.length || cols <= 0 || rows <= 0) return null;
+
+  let startCol = cols - 1;
+  let endCol = 0;
+  let startRow = rows - 1;
+  let endRow = 0;
+
+  for (const cell of changedCells) {
+    if (cell.col < 0 || cell.col >= cols || cell.row < 0 || cell.row >= rows) continue;
+    startCol = Math.min(startCol, cell.col);
+    endCol = Math.max(endCol, cell.col);
+    startRow = Math.min(startRow, cell.row);
+    endRow = Math.max(endRow, cell.row);
+  }
+
+  if (startCol > endCol || startRow > endRow) return null;
+
+  return {
+    startCol: Math.max(0, startCol - 1),
+    endCol: Math.min(cols - 1, endCol + 1),
+    startRow: Math.max(0, startRow - 1),
+    endRow: Math.min(rows - 1, endRow + 1),
+  };
+}
+
+function paintPreviewCells(
+  previewCanvas: HTMLCanvasElement,
+  bubbleCanvas: HTMLCanvasElement | null,
+  grid: string[][],
+  changedCells: Array<{ row: number; col: number }>,
+  cols: number,
+  rows: number,
+) {
+  const pCtx = previewCanvas.getContext('2d');
+  if (!pCtx || previewCanvas.width !== cols || previewCanvas.height !== rows) return;
+
+  const seen = new Set<string>();
+  for (const cell of changedCells) {
+    if (cell.col < 0 || cell.col >= cols || cell.row < 0 || cell.row >= rows) continue;
+    const key = `${cell.row},${cell.col}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const hex = grid[cell.row]?.[cell.col] ?? '';
+    pCtx.clearRect(cell.col, cell.row, 1, 1);
+    if (!isTransparentCell(hex)) {
+      pCtx.fillStyle = hex;
+      pCtx.fillRect(cell.col, cell.row, 1, 1);
+    }
+  }
+
+  const bCtx = bubbleCanvas?.getContext('2d');
+  if (!bubbleCanvas || !bCtx || !bubbleCanvas.isConnected) return;
+
+  bubbleCanvas.width = 32;
+  bubbleCanvas.height = 32;
+  bCtx.imageSmoothingEnabled = false;
+  bCtx.clearRect(0, 0, 32, 32);
+  bCtx.drawImage(previewCanvas, 0, 0, 32, 32);
 }
 
 export function paintGridToCanvas({
@@ -333,11 +437,11 @@ export function paintGridToCanvas({
   displayWidth?: number;
   displayHeight?: number;
   visibleCellSize?: number;
-}) {
+}): EditorCanvasRenderMeta | null {
   const ctx = canvas.getContext('2d');
   const pCtx = previewCanvas.getContext('2d');
   const bCtx = bubbleCanvas?.getContext('2d');
-  if (!ctx || !pCtx) return;
+  if (!ctx || !pCtx) return null;
 
   const cssWidth = displayWidth ?? cols * 16;
   const cssHeight = displayHeight ?? rows * 16;
@@ -393,6 +497,83 @@ export function paintGridToCanvas({
       bCtx.fillRect(x, y, width, height);
     }));
   }
+
+  return {
+    cellSize,
+    cssWidth,
+    cssHeight,
+    visibleCellSize: visibleSize,
+  };
+}
+
+export function paintGridCellsToCanvas({
+  canvas,
+  previewCanvas,
+  bubbleCanvas,
+  grid,
+  changedCells,
+  cols,
+  rows,
+  showGrid,
+  showDividers,
+  showColorCodes,
+  beadShape,
+  backgroundMode,
+  colorSystem,
+  visibleCellSize,
+}: {
+  canvas: HTMLCanvasElement;
+  previewCanvas: HTMLCanvasElement;
+  bubbleCanvas: HTMLCanvasElement | null;
+  grid: string[][];
+  changedCells: Array<{ row: number; col: number }>;
+  cols: number;
+  rows: number;
+  showGrid: boolean;
+  showDividers: boolean;
+  showColorCodes: boolean;
+  beadShape: EditorBeadShape;
+  backgroundMode: EditorBackgroundMode;
+  colorSystem: ColorSystem;
+  visibleCellSize: number;
+}) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx || cols <= 0 || rows <= 0 || canvas.width <= 0 || canvas.height <= 0) return;
+
+  const cellSize = canvas.width / cols;
+  const range = getChangedCellRange(changedCells, cols, rows);
+  if (!range) return;
+
+  const padding = Math.max(3, cellSize * 0.2);
+  const clearX = Math.max(0, range.startCol * cellSize - padding);
+  const clearY = Math.max(0, range.startRow * cellSize - padding);
+  const clearWidth = Math.min(canvas.width - clearX, (range.endCol - range.startCol + 1) * cellSize + padding * 2);
+  const clearHeight = Math.min(canvas.height - clearY, (range.endRow - range.startRow + 1) * cellSize + padding * 2);
+
+  ctx.clearRect(clearX, clearY, clearWidth, clearHeight);
+  ctx.fillStyle = 'rgba(255,255,255,.62)';
+  ctx.fillRect(clearX, clearY, clearWidth, clearHeight);
+  drawBeadBoard({
+    ctx,
+    cells: buildBoardCellsFromRange(grid, range),
+    boardWidth: cols,
+    boardHeight: rows,
+    cellPx: cellSize,
+    visibleCellPx: visibleCellSize,
+    visibleRange: range,
+    showSurface: false,
+    showGrid,
+    showDividers,
+    showBorder: true,
+    beadShape,
+    transparentCellBackground: backgroundMode,
+  });
+
+  if (showColorCodes && visibleCellSize >= COLOR_CODE_MIN_VISIBLE_CELL_PX) {
+    drawColorCodes(ctx, grid, cellSize, colorSystem, range);
+  }
+
+  paintPreviewCells(previewCanvas, bubbleCanvas, grid, changedCells, cols, rows);
 }
 
 export function exportGridAsImage(grid: string[][], cols: number, rows: number, bgColor: string) {

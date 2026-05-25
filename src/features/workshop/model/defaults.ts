@@ -1,3 +1,4 @@
+import { DEFAULT_PATTERN_ADVANCED_CONFIG } from '../../../lib/pattern/advanced-config';
 import type { CropTransform, WorkshopConfig, WorkshopFlowState } from './types';
 
 export const defaultCropTransform: CropTransform = {
@@ -13,6 +14,7 @@ export const defaultWorkshopConfig: WorkshopConfig = {
   style: '动漫',
   colorMergeThreshold: 30,
   algorithm: 'legacy',
+  advanced: DEFAULT_PATTERN_ADVANCED_CONFIG,
 };
 
 export const defaultWorkshopFlowState: WorkshopFlowState = {

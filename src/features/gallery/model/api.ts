@@ -1,5 +1,4 @@
 import type { GalleryDetailResponse, GalleryListQuery, GalleryListResponse, PublishGalleryPayload, PublishGalleryResponse } from './types';
-import { getMockGalleryDetail, getMockGalleryList, makePublishedResponse } from './mock';
 
 function resolveApiBaseUrl() {
   const configured = import.meta.env.VITE_API_BASE_URL?.trim() || '';
@@ -12,7 +11,7 @@ function resolveApiBaseUrl() {
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
-const USE_MOCK = import.meta.env.VITE_USE_MOCK_GALLERY !== 'false' && !API_BASE_URL;
+const GALLERY_WRITE_TOKEN = import.meta.env.VITE_GALLERY_WRITE_TOKEN?.trim() || '';
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   if (!API_BASE_URL) {
@@ -27,82 +26,31 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
 
+  const payload = await response.json().catch(() => null) as { message?: string } | null;
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    throw new Error(payload?.message || `Request failed: ${response.status}`);
   }
 
-  return (await response.json()) as T;
-}
-
-function shouldUseMockFallback(error: unknown) {
-  if (USE_MOCK) return true;
-  if (!API_BASE_URL) return true;
-  return error instanceof TypeError;
+  return payload as T;
 }
 
 export async function fetchGalleryList(query: GalleryListQuery = {}): Promise<GalleryListResponse> {
-  if (USE_MOCK) {
-    const list = getMockGalleryList();
-    const pageSize = query.pageSize ?? 12;
-    const page = query.page ?? 1;
-    const start = (page - 1) * pageSize;
-    const items = list.items.slice(start, start + pageSize);
-    return {
-      items,
-      nextPage: start + pageSize < list.items.length ? page + 1 : null,
-      total: list.items.length,
-    };
-  }
-
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
   });
   const suffix = params.toString() ? `?${params.toString()}` : '';
-  try {
-    return await requestJson<GalleryListResponse>(`/api/gallery/items${suffix}`);
-  } catch (error) {
-    if (!shouldUseMockFallback(error)) throw error;
-
-    console.debug('[gallery] server unavailable, using mock list', error);
-    const list = getMockGalleryList();
-    const pageSize = query.pageSize ?? 12;
-    const page = query.page ?? 1;
-    const start = (page - 1) * pageSize;
-    return {
-      items: list.items.slice(start, start + pageSize),
-      nextPage: start + pageSize < list.items.length ? page + 1 : null,
-      total: list.items.length,
-    };
-  }
+  return requestJson<GalleryListResponse>(`/api/gallery/items${suffix}`);
 }
 
 export async function fetchGalleryDetail(itemId: string): Promise<GalleryDetailResponse> {
-  if (USE_MOCK) {
-    const item = getMockGalleryDetail(itemId);
-    if (!item) throw new Error('Gallery item not found');
-    return { item };
-  }
-
-  try {
-    return await requestJson<GalleryDetailResponse>(`/api/gallery/items/${encodeURIComponent(itemId)}`);
-  } catch (error) {
-    if (!shouldUseMockFallback(error)) throw error;
-
-    console.debug('[gallery] server unavailable, using mock detail', error);
-    const item = getMockGalleryDetail(itemId);
-    if (!item) throw error;
-    return { item };
-  }
+  return requestJson<GalleryDetailResponse>(`/api/gallery/items/${encodeURIComponent(itemId)}`);
 }
 
 export async function publishGalleryItem(payload: PublishGalleryPayload): Promise<PublishGalleryResponse> {
-  if (USE_MOCK) {
-    return makePublishedResponse(payload);
-  }
-
   return requestJson<PublishGalleryResponse>(`/api/gallery/publish`, {
     method: 'POST',
+    headers: GALLERY_WRITE_TOKEN ? { 'X-Internal-Token': GALLERY_WRITE_TOKEN } : undefined,
     body: JSON.stringify(payload),
   });
 }

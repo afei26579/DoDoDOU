@@ -10,6 +10,8 @@ export type EditorSettingsSheetProps = {
   rows: number;
   minCols: number;
   minRows: number;
+  maxCols: number;
+  maxRows: number;
   showDividers: boolean;
   showColorCodes: boolean;
   beadShape: EditorBeadShape;
@@ -30,6 +32,8 @@ export function EditorSettingsSheet({
   rows,
   minCols,
   minRows,
+  maxCols,
+  maxRows,
   showDividers,
   showColorCodes,
   beadShape,
@@ -63,8 +67,8 @@ export function EditorSettingsSheet({
       return;
     }
 
-    setDraftCols(String(Math.max(minCols, Math.floor(nextCols))));
-    setDraftRows(String(Math.max(minRows, Math.floor(nextRows))));
+    setDraftCols(String(Math.min(maxCols, Math.max(minCols, Math.floor(nextCols)))));
+    setDraftRows(String(Math.min(maxRows, Math.max(minRows, Math.floor(nextRows)))));
     onResizeCanvas(nextCols, nextRows);
   };
 
@@ -116,6 +120,7 @@ export function EditorSettingsSheet({
                   className={styles.sizeInput}
                   value={draftCols}
                   min={minCols}
+                  max={maxCols}
                   inputMode="numeric"
                   aria-label="画布宽度"
                   onChange={(event) => setDraftCols(event.target.value)}
@@ -131,6 +136,7 @@ export function EditorSettingsSheet({
                   className={styles.sizeInput}
                   value={draftRows}
                   min={minRows}
+                  max={maxRows}
                   inputMode="numeric"
                   aria-label="画布高度"
                   onChange={(event) => setDraftRows(event.target.value)}
