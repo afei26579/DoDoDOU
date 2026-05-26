@@ -40,15 +40,12 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return payload as T;
-<<<<<<< HEAD
-=======
 }
 
 function shouldUseMockFallback(error: unknown) {
   if (USE_MOCK) return true;
   if (!API_BASE_URL) return true;
   return error instanceof TypeError;
->>>>>>> pre-master
 }
 
 export async function fetchGalleryList(query: GalleryListQuery = {}): Promise<GalleryListResponse> {
