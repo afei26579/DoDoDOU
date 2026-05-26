@@ -158,7 +158,11 @@ export async function listInventoryItems(query: BeadInventoryQuery = {}) {
   const records = await readAllRecords().catch(() => [...MEMORY_CACHE.values()]);
   MEMORY_CACHE.clear();
   records.forEach((record) => MEMORY_CACHE.set(record.id, record));
-  return sortInventoryItems(records.filter((item) => matchesInventoryQuery(item, query)));
+  return filterInventoryItems(records, query);
+}
+
+export function filterInventoryItems(items: BeadInventoryItem[], query: BeadInventoryQuery = {}) {
+  return sortInventoryItems(items.filter((item) => matchesInventoryQuery(item, query)));
 }
 
 export async function getInventoryItem(id: string) {

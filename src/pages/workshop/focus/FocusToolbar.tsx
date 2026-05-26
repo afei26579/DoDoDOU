@@ -32,6 +32,34 @@ type FocusToolbarProps = {
   nextDisabled: boolean;
 };
 
+function clampProgress(value: number) {
+  return Math.max(0, Math.min(1, value));
+}
+
+function parseHexColor(hex: string | undefined | null) {
+  if (!hex || hex === 'transparent') return null;
+  const clean = hex.replace('#', '').trim();
+  const expanded = clean.length === 3
+    ? clean.split('').map((part) => part + part).join('')
+    : clean;
+  if (!/^[0-9a-fA-F]{6}$/.test(expanded)) return null;
+  return {
+    r: Number.parseInt(expanded.slice(0, 2), 16),
+    g: Number.parseInt(expanded.slice(2, 4), 16),
+    b: Number.parseInt(expanded.slice(4, 6), 16),
+  };
+}
+
+function getColorTone(hex: string | undefined | null) {
+  const rgb = parseHexColor(hex);
+  if (!rgb) return { isDark: false, isLight: false };
+  const luminance = (0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b) / 255;
+  return {
+    isDark: luminance < 0.22,
+    isLight: luminance > 0.86,
+  };
+}
+
 export function FocusToolbar({
   currentColor,
   paletteOptions,
@@ -59,10 +87,30 @@ export function FocusToolbar({
   const blockText = currentColor ? `${blockNumber}/${totalBlocks} 块` : '--/-- 块';
   const currentBeadText = currentColor ? `当前 ${currentBlockCount} 颗` : '点击色卡或图纸';
   const remainingBeadText = currentColor ? `剩余 ${remainingColorCount} 颗` : '选择高亮的色系';
+  const progress = clampProgress(colorProgress);
+  const currentHex = currentColor?.hex ?? '#D8B4E2';
+  const colorTone = getColorTone(currentHex);
   const swatchStyle = {
-    '--swatch-color': currentColor?.hex ?? '#D8B4E2',
-    '--swatch-progress': `${Math.max(0, Math.min(1, colorProgress)) * 360}deg`,
+    '--swatch-color': currentHex,
+    '--swatch-progress': `${progress * 360}deg`,
   } as CSSProperties;
+  const flowStyle = {
+    '--focus-flow-color': currentHex,
+    '--focus-flow-progress': `${progress * 100}%`,
+    '--focus-flow-text': colorTone.isDark ? '#ffffff' : '#4c433c',
+    '--focus-flow-contrast': colorTone.isDark ? '#ffffff' : '#5d534a',
+    '--focus-flow-border': colorTone.isLight ? 'rgba(93, 83, 74, 0.26)' : currentHex,
+    '--focus-flow-highlight': colorTone.isDark
+      ? 'rgba(255, 255, 255, 0.24)'
+      : colorTone.isLight
+        ? 'rgba(93, 83, 74, 0.12)'
+        : 'rgba(255, 255, 255, 0.36)',
+  } as CSSProperties;
+  const focusToneClass = colorTone.isDark
+    ? styles.colorFocusDark
+    : colorTone.isLight
+      ? styles.colorFocusLight
+      : '';
 
   return (
     <>
@@ -72,12 +120,12 @@ export function FocusToolbar({
             <span className={styles.toolIcon} aria-hidden="true">←</span>
           </button>
 
-          <div className={styles.colorFocus} aria-label="当前选中色号">
+          <div className={`${styles.colorFocus} ${focusToneClass}`} style={flowStyle} aria-label="当前选中色号">
             <button type="button" className={styles.colorArea} aria-label="切换色号" onClick={onOpenPalette} disabled={!hasPaletteOptions}>
               <span className={styles.toolbarSwatch} style={swatchStyle}>
                 <span className={styles.toolbarSwatchCode}>{colorCode}</span>
               </span>
-            
+              <span className={styles.paletteChevron} aria-hidden="true">⌄</span>
             </button>
 
             <button type="button" className={styles.infoArea} aria-label="定位当前色块" onClick={onCenter} disabled={!currentColor}>

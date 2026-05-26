@@ -2,10 +2,19 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { useNavigate } from 'react-router-dom';
 import {
   deleteInventoryItem,
+  filterInventoryItems,
   listInventoryItems,
   saveInventoryItem,
   type BeadInventoryItem,
 } from '../../features/beads/model/inventoryStore';
+import {
+  createRemoteInventoryItem,
+  deleteRemoteInventoryItem,
+  listRemoteInventoryItems,
+  syncRemoteInventoryItems,
+  updateRemoteInventoryItem,
+} from '../../features/beads/model/inventoryApi';
+import { useAuth } from '../../features/auth/model/AuthProvider';
 import { beadBrandKeys, getBeadBrandLabel, type BeadBrandKey } from '../../lib/pattern/brand';
 import { getBrandPalette, getColorByBrandCode } from '../../lib/pattern/color-system';
 
@@ -43,7 +52,7 @@ function toOptionalNumber(value: string) {
 
 export function BeadInventoryPage() {
   const navigate = useNavigate();
-  const [items, setItems] = useState<BeadInventoryItem[]>([]);
+  const { status: authStatus, user, isAuthenticated } = useAuth();
   const [allItems, setAllItems] = useState<BeadInventoryItem[]>([]);
   const [search, setSearch] = useState('');
   const [brandFilter, setBrandFilter] = useState<BrandFilter>('ALL');
@@ -51,28 +60,57 @@ export function BeadInventoryPage() {
   const [form, setForm] = useState<InventoryFormState>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [localInventoryCount, setLocalInventoryCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const brandPalette = useMemo(() => getBrandPalette(form.brandKey), [form.brandKey]);
   const resolvedColor = useMemo(() => getColorByBrandCode(form.brandKey, form.code), [form.brandKey, form.code]);
+  const items = useMemo(
+    () => filterInventoryItems(allItems, { search, brandKey: brandFilter, favoriteOnly }),
+    [allItems, brandFilter, favoriteOnly, search],
+  );
   const totalQuantity = allItems.reduce((sum, item) => sum + item.quantity, 0);
   const lowStockCount = allItems.filter((item) => item.lowStockThreshold != null && item.quantity <= item.lowStockThreshold).length;
+  const migrationStorageKey = user ? `dodoudou.inventory.migration.completed.${user.id}` : '';
 
   const loadItems = useCallback(async () => {
-    const [nextAllItems, nextItems] = await Promise.all([
-      listInventoryItems(),
-      listInventoryItems({
-        search,
-        brandKey: brandFilter,
-        favoriteOnly,
-      }),
-    ]);
-    setAllItems(nextAllItems);
-    setItems(nextItems);
-  }, [brandFilter, favoriteOnly, search]);
+    if (authStatus === 'loading') return;
+    setIsLoading(true);
+    try {
+      setAllItems(isAuthenticated ? await listRemoteInventoryItems() : await listInventoryItems());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '库存读取失败，请稍后再试');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [authStatus, isAuthenticated]);
 
   useEffect(() => {
     void loadItems();
   }, [loadItems]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !migrationStorageKey) {
+      setLocalInventoryCount(0);
+      return;
+    }
+
+    if (localStorage.getItem(migrationStorageKey) === 'true') {
+      setLocalInventoryCount(0);
+      return;
+    }
+
+    let cancelled = false;
+    void listInventoryItems().then((localItems) => {
+      if (!cancelled) setLocalInventoryCount(localItems.length);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, migrationStorageKey]);
 
   const resetForm = () => {
     setForm(emptyForm);
@@ -115,7 +153,7 @@ export function BeadInventoryPage() {
       return;
     }
 
-    const saved = await saveInventoryItem({
+    const input = {
       brandKey: form.brandKey,
       code: color.code,
       hex: color.hex,
@@ -124,25 +162,76 @@ export function BeadInventoryPage() {
       location: form.location,
       note: form.note,
       favorite: form.favorite,
-    });
+    };
 
-    if (editingId && editingId !== saved.id) {
-      await deleteInventoryItem(editingId);
+    setIsSaving(true);
+    try {
+      const saved = isAuthenticated && editingId
+        ? await updateRemoteInventoryItem(editingId, input)
+        : isAuthenticated
+          ? await createRemoteInventoryItem(input)
+          : await saveInventoryItem(input);
+
+      if (!isAuthenticated && editingId && editingId !== saved.id) {
+        await deleteInventoryItem(editingId);
+      }
+
+      setMessage(editingId ? '库存已更新' : '库存已录入');
+      setEditingId(null);
+      setForm({
+        ...emptyForm,
+        brandKey: form.brandKey,
+      });
+      await loadItems();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '库存保存失败，请稍后再试');
+    } finally {
+      setIsSaving(false);
     }
-
-    setMessage(editingId ? '库存已更新' : '库存已录入');
-    setEditingId(null);
-    setForm({
-      ...emptyForm,
-      brandKey: form.brandKey,
-    });
-    await loadItems();
   };
 
   const handleDelete = async (item: BeadInventoryItem) => {
-    await deleteInventoryItem(item.id);
-    if (editingId === item.id) resetForm();
-    await loadItems();
+    try {
+      if (isAuthenticated) {
+        await deleteRemoteInventoryItem(item.id);
+      } else {
+        await deleteInventoryItem(item.id);
+      }
+      if (editingId === item.id) resetForm();
+      await loadItems();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '库存删除失败，请稍后再试');
+    }
+  };
+
+  const handleSyncLocalInventory = async () => {
+    if (!migrationStorageKey || isSyncing) return;
+
+    setIsSyncing(true);
+    try {
+      const localItems = await listInventoryItems();
+      if (!localItems.length) {
+        localStorage.setItem(migrationStorageKey, 'true');
+        setLocalInventoryCount(0);
+        return;
+      }
+
+      const response = await syncRemoteInventoryItems(localItems);
+      localStorage.setItem(migrationStorageKey, 'true');
+      setLocalInventoryCount(0);
+      setAllItems(response.items);
+      setMessage(`已同步 ${response.stats.created + response.stats.updated} 条库存`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '库存同步失败，请稍后再试');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const dismissLocalSync = () => {
+    if (!migrationStorageKey) return;
+    localStorage.setItem(migrationStorageKey, 'true');
+    setLocalInventoryCount(0);
   };
 
   return (
@@ -156,6 +245,33 @@ export function BeadInventoryPage() {
           <h1>我的库存</h1>
         </div>
       </header>
+
+      <section className={`inventory-sync-panel ${isAuthenticated ? 'is-remote' : ''}`} aria-label="库存同步状态">
+        <div>
+          <strong>{isAuthenticated ? '云端库存' : '本地库存'}</strong>
+          <span>
+            {authStatus === 'loading'
+              ? '正在读取账号状态'
+              : isAuthenticated
+                ? user?.email ?? user?.name ?? '当前账号'
+                : '登录后可同步到账号'}
+          </span>
+        </div>
+        {isAuthenticated && localInventoryCount > 0 ? (
+          <div className="inventory-sync-panel__actions">
+            <button type="button" onClick={handleSyncLocalInventory} disabled={isSyncing}>
+              {isSyncing ? '同步中...' : `同步本地 ${localInventoryCount} 条`}
+            </button>
+            <button type="button" onClick={dismissLocalSync}>
+              暂不处理
+            </button>
+          </div>
+        ) : !isAuthenticated && authStatus !== 'loading' ? (
+          <button type="button" onClick={() => navigate('/login?redirect=/workshop/inventory')}>
+            登录
+          </button>
+        ) : null}
+      </section>
 
       <section className="inventory-summary" aria-label="库存概览">
         <div className="inventory-summary__item">
@@ -272,8 +388,8 @@ export function BeadInventoryPage() {
                 取消
               </button>
             ) : null}
-            <button type="submit" className="inventory-primary-button">
-              {editingId ? '保存修改' : '加入库存'}
+            <button type="submit" className="inventory-primary-button" disabled={isSaving || authStatus === 'loading'}>
+              {isSaving ? '保存中...' : editingId ? '保存修改' : '加入库存'}
             </button>
           </div>
         </form>
@@ -305,7 +421,9 @@ export function BeadInventoryPage() {
         </div>
 
         <div className="inventory-list">
-          {items.length ? (
+          {isLoading ? (
+            <div className="inventory-empty">正在读取库存</div>
+          ) : items.length ? (
             items.map((item) => (
               <article key={item.id} className="inventory-item">
                 <span className="inventory-item__swatch" style={{ backgroundColor: item.hex }} aria-hidden="true" />

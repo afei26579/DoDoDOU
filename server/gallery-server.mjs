@@ -3,7 +3,10 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createAuthRouter, optionalAuth, requireAuth } from './auth.mjs';
 import { prisma } from './db.mjs';
+import { createInventoryRouter } from './inventory.mjs';
+import { createProjectsRouter } from './projects.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -69,7 +72,7 @@ const config = {
   port: parseInteger(process.env.GALLERY_SERVER_PORT, 3001, { min: 1, max: 65535 }),
   allowedOrigins: parseList(process.env.GALLERY_ALLOWED_ORIGINS, ['http://localhost:5173', 'http://127.0.0.1:5173']),
   jsonBodyLimit: process.env.GALLERY_JSON_BODY_LIMIT || '5mb',
-  publishEnabled: parseBoolean(process.env.GALLERY_PUBLISH_ENABLED, false),
+  publishEnabled: parseBoolean(process.env.GALLERY_PUBLISH_ENABLED, true),
   requireWriteToken: parseBoolean(process.env.GALLERY_REQUIRE_WRITE_TOKEN, true),
   writeToken: process.env.GALLERY_WRITE_TOKEN?.trim() || '',
   rateLimitWindowMs: parseInteger(process.env.GALLERY_RATE_LIMIT_WINDOW_MS, 60_000, { min: 1_000, max: 3_600_000 }),
@@ -122,7 +125,8 @@ function applyCors(req, res, next) {
 
   if (origin && (allowAnyOrigin || config.allowedOrigins.includes(origin))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Internal-Token');
     res.setHeader('Access-Control-Max-Age', '600');
   }
@@ -182,6 +186,9 @@ const publishRateLimiter = createRateLimiter({
 
 app.use(applyCors);
 app.use(globalRateLimiter);
+app.use('/api/auth', createAuthRouter(prisma));
+app.use('/api/inventory', createInventoryRouter(prisma));
+app.use('/api/projects', createProjectsRouter(prisma));
 
 function toSlug(value) {
   return value
@@ -372,11 +379,17 @@ function normalizePublishPayload(input) {
     addValidationError(errors, 'exportAssetId is not supported by this publish endpoint yet');
   }
 
+  if (input.authorId !== undefined) {
+    addValidationError(errors, 'authorId is resolved from the current session and must not be supplied');
+  }
+
+  if (input.authorName !== undefined) {
+    addValidationError(errors, 'authorName is resolved from the current session and must not be supplied');
+  }
+
   const value = {
     title: normalizeRequiredText(input.title, 'title', 40, errors),
     description: normalizeOptionalText(input.description, 'description', 500, errors),
-    authorId: normalizeSafeId(input.authorId, 'authorId', 'official', errors),
-    authorName: normalizeOptionalText(input.authorName, 'authorName', 40, errors) || 'Anonymous',
     sourceType: input.sourceType === 'official' ? 'official' : 'community',
     tags: normalizeTags(input.tags, errors),
     coverUrl: normalizeImageUrl(input.coverUrl, 'coverUrl', true, errors),
@@ -418,6 +431,8 @@ function requirePublishAccess(req, res, next) {
     });
   }
 
+  if (req.user) return next();
+
   if (!config.requireWriteToken) return next();
 
   if (!config.writeToken) {
@@ -437,7 +452,31 @@ function requirePublishAccess(req, res, next) {
   next();
 }
 
-function mapItem(item, assets = {}) {
+function getUserDisplayName(user) {
+  const name = typeof user?.name === 'string' ? user.name.trim() : '';
+  if (name) return name.slice(0, 40);
+  const email = typeof user?.email === 'string' ? user.email.trim() : '';
+  if (email) return email.split('@')[0].slice(0, 40) || '用户';
+  return '用户';
+}
+
+function getGalleryAuthorId(userId) {
+  return `user-${userId}`;
+}
+
+async function findFavoriteItemIds(userId, itemIds) {
+  if (!userId || !itemIds.length) return new Set();
+  const favorites = await prisma.galleryFavorite.findMany({
+    where: {
+      userId,
+      itemId: { in: itemIds },
+    },
+    select: { itemId: true },
+  });
+  return new Set(favorites.map((favorite) => favorite.itemId));
+}
+
+function mapItem(item, { favoriteItemIds = new Set() } = {}) {
   const patternSummary = item.patternDetail
     ? {
         width: item.patternDetail.width,
@@ -450,7 +489,7 @@ function mapItem(item, assets = {}) {
   return {
     id: item.id,
     title: item.title,
-    coverUrl: assets.coverAsset?.url ?? item.coverAsset?.url ?? '',
+    coverUrl: item.coverAsset?.url ?? '',
     coverWidth: item.coverWidth,
     coverHeight: item.coverHeight,
     author: {
@@ -459,6 +498,8 @@ function mapItem(item, assets = {}) {
       avatarUrl: item.author.avatarUrl,
     },
     sourceType: item.sourceType,
+    visibility: item.visibility,
+    status: item.status,
     style: item.style,
     brand: item.brand,
     tags: item.tagsJson,
@@ -469,25 +510,154 @@ function mapItem(item, assets = {}) {
       favoriteCount: item.favoriteCount,
       hotScore: item.hotScore,
     },
+    isFavorite: favoriteItemIds.has(item.id),
     createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
     publishedAt: item.publishedAt?.toISOString() ?? null,
   };
 }
 
-app.get('/api/gallery/items', async (_req, res) => {
+function canReadGalleryItem(user, item) {
+  if (item.status === 'published') return true;
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  return item.author?.userId === user.id;
+}
+
+function normalizeFavoriteItemIdList(value) {
+  if (!Array.isArray(value)) {
+    return { ok: false, errors: ['itemIds must be an array'] };
+  }
+  if (value.length > 1000) {
+    return { ok: false, errors: ['itemIds cannot contain more than 1000 records'] };
+  }
+
+  const errors = [];
+  const itemIds = [];
+  const seen = new Set();
+  value.forEach((itemId, index) => {
+    if (!isSafeLookupId(itemId)) {
+      addValidationError(errors, `itemIds[${index}] is invalid`);
+      return;
+    }
+    if (!seen.has(itemId)) {
+      seen.add(itemId);
+      itemIds.push(itemId);
+    }
+  });
+
+  return errors.length ? { ok: false, errors } : { ok: true, itemIds };
+}
+
+async function getFavoriteListForUser(userId) {
+  const favorites = await prisma.galleryFavorite.findMany({
+    where: {
+      userId,
+      item: {
+        visibility: 'public',
+        status: 'published',
+      },
+    },
+    include: {
+      item: {
+        include: { author: true, coverAsset: true, patternDetail: true },
+      },
+    },
+    orderBy: [{ createdAt: 'desc' }],
+  });
+  const favoriteItemIds = new Set(favorites.map((favorite) => favorite.itemId));
+  return {
+    itemIds: favorites.map((favorite) => favorite.itemId),
+    items: favorites.map((favorite) => mapItem(favorite.item, { favoriteItemIds })),
+  };
+}
+
+app.get('/api/gallery/items', optionalAuth(prisma), async (req, res) => {
   const items = await prisma.galleryItem.findMany({
     where: { visibility: 'public', status: 'published' },
     include: { author: true, coverAsset: true, patternDetail: true },
     orderBy: [{ sortWeight: 'desc' }, { publishedAt: 'desc' }],
   });
+  const favoriteItemIds = await findFavoriteItemIds(req.user?.id, items.map((item) => item.id));
   res.json({
-    items: items.map((item) => mapItem(item)),
+    items: items.map((item) => mapItem(item, { favoriteItemIds })),
     total: items.length,
     nextPage: null,
   });
 });
 
-app.get('/api/gallery/items/:id', async (req, res) => {
+app.get('/api/gallery/my-items', requireAuth(prisma), async (req, res) => {
+  const items = await prisma.galleryItem.findMany({
+    where: { author: { userId: req.user.id } },
+    include: { author: true, coverAsset: true, patternDetail: true },
+    orderBy: [{ updatedAt: 'desc' }],
+  });
+  const favoriteItemIds = await findFavoriteItemIds(req.user.id, items.map((item) => item.id));
+  res.json({
+    items: items.map((item) => mapItem(item, { favoriteItemIds })),
+    total: items.length,
+  });
+});
+
+app.get('/api/gallery/favorites', requireAuth(prisma), async (req, res) => {
+  res.json(await getFavoriteListForUser(req.user.id));
+});
+
+app.post('/api/gallery/favorites/sync', requireAuth(prisma), express.json({ limit: '128kb', strict: true }), async (req, res, next) => {
+  try {
+    const normalized = normalizeFavoriteItemIdList(req.body?.itemIds);
+    if (!normalized.ok) {
+      return res.status(400).json({
+        message: 'Invalid favorite sync payload',
+        errors: normalized.errors,
+        requestId: req.id,
+      });
+    }
+
+    if (normalized.itemIds.length) {
+      const publishedItems = await prisma.galleryItem.findMany({
+        where: {
+          id: { in: normalized.itemIds },
+          visibility: 'public',
+          status: 'published',
+        },
+        select: { id: true },
+      });
+      const publishedItemIds = publishedItems.map((item) => item.id);
+
+      await prisma.$transaction(async (tx) => {
+        for (const itemId of publishedItemIds) {
+          const existing = await tx.galleryFavorite.findUnique({
+            where: {
+              userId_itemId: {
+                userId: req.user.id,
+                itemId,
+              },
+            },
+          });
+          if (existing) continue;
+
+          await tx.galleryFavorite.create({
+            data: {
+              userId: req.user.id,
+              itemId,
+            },
+          });
+          await tx.galleryItem.update({
+            where: { id: itemId },
+            data: { favoriteCount: { increment: 1 } },
+          });
+        }
+      });
+    }
+
+    res.json(await getFavoriteListForUser(req.user.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/gallery/items/:id', optionalAuth(prisma), async (req, res) => {
   if (!isSafeLookupId(req.params.id)) {
     return res.status(400).json({ message: 'Invalid gallery item id', requestId: req.id });
   }
@@ -497,12 +667,13 @@ app.get('/api/gallery/items/:id', async (req, res) => {
     include: { author: true, patternDetail: true, coverAsset: true, previewAsset: true, sourceAsset: true, exportAsset: true },
   });
 
-  if (!item) {
+  if (!item || !canReadGalleryItem(req.user, item)) {
     return res.status(404).json({ message: 'Gallery item not found', requestId: req.id });
   }
 
+  const favoriteItemIds = await findFavoriteItemIds(req.user?.id, [item.id]);
   const detail = {
-    ...mapItem(item),
+    ...mapItem(item, { favoriteItemIds }),
     description: item.description,
     visibility: item.visibility,
     status: item.status,
@@ -535,7 +706,99 @@ app.get('/api/gallery/items/:id', async (req, res) => {
   res.json({ item: detail });
 });
 
-app.post('/api/gallery/publish', requirePublishAccess, publishRateLimiter, express.json({ limit: config.jsonBodyLimit, strict: true }), async (req, res) => {
+app.post('/api/gallery/items/:id/favorite', requireAuth(prisma), async (req, res, next) => {
+  try {
+    if (!isSafeLookupId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid gallery item id', requestId: req.id });
+    }
+
+    const item = await prisma.galleryItem.findFirst({
+      where: {
+        id: req.params.id,
+        visibility: 'public',
+        status: 'published',
+      },
+      include: { author: true, coverAsset: true, patternDetail: true },
+    });
+    if (!item) {
+      return res.status(404).json({ message: 'Gallery item not found', requestId: req.id });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.galleryFavorite.findUnique({
+        where: {
+          userId_itemId: {
+            userId: req.user.id,
+            itemId: item.id,
+          },
+        },
+      });
+      if (existing) return;
+
+      await tx.galleryFavorite.create({
+        data: {
+          userId: req.user.id,
+          itemId: item.id,
+        },
+      });
+      await tx.galleryItem.update({
+        where: { id: item.id },
+        data: { favoriteCount: { increment: 1 } },
+      });
+    });
+
+    const updatedItem = await prisma.galleryItem.findUnique({
+      where: { id: item.id },
+      include: { author: true, coverAsset: true, patternDetail: true },
+    });
+
+    res.json({ item: mapItem(updatedItem, { favoriteItemIds: new Set([item.id]) }) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.delete('/api/gallery/items/:id/favorite', requireAuth(prisma), async (req, res, next) => {
+  try {
+    if (!isSafeLookupId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid gallery item id', requestId: req.id });
+    }
+
+    const item = await prisma.galleryItem.findUnique({
+      where: { id: req.params.id },
+      include: { author: true, coverAsset: true, patternDetail: true },
+    });
+    if (!item || item.status !== 'published' || item.visibility !== 'public') {
+      return res.status(404).json({ message: 'Gallery item not found', requestId: req.id });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const result = await tx.galleryFavorite.deleteMany({
+        where: {
+          userId: req.user.id,
+          itemId: item.id,
+        },
+      });
+      if (result.count === 0) return;
+
+      await tx.galleryItem.update({
+        where: { id: item.id },
+        data: { favoriteCount: Math.max(0, item.favoriteCount - 1) },
+      });
+    });
+
+    const updatedItem = await prisma.galleryItem.findUnique({
+      where: { id: item.id },
+      include: { author: true, coverAsset: true, patternDetail: true },
+    });
+
+    res.json({ item: mapItem(updatedItem) });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/gallery/publish', requireAuth(prisma), requirePublishAccess, publishRateLimiter, express.json({ limit: config.jsonBodyLimit, strict: true }), async (req, res) => {
   const normalized = normalizePublishPayload(req.body);
   if (!normalized.ok) {
     return res.status(400).json({
@@ -550,12 +813,24 @@ app.post('/api/gallery/publish', requirePublishAccess, publishRateLimiter, expre
   const coverAssetId = `cover-${id}`;
   const previewAssetId = `preview-${id}`;
   const now = new Date();
+  const isPrivilegedPublisher = req.user.role === 'admin';
+  const sourceType = isPrivilegedPublisher && payload.sourceType === 'official' ? 'official' : 'community';
+  const status = isPrivilegedPublisher ? 'published' : 'pending_review';
+  const publishedAt = status === 'published' ? now : null;
 
   const result = await prisma.$transaction(async (tx) => {
-    await tx.galleryAuthor.upsert({
-      where: { id: payload.authorId },
-      update: { name: payload.authorName },
-      create: { id: payload.authorId, name: payload.authorName },
+    const author = await tx.galleryAuthor.upsert({
+      where: { userId: req.user.id },
+      update: {
+        name: getUserDisplayName(req.user),
+        avatarUrl: req.user.avatarUrl,
+      },
+      create: {
+        id: getGalleryAuthorId(req.user.id),
+        userId: req.user.id,
+        name: getUserDisplayName(req.user),
+        avatarUrl: req.user.avatarUrl,
+      },
     });
 
     await tx.galleryAsset.upsert({
@@ -575,10 +850,10 @@ app.post('/api/gallery/publish', requirePublishAccess, publishRateLimiter, expre
         id,
         title: payload.title,
         description: payload.description,
-        sourceType: payload.sourceType,
+        sourceType,
         visibility: 'public',
-        status: 'published',
-        authorId: payload.authorId,
+        status,
+        authorId: author.id,
         coverAssetId,
         previewAssetId,
         sourceAssetId: null,
@@ -596,7 +871,7 @@ app.post('/api/gallery/publish', requirePublishAccess, publishRateLimiter, expre
         coverWidth: payload.coverWidth,
         coverHeight: payload.coverHeight,
         sortWeight: payload.sortWeight,
-        publishedAt: now,
+        publishedAt,
         patternDetail: {
           create: {
             width: payload.patternDetail.width,
@@ -619,10 +894,21 @@ app.post('/api/gallery/publish', requirePublishAccess, publishRateLimiter, expre
     });
   });
 
+  const detailPath = resolveGalleryItemFilePath(id);
+  if (status === 'published') {
+    await ensureDirs();
+    await writeJsonFile(detailPath, {
+      itemId: result.id,
+      title: result.title,
+      sourceType: result.sourceType,
+      publishedAt: now.toISOString(),
+    });
+  }
+
   res.json({
     itemId: result.id,
-    status: 'published',
-    publishedAt: now.toISOString(),
+    status,
+    publishedAt: publishedAt?.toISOString() ?? null,
   });
 });
 

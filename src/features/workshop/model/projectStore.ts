@@ -11,12 +11,34 @@ import { defaultWorkshopConfig } from './defaults';
 import { normalizeBeadBrandKey } from '../../../lib/pattern/brand';
 import { normalizePatternAdvancedConfig } from '../../../lib/pattern/advanced-config';
 import { generatePatternCover } from '../../../lib/pattern/cover';
+import {
+  deleteRemoteWorkshopProject,
+  getRemoteWorkshopProject,
+  listRemoteWorkshopProjects,
+  saveRemoteWorkshopProject,
+} from './projectApi';
 
 const DB_NAME = 'dodoudou-workshop';
 const DB_VERSION = 3;
 const STORE_NAME = 'projects';
 const DRAFT_STORE_NAME = 'editor-drafts';
 const MEMORY_CACHE = new Map<string, WorkshopProjectRecord>();
+let remoteProjectsEnabled = false;
+let remoteProjectsUserId: string | null = null;
+
+export function configureWorkshopProjectStore(options: { enabled: boolean; userId?: string | null }) {
+  const nextUserId = options.enabled ? options.userId ?? null : null;
+  const nextEnabled = Boolean(options.enabled && nextUserId);
+  if (remoteProjectsEnabled !== nextEnabled || remoteProjectsUserId !== nextUserId) {
+    MEMORY_CACHE.clear();
+  }
+  remoteProjectsEnabled = nextEnabled;
+  remoteProjectsUserId = nextUserId;
+}
+
+function shouldUseRemoteProjects() {
+  return remoteProjectsEnabled;
+}
 
 export type WorkshopProjectKind = 'upload' | 'pattern' | 'progress';
 export type WorkshopProjectStatus = 'editing' | 'ready' | 'paused' | 'completed';
@@ -233,6 +255,10 @@ function getProjectTimestamp(record: Pick<WorkshopProjectRecord | WorkshopProjec
   return normalizeNullableTimestamp(record.lastOpenedAt, null) ?? normalizeTimestamp(record.updatedAt, normalizeTimestamp(record.createdAt, new Date(0).toISOString()));
 }
 
+function sortWorkshopProjectRecords(records: WorkshopProjectRecord[]) {
+  return [...records].sort((a, b) => getProjectTimestamp(b).localeCompare(getProjectTimestamp(a)));
+}
+
 export function toProjectCard(record: WorkshopProjectRecord): WorkshopProjectCard {
   const progress = record.beadingProgress
     ? {
@@ -322,7 +348,7 @@ async function deleteRecord(projectId: string) {
   });
 }
 
-export async function listWorkshopProjects() {
+export async function listLocalWorkshopProjects() {
   const db = await getDb();
   return new Promise<WorkshopProjectRecord[]>((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly');
@@ -331,10 +357,25 @@ export async function listWorkshopProjects() {
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
       const records = (request.result as WorkshopProjectRecord[]).map(normalizeRecord);
-      records.sort((a, b) => getProjectTimestamp(b).localeCompare(getProjectTimestamp(a)));
-      resolve(records);
+      resolve(sortWorkshopProjectRecords(records));
     };
   });
+}
+
+export async function listWorkshopProjects() {
+  if (shouldUseRemoteProjects()) {
+    try {
+      const records = sortWorkshopProjectRecords((await listRemoteWorkshopProjects()).map(normalizeRecord));
+      MEMORY_CACHE.clear();
+      records.forEach((record) => MEMORY_CACHE.set(record.projectId, record));
+      void Promise.all(records.map((record) => writeRecord(record))).catch(() => undefined);
+      return records;
+    } catch {
+      return listLocalWorkshopProjects();
+    }
+  }
+
+  return listLocalWorkshopProjects();
 }
 
 export async function findWorkshopProjectBySource(sourceType: WorkshopProjectSourceType, sourceItemId: string) {
@@ -352,8 +393,36 @@ export async function findWorkshopProjectBySource(sourceType: WorkshopProjectSou
 
 export async function getWorkshopProject(projectId: string) {
   if (MEMORY_CACHE.has(projectId)) return MEMORY_CACHE.get(projectId) ?? null;
+  if (shouldUseRemoteProjects()) {
+    try {
+      const record = normalizeRecord(await getRemoteWorkshopProject(projectId));
+      MEMORY_CACHE.set(projectId, record);
+      void writeRecord(record).catch(() => undefined);
+      return record;
+    } catch {
+      // Fall through to the local cache when the account project API is unavailable.
+    }
+  }
+
   const record = await readRecord(projectId).catch(() => null);
   if (record) MEMORY_CACHE.set(projectId, record);
+  return record;
+}
+
+async function persistWorkshopProject(record: WorkshopProjectRecord) {
+  if (shouldUseRemoteProjects()) {
+    try {
+      const remoteRecord = normalizeRecord(await saveRemoteWorkshopProject(record));
+      MEMORY_CACHE.set(remoteRecord.projectId, remoteRecord);
+      void writeRecord(remoteRecord).catch(() => undefined);
+      return remoteRecord;
+    } catch {
+      // Keep editing usable offline or during a temporary API failure.
+    }
+  }
+
+  MEMORY_CACHE.set(record.projectId, record);
+  await writeRecord(record);
   return record;
 }
 
@@ -368,9 +437,7 @@ export async function ensureWorkshopProject(projectId: string, patch: WorkshopPr
     createdAt: current.createdAt,
     updatedAt: new Date().toISOString(),
   }), shouldSyncPatternCover);
-  MEMORY_CACHE.set(projectId, next);
-  await writeRecord(next);
-  return next;
+  return persistWorkshopProject(next);
 }
 
 export async function saveWorkshopProject(projectId: string, patch: WorkshopProjectPatch) {
@@ -387,5 +454,8 @@ export async function markWorkshopProjectOpened(projectId: string) {
 
 export async function deleteWorkshopProject(projectId: string) {
   MEMORY_CACHE.delete(projectId);
+  if (shouldUseRemoteProjects()) {
+    await deleteRemoteWorkshopProject(projectId).catch(() => undefined);
+  }
   await deleteRecord(projectId).catch(() => undefined);
 }

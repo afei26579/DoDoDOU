@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../features/auth/model/AuthProvider';
 import { fetchGalleryList } from '../../features/gallery/model/api';
 import type { GalleryItemCard } from '../../features/gallery/model/types';
 import {
@@ -73,6 +74,7 @@ const beginnerSteps = [
 
 export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }: DiscoveryPageProps) {
   const navigate = useNavigate();
+  const { status, user, isAuthenticated } = useAuth();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [inspirationItems, setInspirationItems] = useState<GalleryItemCard[]>([]);
@@ -115,6 +117,7 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
   }, []);
 
   useEffect(() => {
+    if (status === 'loading') return;
     let alive = true;
 
     const loadContinueItems = () => {
@@ -143,12 +146,20 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
       window.removeEventListener('focus', loadContinueItems);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [isAuthenticated, status, user?.id]);
 
   return (
     <main className="discovery-page">
       <section className="page-hero" aria-label="首页问候">
         <h2>今天想拼点什么？</h2>
+        <button
+          type="button"
+          className={`account-entry ${user ? 'account-entry--signed-in' : ''}`}
+          onClick={() => navigate(user ? '/account' : '/login')}
+          aria-label={user ? '打开账号' : '登录账号'}
+        >
+          {user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <span>{status === 'loading' ? '...' : user?.name?.slice(0, 1).toUpperCase() || '登录'}</span>}
+        </button>
       </section>
 
       <section className="quick-actions" aria-label="主要入口">

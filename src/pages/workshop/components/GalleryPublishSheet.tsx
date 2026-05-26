@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../../features/auth/model/AuthProvider';
 import type { PatternResult, WorkshopConfig, UploadedImage } from '../../../features/workshop/model/types';
 import { publishGalleryItem } from '../../../features/gallery/model/api';
 import { generatePatternCover } from '../../../lib/pattern/cover';
@@ -53,6 +55,8 @@ export function GalleryPublishSheet({
   onClose,
   onPublished,
 }: GalleryPublishSheetProps) {
+  const navigate = useNavigate();
+  const { status: authStatus, isAuthenticated, user } = useAuth();
   const [title, setTitle] = useState(titleSeed ?? '');
   const [coverUrl, setCoverUrl] = useState<string | undefined>(undefined);
   const [previewUrl, setPreviewUrl] = useState<string | undefined>(undefined);
@@ -61,8 +65,10 @@ export function GalleryPublishSheet({
   const [tags, setTags] = useState(OFFICIAL_DEFAULT_TAGS);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [publishedItemId, setPublishedItemId] = useState<string | null>(null);
 
-  const canSubmit = useMemo(() => Boolean(title.trim() && patternResult), [patternResult, title]);
+  const canSubmit = useMemo(() => Boolean(title.trim() && patternResult && isAuthenticated && !successMessage), [isAuthenticated, patternResult, successMessage, title]);
 
   useEffect(() => {
     if (!open || !patternResult) return;
@@ -71,12 +77,35 @@ export function GalleryPublishSheet({
     setPreviewUrl(dataUrl);
   }, [open, patternResult]);
 
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setSuccessMessage(null);
+    setPublishedItemId(null);
+  }, [open]);
+
   if (!open) return null;
+
+  const loginRedirect = `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+
+  const handleLogin = () => {
+    navigate(loginRedirect);
+  };
+
+  const handleDone = () => {
+    if (publishedItemId) onPublished?.(publishedItemId);
+    onClose();
+  };
 
   const handleSubmit = async () => {
     if (!patternResult) return;
+    if (!isAuthenticated) {
+      setError('发布到画册需要先登录账号');
+      return;
+    }
     setSubmitting(true);
     setError(null);
+    setSuccessMessage(null);
     try {
       const cover = generatePatternCover(patternResult);
       const response = await publishGalleryItem({
@@ -84,9 +113,9 @@ export function GalleryPublishSheet({
         description: description.trim() || undefined,
         authorId: OFFICIAL_AUTHOR_ID,
         authorName: OFFICIAL_AUTHOR_NAME,
-        sourceType: 'official',
-        tags: normalizeOfficialTags(tags),
         sortWeight: 100,
+        sourceType: 'community',
+        tags: splitTags(tags),
         coverUrl: cover.dataUrl || coverUrl,
         previewUrl,
         coverWidth: cover.width,
@@ -111,8 +140,10 @@ export function GalleryPublishSheet({
           },
         },
       });
-      onPublished?.(response.itemId);
-      onClose();
+      setPublishedItemId(response.itemId);
+      setSuccessMessage(response.status === 'pending_review'
+        ? '已提交审核，通过后会出现在公共画册。'
+        : '已发布到公共画册。');
     } catch (err) {
       setError(err instanceof Error ? err.message : '上传失败');
     } finally {
@@ -127,9 +158,9 @@ export function GalleryPublishSheet({
 
         <header className="gallery-publish-modal__header">
           <div>
-            <p className="gallery-publish-modal__eyebrow">开发发布</p>
-            <h3>上传官方免费图纸</h3>
-            <span>将当前图纸写入数据库，并标记为官方公开图纸</span>
+            <p className="gallery-publish-modal__eyebrow">画册发布</p>
+            <h3>上传到画册</h3>
+            <span>{isAuthenticated ? `将以 ${user?.name || user?.email || '当前账号'} 发布` : '登录后才能发布到公共画册'}</span>
           </div>
           <button type="button" className="gallery-publish-modal__close" aria-label="关闭" onClick={onClose}>
             ×
@@ -154,17 +185,17 @@ export function GalleryPublishSheet({
         <div className="gallery-publish-modal__body">
           <label className="gallery-field">
             <span>标题</span>
-            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="给这张图纸起个名字" />
+            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="给这张图纸起个名字" disabled={!isAuthenticated || submitting || Boolean(successMessage)} />
           </label>
 
           <label className="gallery-field">
             <span>简介</span>
-            <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="可选，简单描述一下作品" />
+            <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="可选，简单描述一下作品" disabled={!isAuthenticated || submitting || Boolean(successMessage)} />
           </label>
 
           <label className="gallery-field">
             <span>标签</span>
-            <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="自然, 治愈, 可爱" />
+            <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="自然, 治愈, 可爱" disabled={!isAuthenticated || submitting || Boolean(successMessage)} />
           </label>
 
           <div className="gallery-publish-modal__meta">
@@ -182,6 +213,10 @@ export function GalleryPublishSheet({
             </div>
           </div>
 
+          {!isAuthenticated && authStatus !== 'loading' ? (
+            <p className="gallery-publish-modal__notice">发布会绑定到真实账号，游客可以继续本地创作和下载。</p>
+          ) : null}
+          {successMessage ? <p className="gallery-publish-modal__success">{successMessage}</p> : null}
           {error ? <p className="gallery-publish-modal__error">{error}</p> : null}
         </div>
 
@@ -189,8 +224,13 @@ export function GalleryPublishSheet({
           <button type="button" className="gallery-publish-modal__secondary" onClick={onClose} disabled={submitting}>
             取消
           </button>
-          <button type="button" className="gallery-publish-modal__primary" onClick={handleSubmit} disabled={!canSubmit || submitting}>
-            {submitting ? '正在上传...' : '确认上传'}
+          <button
+            type="button"
+            className="gallery-publish-modal__primary"
+            onClick={successMessage ? handleDone : isAuthenticated ? handleSubmit : handleLogin}
+            disabled={!successMessage && ((isAuthenticated && !canSubmit) || submitting || authStatus === 'loading')}
+          >
+            {successMessage ? '完成' : authStatus === 'loading' ? '读取账号...' : isAuthenticated ? (submitting ? '正在上传...' : '确认上传') : '登录后发布'}
           </button>
         </footer>
       </section>
@@ -339,6 +379,11 @@ export function GalleryPublishSheet({
           border-color: rgba(216, 180, 226, 0.95);
           box-shadow: 0 0 0 4px rgba(216, 180, 226, 0.18);
         }
+        .gallery-field input:disabled,
+        .gallery-field textarea:disabled {
+          opacity: 0.72;
+          cursor: not-allowed;
+        }
         .gallery-field textarea {
           resize: none;
           min-height: 94px;
@@ -370,6 +415,20 @@ export function GalleryPublishSheet({
           color: #c55d7a;
           font-size: 13px;
           padding: 0 2px;
+        }
+        .gallery-publish-modal__notice,
+        .gallery-publish-modal__success {
+          margin: 0;
+          font-size: 13px;
+          line-height: 1.6;
+          padding: 0 2px;
+        }
+        .gallery-publish-modal__notice {
+          color: rgba(93, 83, 74, 0.72);
+        }
+        .gallery-publish-modal__success {
+          color: #4f8f67;
+          font-weight: 700;
         }
         .gallery-publish-modal__footer {
           display: grid;
