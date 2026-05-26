@@ -2,7 +2,8 @@ import type { GalleryDetailResponse, GalleryListQuery, GalleryListResponse, Publ
 
 function resolveApiBaseUrl() {
   const configured = import.meta.env.VITE_API_BASE_URL?.trim() || 'auto';
-  if (configured === 'same-origin') return '';
+  const normalized = configured.replace(/\/+$/, '').toLowerCase();
+  if (normalized === 'same-origin') return '';
   if (configured !== 'auto') return configured.replace(/\/$/, '');
 
   if (typeof window === 'undefined') return '';
