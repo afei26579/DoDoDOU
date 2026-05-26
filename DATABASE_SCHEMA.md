@@ -260,7 +260,7 @@ JSON 字段结构：
 
 | 表 | 当前状态 | 说明 |
 | --- | --- | --- |
-| `User` | 历史表 | 用户账号表，字段包含 `email`、`phone`、`passwordHash`、`name`、`avatarUrl`、`role`、`status`、时间戳；`email` 和 `phone` 有唯一索引。 |
+| `User` | 历史表 | 用户账号表，字段包含 `email`、`username`、`phone`、`passwordHash`、`name`、`avatarUrl`、`role`、`status`、时间戳；`email`、`username` 和 `phone` 有唯一索引。 |
 | `Session` | 历史表 | 登录会话表，包含 `userId`、`tokenHash`、`userAgent`、`ipAddress`、`expiresAt`；`tokenHash` 唯一。 |
 | `OAuthAccount` | 历史表 | 第三方账号绑定表，包含 `provider`、`providerAccountId`；`provider + providerAccountId` 唯一。 |
 | `GalleryFavorite` | 历史表 | 后端收藏表，包含 `userId`、`itemId`；当前前端收藏实际写在 localStorage 的 `dodoudou.favoriteGalleryItemIds`。 |

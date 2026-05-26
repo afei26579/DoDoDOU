@@ -67,10 +67,31 @@ function parseList(value, fallback) {
   return items.length ? items : fallback;
 }
 
+function appendOrigin(origins, origin) {
+  if (!origin) return origins;
+  return origins.includes(origin) ? origins : [...origins, origin];
+}
+
+function getAllowedOrigins() {
+  const origins = parseList(process.env.GALLERY_ALLOWED_ORIGINS, ['http://localhost:5173', 'http://127.0.0.1:5173']);
+  if (!parseBoolean(process.env.GALLERY_DEV_LAN_ENABLED, false)) return origins;
+
+  const lanHost = process.env.GALLERY_DEV_LAN_HOST?.trim();
+  if (!lanHost) return origins;
+
+  const frontendPort = process.env.VITE_DEV_SERVER_PORT || '5173';
+  return appendOrigin(origins, `http://${lanHost}:${frontendPort}`);
+}
+
+function getServerHost() {
+  if (parseBoolean(process.env.GALLERY_DEV_LAN_ENABLED, false)) return '0.0.0.0';
+  return process.env.GALLERY_SERVER_HOST || '127.0.0.1';
+}
+
 const config = {
-  host: process.env.GALLERY_SERVER_HOST || '127.0.0.1',
+  host: getServerHost(),
   port: parseInteger(process.env.GALLERY_SERVER_PORT, 3001, { min: 1, max: 65535 }),
-  allowedOrigins: parseList(process.env.GALLERY_ALLOWED_ORIGINS, ['http://localhost:5173', 'http://127.0.0.1:5173']),
+  allowedOrigins: getAllowedOrigins(),
   jsonBodyLimit: process.env.GALLERY_JSON_BODY_LIMIT || '5mb',
   publishEnabled: parseBoolean(process.env.GALLERY_PUBLISH_ENABLED, true),
   requireWriteToken: parseBoolean(process.env.GALLERY_REQUIRE_WRITE_TOKEN, true),
@@ -457,6 +478,8 @@ function getUserDisplayName(user) {
   if (name) return name.slice(0, 40);
   const email = typeof user?.email === 'string' ? user.email.trim() : '';
   if (email) return email.split('@')[0].slice(0, 40) || '用户';
+  const username = typeof user?.username === 'string' ? user.username.trim() : '';
+  if (username) return username.slice(0, 40) || '用户';
   return '用户';
 }
 

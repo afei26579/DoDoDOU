@@ -160,7 +160,7 @@ export function GalleryPublishSheet({
           <div>
             <p className="gallery-publish-modal__eyebrow">画册发布</p>
             <h3>上传到画册</h3>
-            <span>{isAuthenticated ? `将以 ${user?.name || user?.email || '当前账号'} 发布` : '登录后才能发布到公共画册'}</span>
+            <span>{isAuthenticated ? `将以 ${user?.name || user?.email || (user?.username ? `@${user.username}` : '') || '当前账号'} 发布` : '登录后才能发布到公共画册'}</span>
           </div>
           <button type="button" className="gallery-publish-modal__close" aria-label="关闭" onClick={onClose}>
             ×

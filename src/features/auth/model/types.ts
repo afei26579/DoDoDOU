@@ -1,6 +1,7 @@
 export type AuthUser = {
   id: string;
   email: string | null;
+  username: string | null;
   phone: string | null;
   name: string | null;
   avatarUrl: string | null;
@@ -15,10 +16,10 @@ export type AuthResponse = {
 };
 
 export type LoginInput = {
-  email: string;
+  account: string;
   password: string;
 };
 
 export type RegisterInput = LoginInput & {
-  name?: string;
+  passwordConfirm: string;
 };

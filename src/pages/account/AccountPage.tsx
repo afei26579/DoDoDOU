@@ -2,8 +2,14 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../../features/auth/model/AuthProvider';
 
-function getInitial(name: string | null, email: string | null) {
-  const value = (name || email || 'D').trim();
+function getAccountLabel(user: { email: string | null; username: string | null }) {
+  if (user.email) return user.email;
+  if (user.username) return `@${user.username}`;
+  return null;
+}
+
+function getInitial(name: string | null, accountLabel: string | null) {
+  const value = (name || accountLabel || 'D').trim();
   return value.slice(0, 1).toUpperCase();
 }
 
@@ -27,6 +33,7 @@ export function AccountPage() {
   }
 
   if (!user) return null;
+  const accountLabel = getAccountLabel(user);
 
   return (
     <main className="account-page">
@@ -37,12 +44,12 @@ export function AccountPage() {
 
         <div className="account-profile">
           <div className="account-avatar" aria-hidden="true">
-            {user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : getInitial(user.name, user.email)}
+            {user.avatarUrl ? <img src={user.avatarUrl} alt="" /> : getInitial(user.name, accountLabel)}
           </div>
           <div>
             <p>当前账号</p>
-            <h1>{user.name || user.email || 'Dodoudou 用户'}</h1>
-            {user.email ? <span>{user.email}</span> : null}
+            <h1>{user.name || accountLabel || 'Dodoudou 用户'}</h1>
+            {accountLabel ? <span>{accountLabel}</span> : null}
           </div>
         </div>
 

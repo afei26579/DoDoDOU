@@ -72,6 +72,26 @@ const beginnerSteps = [
   { step: '3', title: '沉浸拼豆', description: '对照图纸，开启你的手工时光' },
 ] as const;
 
+const accountEntryColors = ['#B5EAD7', '#D8B4E2', '#F9C6D3', '#F6D77A', '#A9D6F5', '#C8A7F0', '#FFD3A5'];
+
+function getAccountEntryLabel(user: { username: string | null; email: string | null; name: string | null } | null) {
+  if (!user) return '登录';
+  if (user.username) return user.username;
+  if (user.email) return user.email.slice(0, 4);
+  if (user.name) return user.name.slice(0, 4).toUpperCase();
+  return '用户';
+}
+
+function getAccountEntryColor(user: { id: string; username: string | null; email: string | null } | null) {
+  if (!user) return undefined;
+  const source = user.username || user.email || user.id;
+  let hash = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    hash = (hash * 31 + source.charCodeAt(index)) % accountEntryColors.length;
+  }
+  return accountEntryColors[hash];
+}
+
 export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }: DiscoveryPageProps) {
   const navigate = useNavigate();
   const { status, user, isAuthenticated } = useAuth();
@@ -80,6 +100,8 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
   const [inspirationItems, setInspirationItems] = useState<GalleryItemCard[]>([]);
   const [continueBeadingItems, setContinueBeadingItems] = useState<WorkshopProjectCard[]>([]);
   const shouldLoopInspiration = inspirationItems.length > 1;
+  const accountEntryLabel = getAccountEntryLabel(user);
+  const accountEntryStyle = user ? { backgroundColor: getAccountEntryColor(user) } : undefined;
 
   const handleImageSelected = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -155,10 +177,11 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
         <button
           type="button"
           className={`account-entry ${user ? 'account-entry--signed-in' : ''}`}
+          style={accountEntryStyle}
           onClick={() => navigate(user ? '/account' : '/login')}
           aria-label={user ? '打开账号' : '登录账号'}
         >
-          {user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <span>{status === 'loading' ? '...' : user?.name?.slice(0, 1).toUpperCase() || '登录'}</span>}
+          {user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <span>{status === 'loading' ? '...' : accountEntryLabel}</span>}
         </button>
       </section>
 

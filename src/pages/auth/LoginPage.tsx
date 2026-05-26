@@ -51,8 +51,13 @@ function CloudIcon() {
 }
 
 function resolveRedirect(value: string | null) {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/account';
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/';
+  if (value === '/account') return '/';
   return value;
+}
+
+function isUsernameInput(value: string) {
+  return value.trim() && !value.includes('@');
 }
 
 export function LoginPage() {
@@ -60,15 +65,17 @@ export function LoginPage() {
   const [searchParams] = useSearchParams();
   const { status, isAuthenticated, login, register } = useAuth();
   const [mode, setMode] = useState<AuthMode>('login');
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
+  const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [message, setMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const redirectTo = useMemo(() => resolveRedirect(searchParams.get('redirect')), [searchParams]);
   const guestRedirectTo = redirectTo === '/account' ? '/' : redirectTo;
   const isLoginMode = mode === 'login';
+  const hasValidPassword = password.length >= 6 && !/^\d+$/.test(password);
+  const hasValidUsername = !isUsernameInput(account) || (account.trim().length >= 8 && !/^\d+$/.test(account.trim()));
 
   useEffect(() => {
     if (isAuthenticated) navigate(redirectTo, { replace: true });
@@ -81,9 +88,21 @@ export function LoginPage() {
 
     try {
       if (isLoginMode) {
-        await login({ email, password });
+        await login({ account, password });
       } else {
-        await register({ email, password, name });
+        if (!hasValidUsername) {
+          setMessage('用户名需至少 8 位，且不能为纯数字');
+          return;
+        }
+        if (!hasValidPassword) {
+          setMessage('密码需至少 6 位，且不能为纯数字');
+          return;
+        }
+        if (password !== passwordConfirm) {
+          setMessage('两次输入的密码不一致');
+          return;
+        }
+        await register({ account, password, passwordConfirm });
       }
       navigate(redirectTo, { replace: true });
     } catch (error) {
@@ -130,33 +149,17 @@ export function LoginPage() {
         </header>
 
         <form className="auth-form" onSubmit={handleSubmit}>
-          {!isLoginMode ? (
-            <label className="auth-field">
-              <span className="auth-field__icon auth-field__icon--text" aria-hidden="true">
-                昵称
-              </span>
-              <span className="auth-field__label">昵称</span>
-              <input
-                value={name}
-                maxLength={40}
-                autoComplete="nickname"
-                placeholder="你的昵称"
-                onChange={(event) => setName(event.target.value)}
-              />
-            </label>
-          ) : null}
-
           <label className="auth-field">
             <span className="auth-field__icon">
               <MailIcon />
             </span>
-            <span className="auth-field__label">邮箱</span>
+            <span className="auth-field__label">账号</span>
             <input
-              value={email}
-              type="email"
-              autoComplete="email"
-              placeholder="邮箱 / 用户名"
-              onChange={(event) => setEmail(event.target.value)}
+              value={account}
+              type="text"
+              autoComplete="username"
+              placeholder={isLoginMode ? '邮箱 / 用户名' : '邮箱 / 用户名'}
+              onChange={(event) => setAccount(event.target.value)}
               required
             />
           </label>
@@ -169,7 +172,7 @@ export function LoginPage() {
             <input
               value={password}
               type={showPassword ? 'text' : 'password'}
-              minLength={8}
+              minLength={6}
               maxLength={128}
               autoComplete={isLoginMode ? 'current-password' : 'new-password'}
               placeholder="密码"
@@ -185,6 +188,27 @@ export function LoginPage() {
               <EyeIcon hidden={!showPassword} />
             </button>
           </label>
+
+          {!isLoginMode ? (
+            <>
+              <label className="auth-field">
+                <span className="auth-field__icon">
+                  <LockIcon />
+                </span>
+                <span className="auth-field__label">确认密码</span>
+                <input
+                  value={passwordConfirm}
+                  type={showPassword ? 'text' : 'password'}
+                  minLength={6}
+                  maxLength={128}
+                  autoComplete="new-password"
+                  placeholder="再次输入密码"
+                  onChange={(event) => setPasswordConfirm(event.target.value)}
+                  required
+                />
+              </label>
+            </>
+          ) : null}
 
           {isLoginMode ? (
             <div className="auth-options">
@@ -214,6 +238,7 @@ export function LoginPage() {
             onClick={() => {
               setMode(isLoginMode ? 'register' : 'login');
               setMessage('');
+              setPasswordConfirm('');
             }}
           >
             {isLoginMode ? '注册新账号' : '返回登录'}

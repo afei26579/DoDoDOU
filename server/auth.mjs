@@ -22,11 +22,15 @@ const authConfig = {
   cookieName: process.env.AUTH_COOKIE_NAME?.trim() || 'dodoudou_session',
   sessionDays: parseInteger(process.env.AUTH_SESSION_DAYS, 30, { min: 1, max: 365 }),
   cookieSecure: parseBoolean(process.env.AUTH_COOKIE_SECURE, process.env.NODE_ENV === 'production'),
-  passwordMinLength: parseInteger(process.env.AUTH_PASSWORD_MIN_LENGTH, 8, { min: 6, max: 128 }),
+  passwordMinLength: parseInteger(process.env.AUTH_PASSWORD_MIN_LENGTH, 6, { min: 6, max: 128 }),
+  usernameMinLength: parseInteger(process.env.AUTH_USERNAME_MIN_LENGTH, 8, { min: 8, max: 32 }),
+  usernameMaxLength: parseInteger(process.env.AUTH_USERNAME_MAX_LENGTH, 32, { min: 8, max: 64 }),
   loginRateLimitMax: parseInteger(process.env.AUTH_LOGIN_RATE_LIMIT_MAX, 10, { min: 1, max: 10_000 }),
   registerRateLimitMax: parseInteger(process.env.AUTH_REGISTER_RATE_LIMIT_MAX, 5, { min: 1, max: 10_000 }),
   rateLimitWindowMs: parseInteger(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 60_000, { min: 1_000, max: 3_600_000 }),
 };
+
+const USERNAME_PATTERN = /^[a-z0-9_]+$/;
 
 function createRateLimiter({ windowMs, max, name }) {
   const buckets = new Map();
@@ -61,16 +65,86 @@ function normalizeEmail(value) {
   return value.trim().toLowerCase();
 }
 
-function normalizeName(value, email) {
-  if (typeof value === 'string') {
-    const name = value.trim();
-    if (name) return name.slice(0, 40);
-  }
-  return email.split('@')[0].slice(0, 40) || '新用户';
+function normalizeUsername(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().toLowerCase();
 }
 
 function isValidEmail(email) {
   return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isValidUsername(username) {
+  return (
+    username.length >= authConfig.usernameMinLength &&
+    username.length <= authConfig.usernameMaxLength &&
+    !/^\d+$/.test(username) &&
+    USERNAME_PATTERN.test(username)
+  );
+}
+
+function validateRegisterPassword(password) {
+  if (password.length < authConfig.passwordMinLength || password.length > 128) {
+    return `密码长度需要在 ${authConfig.passwordMinLength} 到 128 位之间`;
+  }
+
+  if (/^\d+$/.test(password)) {
+    return '密码不能为纯数字';
+  }
+
+  return null;
+}
+
+function readAccountInput(body) {
+  if (typeof body?.account === 'string') return body.account;
+  if (typeof body?.email === 'string') return body.email;
+  if (typeof body?.username === 'string') return body.username;
+  return '';
+}
+
+function normalizeIdentity(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return { ok: false, message: '请输入邮箱或用户名' };
+
+  if (raw.includes('@')) {
+    const email = normalizeEmail(raw);
+    return isValidEmail(email)
+      ? { ok: true, kind: 'email', value: email }
+      : { ok: false, message: '请输入有效邮箱' };
+  }
+
+  const username = normalizeUsername(raw);
+  return isValidUsername(username)
+    ? { ok: true, kind: 'username', value: username }
+    : {
+        ok: false,
+        message: `用户名需为 ${authConfig.usernameMinLength}-${authConfig.usernameMaxLength} 位字母、数字或下划线，且不能为纯数字`,
+      };
+}
+
+function getIdentityCreateData(identity) {
+  return identity.kind === 'email'
+    ? { email: identity.value, username: null }
+    : { email: null, username: identity.value };
+}
+
+async function findUserByIdentity(prisma, identity) {
+  if (identity.kind === 'email') {
+    return prisma.user.findUnique({ where: { email: identity.value } });
+  }
+  return prisma.user.findUnique({ where: { username: identity.value } });
+}
+
+function getIdentityConflictMessage(identity) {
+  return identity.kind === 'email' ? '该邮箱已注册' : '该用户名已注册';
+}
+
+function getUniqueConstraintMessage(error) {
+  const target = error?.meta?.target;
+  const fields = Array.isArray(target) ? target : typeof target === 'string' ? [target] : [];
+  if (fields.some((field) => String(field).includes('username'))) return '该用户名已注册';
+  if (fields.some((field) => String(field).includes('email'))) return '该邮箱已注册';
+  return '该账号已注册';
 }
 
 function mapSafeUser(user) {
@@ -78,6 +152,7 @@ function mapSafeUser(user) {
   return {
     id: user.id,
     email: user.email,
+    username: user.username,
     phone: user.phone,
     name: user.name,
     avatarUrl: user.avatarUrl,
@@ -252,30 +327,36 @@ export function createAuthRouter(prisma) {
 
   router.post('/register', registerLimiter, async (req, res, next) => {
     try {
-      const email = normalizeEmail(req.body?.email);
+      const identity = normalizeIdentity(readAccountInput(req.body));
       const password = typeof req.body?.password === 'string' ? req.body.password : '';
+      const passwordConfirm = typeof req.body?.passwordConfirm === 'string'
+        ? req.body.passwordConfirm
+        : typeof req.body?.confirmPassword === 'string'
+          ? req.body.confirmPassword
+          : '';
 
-      if (!isValidEmail(email)) {
-        return res.status(400).json({ message: '请输入有效邮箱', requestId: req.id });
+      if (!identity.ok) {
+        return res.status(400).json({ message: identity.message, requestId: req.id });
       }
 
-      if (password.length < authConfig.passwordMinLength || password.length > 128) {
-        return res.status(400).json({
-          message: `密码长度需要在 ${authConfig.passwordMinLength} 到 128 位之间`,
-          requestId: req.id,
-        });
+      if (!passwordConfirm || password !== passwordConfirm) {
+        return res.status(400).json({ message: '两次输入的密码不一致', requestId: req.id });
       }
 
-      const exists = await prisma.user.findUnique({ where: { email } });
+      const passwordError = validateRegisterPassword(password);
+      if (passwordError) {
+        return res.status(400).json({ message: passwordError, requestId: req.id });
+      }
+
+      const exists = await findUserByIdentity(prisma, identity);
       if (exists) {
-        return res.status(409).json({ message: '该邮箱已注册', requestId: req.id });
+        return res.status(409).json({ message: getIdentityConflictMessage(identity), requestId: req.id });
       }
 
       const user = await prisma.user.create({
         data: {
-          email,
+          ...getIdentityCreateData(identity),
           passwordHash: await hashPassword(password),
-          name: normalizeName(req.body?.name, email),
         },
       });
       const token = await createSession(prisma, req, user.id);
@@ -283,7 +364,7 @@ export function createAuthRouter(prisma) {
       res.status(201).json({ user: mapSafeUser(user) });
     } catch (error) {
       if (error?.code === 'P2002') {
-        return res.status(409).json({ message: '该邮箱已注册', requestId: req.id });
+        return res.status(409).json({ message: getUniqueConstraintMessage(error), requestId: req.id });
       }
       next(error);
     }
@@ -291,17 +372,17 @@ export function createAuthRouter(prisma) {
 
   router.post('/login', loginLimiter, async (req, res, next) => {
     try {
-      const email = normalizeEmail(req.body?.email);
+      const identity = normalizeIdentity(readAccountInput(req.body));
       const password = typeof req.body?.password === 'string' ? req.body.password : '';
 
-      if (!isValidEmail(email) || !password) {
-        return res.status(400).json({ message: '邮箱或密码不正确', requestId: req.id });
+      if (!identity.ok || !password) {
+        return res.status(400).json({ message: '账号或密码不正确', requestId: req.id });
       }
 
-      const user = await prisma.user.findUnique({ where: { email } });
+      const user = await findUserByIdentity(prisma, identity);
       const verified = user ? await verifyPassword(password, user.passwordHash) : false;
       if (!user || !verified) {
-        return res.status(401).json({ message: '邮箱或密码不正确', requestId: req.id });
+        return res.status(401).json({ message: '账号或密码不正确', requestId: req.id });
       }
 
       if (user.status !== 'active') {

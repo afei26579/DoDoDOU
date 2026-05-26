@@ -8,7 +8,7 @@ type WorkshopHeroProps = {
 };
 
 function getAlgorithmLabel(algorithm: PatternAlgorithm | undefined) {
-  return algorithm === 'perceptual-p0' ? 'P0' : '当前';
+  return algorithm === 'perceptual-p0' ? '智能' : '普通';
 }
 
 export function WorkshopHero({ projectId, mode = 'create', algorithm = 'legacy', onOpenSettings }: WorkshopHeroProps) {

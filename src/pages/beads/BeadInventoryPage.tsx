@@ -253,7 +253,7 @@ export function BeadInventoryPage() {
             {authStatus === 'loading'
               ? '正在读取账号状态'
               : isAuthenticated
-                ? user?.email ?? user?.name ?? '当前账号'
+                ? user?.email ?? user?.username ?? user?.name ?? '当前账号'
                 : '登录后可同步到账号'}
           </span>
         </div>

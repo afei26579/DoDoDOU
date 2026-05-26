@@ -483,7 +483,7 @@ export function CollectionPage() {
                 {authStatus === 'loading'
                   ? '正在读取账号状态'
                   : isAuthenticated
-                    ? projectSyncMessage || favoriteSyncMessage || user?.email || user?.name || '当前账号'
+                    ? projectSyncMessage || favoriteSyncMessage || user?.email || user?.username || user?.name || '当前账号'
                     : '登录后可同步图纸、草稿和拼豆进度'}
               </span>
             </div>

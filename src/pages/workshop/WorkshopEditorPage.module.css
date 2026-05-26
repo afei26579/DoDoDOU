@@ -233,6 +233,83 @@
   }
 }
 
+@media (min-width: 701px) {
+  .toolbar {
+    --tool-row-height: 84px;
+    --toolbar-content-height: 84px;
+    width: min(900px, calc(100vw - 40px));
+    bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 20px);
+  }
+
+  .toolRow,
+  .toolbarContent {
+    padding: 12px 16px;
+  }
+
+  .toolRow {
+    gap: 10px;
+  }
+
+  .toolbarContent {
+    gap: 14px;
+  }
+
+  .toolBtn,
+  .colorSwatch {
+    width: 60px;
+    height: 60px;
+    border-radius: 16px;
+  }
+
+  .toolBtn {
+    padding: 6px;
+  }
+
+  .toolSep {
+    height: 36px;
+  }
+
+  .toolInfoTag,
+  .paramGroup,
+  .pickerTip {
+    min-height: 54px;
+  }
+
+  .tagIcon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .tagText {
+    font-size: 13px;
+  }
+
+  .smallActionBtn {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+
+  .sizeDotBtn {
+    width: 28px;
+    height: 28px;
+  }
+
+  .miniColor {
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+  }
+
+  .zoomTools {
+    gap: 7px;
+  }
+
+  .zoomBar {
+    bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 222px);
+  }
+}
+
 @media (min-width: 900px) {
   .titlebar {
     padding-inline: 20px;
@@ -253,8 +330,30 @@
   }
 
   .toolbar {
-    width: min(860px, calc(100vw - 48px));
+    --tool-row-height: 92px;
+    --toolbar-content-height: 92px;
+    width: min(980px, calc(100vw - 56px));
     bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 24px);
+  }
+
+  .toolRow,
+  .toolbarContent {
+    padding: 14px 18px;
+  }
+
+  .toolRow {
+    gap: 12px;
+  }
+
+  .toolbarContent {
+    gap: 16px;
+  }
+
+  .toolBtn,
+  .colorSwatch {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
   }
 
   .canvasActions {
@@ -274,7 +373,7 @@
   }
 
   .zoomBar {
-    bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 188px);
+    bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 246px);
   }
 }
 
