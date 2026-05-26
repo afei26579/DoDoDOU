@@ -1,6 +1,8 @@
 import type { ColorSystem, PatternResult } from '../../features/workshop/model/types';
 import { getVendorCode } from './color-system';
 
+export const DEFAULT_DOWNLOAD_AUTHOR_NAME = '嘟豆豆(Dodoudou)';
+
 export type DownloadPatternOptions = {
   authorName: string;
   patternName: string;

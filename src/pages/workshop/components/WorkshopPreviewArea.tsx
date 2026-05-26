@@ -9,6 +9,7 @@ type WorkshopPreviewAreaProps = {
   patternResult: PatternResult | null;
   cropTransform: CropTransform;
   isHydrating: boolean;
+  isGenerating: boolean;
   isHome: boolean;
   onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
   onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void;
@@ -21,6 +22,21 @@ function WorkshopLoadingState() {
   return (
     <div className="workshop-canvas__loading-shell">
       <div className="workshop-canvas__loading">正在恢复项目数据...</div>
+    </div>
+  );
+}
+
+function WorkshopGeneratingState() {
+  return (
+    <div className="workshop-canvas__generating-overlay" role="status" aria-live="polite" aria-label="正在生成图纸">
+      <div className="workshop-canvas__generating-card">
+        <span className="workshop-canvas__generating-kicker">PIXELIZING</span>
+        <strong>正在生成图纸</strong>
+        <span>算法计算中，请稍候</span>
+      </div>
+      <div className="workshop-canvas__generating-progress" aria-hidden="true">
+        <span />
+      </div>
     </div>
   );
 }
@@ -240,6 +256,7 @@ export function WorkshopPreviewArea({
   patternResult,
   cropTransform,
   isHydrating,
+  isGenerating,
   isHome,
   onPointerDown,
   onPointerMove,
@@ -248,7 +265,7 @@ export function WorkshopPreviewArea({
   backgroundRemovalNotice,
 }: WorkshopPreviewAreaProps) {
   return (
-    <section className="workshop-canvas card-surface" aria-label="画布预览">
+    <section className="workshop-canvas card-surface" aria-label="画布预览" aria-busy={isGenerating}>
       <div className="workshop-canvas__frame">
         {isHydrating ? (
           <WorkshopLoadingState />
@@ -283,6 +300,7 @@ export function WorkshopPreviewArea({
         ) : (
           <WorkshopEmptyState onUploadImage={onUploadImage} />
         )}
+        {uploadedImage && isGenerating ? <WorkshopGeneratingState /> : null}
         {mode === 'result' && backgroundRemovalNotice ? (
           <div className="workshop-canvas__center-notice" role="status" aria-live="polite">
             {backgroundRemovalNotice}

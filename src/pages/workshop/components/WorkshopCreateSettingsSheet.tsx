@@ -70,6 +70,12 @@ export function WorkshopCreateSettingsSheet({
     });
   };
 
+  const handleAlgorithmChange = (nextAlgorithm: PatternAlgorithm) => {
+    if (nextAlgorithm === algorithm) return;
+    onConfigChange({ algorithm: nextAlgorithm });
+    onClose();
+  };
+
   useEffect(() => {
     if (!open) return;
 
@@ -104,7 +110,7 @@ export function WorkshopCreateSettingsSheet({
                   type="button"
                   className={algorithm === option.id ? 'is-active' : ''}
                   aria-pressed={algorithm === option.id}
-                  onClick={() => onConfigChange({ algorithm: option.id })}
+                  onClick={() => handleAlgorithmChange(option.id)}
                 >
                   {option.label}
                 </button>

@@ -3,6 +3,8 @@ import { createCropCanvas, loadImage as loadCropImage } from './crop';
 import { generatePatternCore } from './generate-core';
 import type { CropTransform, PatternCell, PatternResult, WorkshopConfig, WorkshopStyle } from '../../features/workshop/model/types';
 
+let patternWorkerRequestId = 0;
+
 function colorDistance(a: PatternRgb, b: PatternRgb) {
   const dr = a.r - b.r;
   const dg = a.g - b.g;
@@ -135,14 +137,122 @@ function toMergeThreshold(input: number, style: WorkshopStyle) {
   return base;
 }
 
+function createAbortError() {
+  if (typeof DOMException !== 'undefined') {
+    return new DOMException('图纸生成已取消', 'AbortError');
+  }
+
+  const error = new Error('图纸生成已取消');
+  error.name = 'AbortError';
+  return error;
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
+}
+
+function generatePatternCoreDirect(params: {
+  imageData: ImageData;
+  canvasSize: number;
+  palette: PatternPaletteColor[];
+  config: WorkshopConfig;
+}) {
+  return generatePatternCore(params).pattern;
+}
+
+function generatePatternCoreInWorker(params: {
+  imageData: ImageData;
+  canvasSize: number;
+  palette: PatternPaletteColor[];
+  config: WorkshopConfig;
+  signal?: AbortSignal;
+}): Promise<PatternResult> {
+  const { imageData, canvasSize, palette, config, signal } = params;
+  throwIfAborted(signal);
+
+  if (typeof Worker === 'undefined') {
+    return Promise.resolve(generatePatternCoreDirect({ imageData, canvasSize, palette, config }));
+  }
+
+  let worker: Worker;
+  try {
+    worker = new Worker(new URL('./generate-core.worker.ts', import.meta.url), { type: 'module' });
+  } catch {
+    return Promise.resolve(generatePatternCoreDirect({ imageData, canvasSize, palette, config }));
+  }
+
+  return new Promise((resolve, reject) => {
+    const id = patternWorkerRequestId + 1;
+    patternWorkerRequestId = id;
+    let settled = false;
+
+    const cleanup = () => {
+      worker.terminate();
+      signal?.removeEventListener('abort', handleAbort);
+    };
+
+    const settle = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      callback();
+    };
+
+    const handleAbort = () => {
+      settle(() => reject(createAbortError()));
+    };
+
+    worker.onmessage = (event: MessageEvent<{ id: number; ok: boolean; pattern?: PatternResult; error?: string }>) => {
+      if (event.data.id !== id) return;
+
+      if (event.data.ok && event.data.pattern) {
+        settle(() => resolve(event.data.pattern as PatternResult));
+        return;
+      }
+
+      settle(() => reject(new Error(event.data.error ?? '图纸生成失败')));
+    };
+
+    worker.onerror = (event) => {
+      settle(() => reject(new Error(event.message || '图纸生成失败')));
+    };
+
+    signal?.addEventListener('abort', handleAbort, { once: true });
+    if (signal?.aborted) {
+      handleAbort();
+      return;
+    }
+
+    try {
+      worker.postMessage(
+        {
+          id,
+          imageData,
+          canvasSize,
+          palette,
+          config,
+        },
+        [imageData.data.buffer as ArrayBuffer],
+      );
+    } catch (error) {
+      settle(() => reject(error instanceof Error ? error : new Error('图纸生成失败')));
+    }
+  });
+}
+
 export async function generatePatternFromImage(params: {
   imageUrl: string;
   config: WorkshopConfig;
   cropTransform?: CropTransform;
   cropFrameSize?: number;
+  signal?: AbortSignal;
 }): Promise<PatternResult> {
-  const { imageUrl, config, cropTransform, cropFrameSize = 1200 } = params;
+  const { imageUrl, config, cropTransform, cropFrameSize = 1200, signal } = params;
+  throwIfAborted(signal);
   const image = await loadCropImage(imageUrl);
+  throwIfAborted(signal);
   const canvas = cropTransform
     ? createCropCanvas({ image, cropTransform, frameSize: cropFrameSize, outputSize: cropFrameSize })
     : (() => {
@@ -163,18 +273,20 @@ export async function generatePatternFromImage(params: {
   }
 
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  throwIfAborted(signal);
 
   const width = config.canvasSize;
   const height = config.canvasSize;
   const palette = buildPalette(config.brand);
   const algorithm = config.algorithm ?? 'legacy';
   if (algorithm === 'perceptual-p0') {
-    return generatePatternCore({
+    return generatePatternCoreInWorker({
       imageData,
       canvasSize: config.canvasSize,
       palette,
       config,
-    }).pattern;
+      signal,
+    });
   }
 
   const rawCells: PatternCell[] = [];

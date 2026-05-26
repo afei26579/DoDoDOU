@@ -111,11 +111,13 @@ export function WorkshopPage({
   const [isCreateSettingsOpen, setIsCreateSettingsOpen] = useState(false);
   const resultRegenerateRequestRef = useRef(0);
   const resultRegenerateKeyRef = useRef<string | null>(null);
+  const [isResultRegenerating, setIsResultRegenerating] = useState(false);
   const [isCropPreviewOpen, setIsCropPreviewOpen] = useState(false);
   const [cropPreviewDataUrl, setCropPreviewDataUrl] = useState<string | null>(null);
   const [cropPreviewSize, setCropPreviewSize] = useState({ width: 420, height: 300 });
   const [cropPreviewPosition, setCropPreviewPosition] = useState({ x: 0, y: 0 });
   const { uploadedImage, cropTransform, config, patternResult, isGenerating } = flowState;
+  const isPreviewGenerating = isGenerating || isResultRegenerating;
   const cropPreviewImageRef = useRef<HTMLImageElement | null>(null);
   const cropPreviewDragRef = useRef<{ kind: 'move' | 'resize'; startX: number; startY: number; startWidth: number; startHeight: number; startLeft: number; startTop: number } | null>(null);
 
@@ -142,21 +144,30 @@ export function WorkshopPage({
   }, [uploadedImage?.dataUrl]);
 
   useEffect(() => {
-    if (!isCreateSettingsOpen || mode !== 'result' || !uploadedImage?.dataUrl) return;
-    resultRegenerateKeyRef.current = getResultGenerationKey({ uploadedImage, cropTransform, config });
-  }, [isCreateSettingsOpen]);
-
-  useEffect(() => {
-    if (!isCreateSettingsOpen || mode !== 'result' || !uploadedImage?.dataUrl || !onPatternResultChange) {
+    if (mode !== 'result' || !uploadedImage?.dataUrl || !patternResult || !onPatternResultChange) {
       resultRegenerateRequestRef.current += 1;
+      setIsResultRegenerating(false);
       return;
     }
 
     const generationKey = getResultGenerationKey({ uploadedImage, cropTransform, config });
-    if (resultRegenerateKeyRef.current === generationKey) return;
+    if (resultRegenerateKeyRef.current === null) {
+      resultRegenerateKeyRef.current = generationKey;
+      setIsResultRegenerating(false);
+      return;
+    }
+
+    if (resultRegenerateKeyRef.current === generationKey) {
+      setIsResultRegenerating(false);
+      return;
+    }
 
     const requestId = resultRegenerateRequestRef.current + 1;
     resultRegenerateRequestRef.current = requestId;
+    setIsResultRegenerating(true);
+
+    const abortController = new AbortController();
+    let active = true;
 
     const timer = window.setTimeout(() => {
       generatePatternFromImage({
@@ -164,19 +175,26 @@ export function WorkshopPage({
         config,
         cropTransform,
         cropFrameSize: 1200,
+        signal: abortController.signal,
       })
         .then((result) => {
-          if (resultRegenerateRequestRef.current !== requestId) return;
+          if (!active || resultRegenerateRequestRef.current !== requestId) return;
           resultRegenerateKeyRef.current = generationKey;
           onPatternResultChange(result);
         })
-        .catch(() => undefined);
+        .catch(() => undefined)
+        .finally(() => {
+          if (!active || resultRegenerateRequestRef.current !== requestId) return;
+          setIsResultRegenerating(false);
+        });
     }, 420);
 
     return () => {
+      active = false;
       window.clearTimeout(timer);
+      abortController.abort();
     };
-  }, [config, cropTransform, isCreateSettingsOpen, mode, onPatternResultChange, uploadedImage]);
+  }, [config, cropTransform, mode, onPatternResultChange, patternResult, uploadedImage]);
 
   useEffect(() => {
     if (!isCropPreviewOpen || !uploadedImage) return;
@@ -336,6 +354,7 @@ export function WorkshopPage({
         patternResult={patternResult}
         cropTransform={cropTransform}
         isHydrating={isHydrating}
+        isGenerating={isPreviewGenerating}
         isHome={isHome}
         onPointerDown={handlePreviewPointerDown}
         onPointerMove={handlePreviewPointerMove}
@@ -346,7 +365,7 @@ export function WorkshopPage({
 
       {isHome ? (
         <WorkshopHomeToolbar
-          isGenerating={isGenerating}
+          isGenerating={isPreviewGenerating}
           onAiInspiration={onAiInspiration ?? (() => {})}
           onCreateCanvas={onCreateCanvas ?? (() => {})}
           onImportPattern={onImportPattern ?? (() => {})}
@@ -359,7 +378,7 @@ export function WorkshopPage({
               mode={mode}
               hasImage={Boolean(uploadedImage)}
               patternResultExists={Boolean(patternResult)}
-              isGenerating={isGenerating}
+              isGenerating={isPreviewGenerating}
               onCropZoomIn={() => onCropTransformChange((current) => ({ ...current, scale: Math.min(3, +(current.scale + 0.1).toFixed(2)) }))}
               onCropZoomOut={() => onCropTransformChange((current) => ({ ...current, scale: Math.max(0.5, +(current.scale - 0.1).toFixed(2)) }))}
               onCropReset={() => onCropTransformChange({ scale: 1, x: 0, y: 0, rotate: 0 })}
@@ -382,8 +401,8 @@ export function WorkshopPage({
                   <WorkshopGenerateButton
                     mode={mode}
                     resultLayout="actionsOnly"
-                    isGenerating={isGenerating}
-                    disabled={!uploadedImage || isGenerating}
+                    isGenerating={isPreviewGenerating}
+                    disabled={!uploadedImage || isPreviewGenerating}
                     onClick={onGeneratePattern}
                     onRemoveBackground={onRemoveBackground}
                     onViewPattern={onViewPattern}
@@ -400,8 +419,8 @@ export function WorkshopPage({
                 <WorkshopGenerateButton
                   mode={mode}
                   resultLayout="primaryOnly"
-                  isGenerating={isGenerating}
-                  disabled={!uploadedImage || isGenerating}
+                  isGenerating={isPreviewGenerating}
+                  disabled={!uploadedImage || isPreviewGenerating}
                   onClick={onGeneratePattern}
                   onRegenerate={onGeneratePattern}
                   onOpenFocusMode={onOpenFocusMode}
@@ -426,8 +445,8 @@ export function WorkshopPage({
               <div className="workshop-bottom-action workshop-bottom-action--standalone" aria-label="生成操作">
                 <WorkshopGenerateButton
                   mode={mode}
-                  isGenerating={isGenerating}
-                  disabled={!uploadedImage || isGenerating}
+                  isGenerating={isPreviewGenerating}
+                  disabled={!uploadedImage || isPreviewGenerating}
                   onClick={onGeneratePattern}
                   onOpenEditor={onOpenEditor}
                   onManualEditNavigate={onOpenEditor}

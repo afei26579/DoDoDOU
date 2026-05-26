@@ -642,6 +642,139 @@ p { margin: 0; }
 .workshop-canvas__switcher { position: absolute; inset: 0; }
 .workshop-canvas__panel { position: absolute; inset: 0; }
 .workshop-canvas__panel--fade-in { animation: workshop-fade-in 220ms ease-out; }
+.workshop-canvas__generating-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  overflow: hidden;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(180deg, rgba(253, 251, 247, 0.44), rgba(255, 255, 255, 0.68)),
+    radial-gradient(circle at 18% 12%, rgba(216, 180, 226, 0.24), transparent 36%),
+    radial-gradient(circle at 84% 20%, rgba(181, 234, 215, 0.24), transparent 38%);
+  backdrop-filter: blur(1.5px) saturate(0.92);
+  animation: workshop-fade-in 180ms ease-out;
+}
+.workshop-canvas__generating-overlay::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -64px;
+  height: 64px;
+  z-index: 1;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(216, 180, 226, 0.52),
+    rgba(181, 234, 215, 0.42),
+    transparent
+  );
+  box-shadow: 0 0 28px rgba(216, 180, 226, 0.26);
+  animation: workshop-generating-scan 2.4s linear infinite;
+}
+.workshop-canvas__generating-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image:
+    linear-gradient(to right, rgba(197, 147, 212, 0.16) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(109, 196, 168, 0.14) 1px, transparent 1px),
+    radial-gradient(circle at 2px 2px, rgba(255, 218, 193, 0.4) 1.5px, transparent 0);
+  background-size: 18px 18px, 18px 18px, 36px 36px;
+  opacity: 0.62;
+  animation: workshop-generating-grid 1.8s ease-in-out infinite;
+}
+.workshop-canvas__generating-card {
+  position: relative;
+  z-index: 3;
+  width: min(calc(100% - 48px), 260px);
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 14px 16px 15px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(216, 180, 226, 0.38);
+  box-shadow:
+    0 16px 36px rgba(93, 83, 74, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  text-align: center;
+}
+.workshop-canvas__generating-card strong {
+  font-family: var(--font-title);
+  font-size: 20px;
+  line-height: 1.2;
+  color: #6a4e69;
+  letter-spacing: 0.02em;
+}
+.workshop-canvas__generating-card span:last-child {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: rgba(93, 83, 74, 0.68);
+}
+.workshop-canvas__generating-kicker {
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  letter-spacing: 0.16em;
+  color: var(--accent-strong);
+}
+.workshop-canvas__generating-progress {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 3;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(216, 180, 226, 0.28);
+  box-shadow: inset 0 1px 2px rgba(93, 83, 74, 0.06);
+}
+.workshop-canvas__generating-progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d8b4e2, #b5ead7, #ffdac1);
+  animation: workshop-generating-bar 2.2s ease-in-out infinite;
+}
+@keyframes workshop-generating-scan {
+  to { top: 110%; }
+}
+@keyframes workshop-generating-grid {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 0.74; }
+}
+@keyframes workshop-generating-bar {
+  0% { transform: translateX(-110%); }
+  55% { transform: translateX(120%); }
+  100% { transform: translateX(260%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .workshop-canvas__generating-overlay,
+  .workshop-canvas__generating-overlay::before,
+  .workshop-canvas__generating-overlay::after,
+  .workshop-canvas__generating-progress span {
+    animation: none;
+  }
+
+  .workshop-canvas__generating-overlay::before {
+    top: 44%;
+  }
+
+  .workshop-canvas__generating-progress span {
+    width: 100%;
+    transform: none;
+  }
+}
 .workshop-canvas__viewport-shell {
   --crop-frame-outset: 7px;
   position: absolute;

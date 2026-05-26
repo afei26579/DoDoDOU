@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ColorSystem, PatternResult } from '../../features/workshop/model/types';
-import { downloadPatternImage, type DownloadPatternOptions } from '../../lib/pattern/download';
+import { DEFAULT_DOWNLOAD_AUTHOR_NAME, downloadPatternImage, type DownloadPatternOptions } from '../../lib/pattern/download';
 
 type DownloadSettingsModalProps = {
   open: boolean;
@@ -20,7 +20,6 @@ const colorOptions = [
 ] as const;
 
 export function DownloadSettingsModal({ open, onClose, brand, patternResult, defaultPatternName = '' }: DownloadSettingsModalProps) {
-  const [authorName, setAuthorName] = useState('');
   const [patternName, setPatternName] = useState(defaultPatternName);
   const [showGrid, setShowGrid] = useState(true);
   const [gridGap, setGridGap] = useState(10);
@@ -50,7 +49,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
     setIsDownloading(true);
     try {
       const downloadOptions: DownloadPatternOptions = {
-        authorName,
+        authorName: DEFAULT_DOWNLOAD_AUTHOR_NAME,
         patternName,
         showGrid,
         gridGap,
@@ -90,16 +89,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
         </header>
 
         <div className="download-modal__body">
-          <div className="download-modal__form-row download-modal__form-row--inline">
-            <label className="download-modal__field">
-              <span>作者署名</span>
-              <input
-                className="download-modal__input"
-                value={authorName}
-                placeholder="@你的账号"
-                onChange={(event) => setAuthorName(event.target.value)}
-              />
-            </label>
+          <div className="download-modal__form-row">
             <label className="download-modal__field">
               <span>图纸名称</span>
               <input
