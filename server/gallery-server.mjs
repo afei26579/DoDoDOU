@@ -4,8 +4,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAuthRouter, optionalAuth, requireAuth } from './auth.mjs';
+import { createAssetsRouter } from './assets.mjs';
 import { prisma } from './db.mjs';
 import { createInventoryRouter } from './inventory.mjs';
+import { createPatternRouter } from './pattern.mjs';
 import { createProjectsRouter } from './projects.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -207,8 +209,14 @@ const publishRateLimiter = createRateLimiter({
 
 app.use(applyCors);
 app.use(globalRateLimiter);
+app.use('/uploads', express.static(path.join(rootDir, 'public', 'uploads'), {
+  index: false,
+  maxAge: '7d',
+}));
 app.use('/api/auth', createAuthRouter(prisma));
+app.use('/api/assets', createAssetsRouter(prisma, { rootDir }));
 app.use('/api/inventory', createInventoryRouter(prisma));
+app.use('/api/pattern', createPatternRouter(prisma, { rootDir }));
 app.use('/api/projects', createProjectsRouter(prisma));
 
 function toSlug(value) {
@@ -938,7 +946,11 @@ app.post('/api/gallery/publish', requireAuth(prisma), requirePublishAccess, publ
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
 
-  const status = err.status === 413 || err.type === 'entity.too.large' ? 413 : 500;
+  const status = err.status === 413 || err.type === 'entity.too.large'
+    ? 413
+    : Number.isInteger(err.status) && err.status >= 400 && err.status < 600
+      ? err.status
+      : 500;
   console.error(
     JSON.stringify({
       requestId: req.id,
@@ -949,7 +961,7 @@ app.use((err, req, res, next) => {
   );
 
   res.status(status).json({
-    message: status === 413 ? 'Request body is too large' : 'Internal server error',
+    message: status === 413 ? 'Request body is too large' : status >= 500 ? 'Internal server error' : err.message,
     requestId: req.id,
   });
 });

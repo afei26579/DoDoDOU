@@ -28,6 +28,9 @@ const authConfig = {
   loginRateLimitMax: parseInteger(process.env.AUTH_LOGIN_RATE_LIMIT_MAX, 10, { min: 1, max: 10_000 }),
   registerRateLimitMax: parseInteger(process.env.AUTH_REGISTER_RATE_LIMIT_MAX, 5, { min: 1, max: 10_000 }),
   rateLimitWindowMs: parseInteger(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 60_000, { min: 1_000, max: 3_600_000 }),
+  wechatAppId: process.env.WECHAT_MINIPROGRAM_APP_ID?.trim() || '',
+  wechatAppSecret: process.env.WECHAT_MINIPROGRAM_APP_SECRET?.trim() || '',
+  wechatDevLoginEnabled: parseBoolean(process.env.WECHAT_MINIPROGRAM_DEV_LOGIN_ENABLED, process.env.NODE_ENV !== 'production'),
 };
 
 const USERNAME_PATTERN = /^[a-z0-9_]+$/;
@@ -209,6 +212,12 @@ function getSessionToken(req) {
   return cookies[authConfig.cookieName] || '';
 }
 
+function getBearerToken(req) {
+  const authorization = req.get('Authorization') || '';
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : '';
+}
+
 function getCookieOptions({ maxAgeSeconds }) {
   const parts = [
     `${authConfig.cookieName}=`,
@@ -247,8 +256,7 @@ async function createSession(prisma, req, userId) {
   return token;
 }
 
-export async function resolveAuthUser(prisma, req) {
-  const token = getSessionToken(req);
+async function findSessionUser(prisma, token) {
   if (!token) return null;
 
   const session = await prisma.session.findUnique({
@@ -264,6 +272,12 @@ export async function resolveAuthUser(prisma, req) {
 
   if (session.user.status !== 'active') return null;
   return session.user;
+}
+
+export async function resolveAuthUser(prisma, req) {
+  const bearerUser = await findSessionUser(prisma, getBearerToken(req));
+  if (bearerUser) return bearerUser;
+  return findSessionUser(prisma, getSessionToken(req));
 }
 
 export function optionalAuth(prisma) {
@@ -370,6 +384,54 @@ export function createAuthRouter(prisma) {
     }
   });
 
+  router.post('/wechat-login', loginLimiter, async (req, res, next) => {
+    try {
+      const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+      if (!code) {
+        return res.status(400).json({ message: 'wx.login code is required', requestId: req.id });
+      }
+
+      const wechatSession = await exchangeWechatLoginCode(code);
+      const provider = 'wechat_miniprogram';
+      const account = await prisma.oAuthAccount.findUnique({
+        where: {
+          provider_providerAccountId: {
+            provider,
+            providerAccountId: wechatSession.openid,
+          },
+        },
+        include: { user: true },
+      });
+
+      let user = account?.user ?? null;
+      if (user?.status && user.status !== 'active') {
+        return res.status(403).json({ message: '账号当前不可用', requestId: req.id });
+      }
+
+      if (!user) {
+        user = await prisma.user.create({
+          data: {
+            name: '微信用户',
+            oauthAccounts: {
+              create: {
+                provider,
+                providerAccountId: wechatSession.openid,
+              },
+            },
+          },
+        });
+      }
+
+      const token = await createSession(prisma, req, user.id);
+      res.json({
+        token,
+        user: mapSafeUser(user),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.post('/login', loginLimiter, async (req, res, next) => {
     try {
       const identity = normalizeIdentity(readAccountInput(req.body));
@@ -411,4 +473,45 @@ export function createAuthRouter(prisma) {
   });
 
   return router;
+}
+
+async function exchangeWechatLoginCode(code) {
+  if (authConfig.wechatAppId && authConfig.wechatAppSecret) {
+    const url = new URL('https://api.weixin.qq.com/sns/jscode2session');
+    url.searchParams.set('appid', authConfig.wechatAppId);
+    url.searchParams.set('secret', authConfig.wechatAppSecret);
+    url.searchParams.set('js_code', code);
+    url.searchParams.set('grant_type', 'authorization_code');
+
+    const response = await fetch(url);
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload || payload.errcode) {
+      const message = payload?.errmsg || `WeChat login failed: ${response.status}`;
+      const error = new Error(message);
+      error.status = 502;
+      throw error;
+    }
+
+    if (typeof payload.openid !== 'string' || !payload.openid) {
+      const error = new Error('WeChat login did not return openid');
+      error.status = 502;
+      throw error;
+    }
+
+    return {
+      openid: payload.openid,
+      unionid: typeof payload.unionid === 'string' ? payload.unionid : null,
+    };
+  }
+
+  if (!authConfig.wechatDevLoginEnabled) {
+    const error = new Error('WeChat mini program credentials are not configured');
+    error.status = 503;
+    throw error;
+  }
+
+  return {
+    openid: `dev_${createHash('sha256').update(code).digest('hex').slice(0, 32)}`,
+    unionid: null,
+  };
 }

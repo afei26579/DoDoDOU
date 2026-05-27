@@ -1,6 +1,7 @@
 node_modules
 /dist
 miniprogram/dist
+public/uploads
 .DS_Store
 .env
 .env.*
