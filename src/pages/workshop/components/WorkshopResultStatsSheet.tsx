@@ -8,6 +8,8 @@ import type { ColorSystem, PatternResult } from '../../../features/workshop/mode
 import { getBeadBrandLabel } from '../../../lib/pattern/brand';
 import { buildPatternColorRequirements } from '../../../lib/pattern/color-requirements';
 import { getBrandPalette, type BrandColor } from '../../../lib/pattern/color-system';
+import { ALL_PALETTE_GROUP, buildPaletteGroups, getPaletteGroupForCode } from '../../../lib/pattern/palette-groups';
+import { cleanupSingleCellPatternColors } from '../../../lib/pattern/single-cell-color-cleanup';
 
 type WorkshopResultStatsSheetProps = {
   patternResult: PatternResult;
@@ -89,10 +91,23 @@ export function WorkshopResultStatsSheet({
   const [inventoryItems, setInventoryItems] = useState<BeadInventoryItem[]>([]);
   const [inventoryLoaded, setInventoryLoaded] = useState(false);
   const [activeReplaceKey, setActiveReplaceKey] = useState<string | null>(null);
+  const [activeReplacementGroup, setActiveReplacementGroup] = useState(ALL_PALETTE_GROUP);
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
   const gridSize = `${patternResult.width}x${patternResult.height}网格`;
   const totalBeads = patternResult.stats.totalCells.toLocaleString();
   const totalColors = patternResult.stats.colorCount;
   const brandPalette = useMemo(() => getBrandPalette(brand), [brand]);
+  const replacementPaletteGroups = useMemo(
+    () => buildPaletteGroups(brand, brandPalette, (color) => color.code),
+    [brand, brandPalette],
+  );
+  const visibleReplacementPalette = useMemo(
+    () => brandPalette.filter((color) => {
+      if (activeReplacementGroup === ALL_PALETTE_GROUP) return true;
+      return getPaletteGroupForCode(brand, color.code).key === activeReplacementGroup;
+    }),
+    [activeReplacementGroup, brand, brandPalette],
+  );
   const baseRequirements = useMemo(() => buildPatternColorRequirements(patternResult, brand), [brand, patternResult]);
   const requirements = useMemo(
     () => mergeInventoryWithRequirements(baseRequirements, inventoryItems),
@@ -123,10 +138,39 @@ export function WorkshopResultStatsSheet({
     };
   }, []);
 
+  useEffect(() => {
+    if (!replacementPaletteGroups.some((group) => group.key === activeReplacementGroup)) {
+      setActiveReplacementGroup(ALL_PALETTE_GROUP);
+    }
+  }, [activeReplacementGroup, replacementPaletteGroups]);
+
   const handleSelectReplacement = (entry: (typeof requirements)[number], color: BrandColor) => {
     if (!onPatternResultChange) return;
     onPatternResultChange(replacePatternColor(patternResult, { code: entry.code, hex: entry.hex }, color));
     setActiveReplaceKey(null);
+    setCleanupMessage(null);
+  };
+
+  const handleCleanupSingleCellColors = () => {
+    if (!onPatternResultChange) return;
+
+    const result = cleanupSingleCellPatternColors(patternResult);
+    if (result.skippedReason === 'pattern-too-small') {
+      setCleanupMessage('图纸尺寸大于 50 时才会去除杂色');
+      return;
+    }
+    if (result.skippedReason === 'no-single-cell-colors') {
+      setCleanupMessage('没有只有 1 颗的色号');
+      return;
+    }
+    if (result.skippedReason === 'no-target-colors') {
+      setCleanupMessage('没有可合并的已有色号');
+      return;
+    }
+
+    onPatternResultChange(result.newPatternResult);
+    setActiveReplaceKey(null);
+    setCleanupMessage(`已合并 ${result.replacedCellCount.toLocaleString()} 颗，减少 ${result.removedColorCount.toLocaleString()} 个色号`);
   };
 
   return (
@@ -152,8 +196,13 @@ export function WorkshopResultStatsSheet({
           </button>
         </header>
 
-        <div className={`workshop-stats-sheet__inventory-summary ${hasInventory ? 'has-inventory' : ''}`}>
-          {hasInventory ? (
+        <div className={`workshop-stats-sheet__inventory-summary ${hasInventory ? 'has-inventory' : ''} ${cleanupMessage ? 'has-cleanup-message' : ''}`}>
+          {cleanupMessage ? (
+            <>
+              <span>去除杂色</span>
+              <strong>{cleanupMessage}</strong>
+            </>
+          ) : hasInventory ? (
             <>
               <span>库存检查</span>
               <strong>{enoughCount} 个够用 · {missingCount} 个缺少</strong>
@@ -190,7 +239,10 @@ export function WorkshopResultStatsSheet({
                         type="button"
                         className="workshop-stats-sheet__replace-button"
                         aria-expanded={isReplacing}
-                        onClick={() => setActiveReplaceKey(isReplacing ? null : requirementKey)}
+                        onClick={() => {
+                          setActiveReplaceKey(isReplacing ? null : requirementKey);
+                          if (!isReplacing) setActiveReplacementGroup(ALL_PALETTE_GROUP);
+                        }}
                       >
                         替换
                       </button>
@@ -205,23 +257,37 @@ export function WorkshopResultStatsSheet({
                 </div>
 
                 {isReplacing ? (
-                  <div className="workshop-stats-sheet__palette" aria-label={`${entry.code || '未匹配'} 可替换色卡`}>
-                    {brandPalette.map((color) => (
-                      <button
-                        type="button"
-                        key={color.id}
-                        className="workshop-stats-sheet__palette-color"
-                        onClick={() => handleSelectReplacement(entry, color)}
-                        title={`${getBeadBrandLabel(brand)} ${color.code}`}
-                      >
-                        <span
-                          className={`workshop-stats-sheet__palette-swatch ${isPureWhite(color.hex) ? 'is-white' : ''}`}
-                          style={{ backgroundColor: color.hex }}
-                          aria-hidden="true"
-                        />
-                        <span>{color.code}</span>
-                      </button>
-                    ))}
+                  <div className="workshop-stats-sheet__palette-panel" aria-label={`${entry.code || '未匹配'} 可替换色卡`}>
+                    <nav className="workshop-stats-sheet__palette-nav" aria-label="色号系列">
+                      {replacementPaletteGroups.map((group) => (
+                        <button
+                          key={group.key}
+                          type="button"
+                          className={`workshop-stats-sheet__palette-nav-button ${activeReplacementGroup === group.key ? 'is-active' : ''}`}
+                          onClick={() => setActiveReplacementGroup(group.key)}
+                        >
+                          {group.label}
+                        </button>
+                      ))}
+                    </nav>
+                    <div className="workshop-stats-sheet__palette">
+                      {visibleReplacementPalette.map((color) => (
+                        <button
+                          type="button"
+                          key={color.id}
+                          className="workshop-stats-sheet__palette-color"
+                          onClick={() => handleSelectReplacement(entry, color)}
+                          title={`${getBeadBrandLabel(brand)} ${color.code}`}
+                        >
+                          <span
+                            className={`workshop-stats-sheet__palette-swatch ${isPureWhite(color.hex) ? 'is-white' : ''}`}
+                            style={{ backgroundColor: color.hex }}
+                            aria-hidden="true"
+                          />
+                          <span>{color.code}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -242,8 +308,13 @@ export function WorkshopResultStatsSheet({
               管理库存
             </button>
           ) : null}
-          <button type="button" className="workshop-stats-sheet__action" onClick={onClose}>
-            收起
+          <button
+            type="button"
+            className="workshop-stats-sheet__action"
+            onClick={handleCleanupSingleCellColors}
+            disabled={!onPatternResultChange}
+          >
+            去除杂色
           </button>
         </div>
       </section>

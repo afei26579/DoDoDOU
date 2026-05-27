@@ -12,7 +12,8 @@ import {
 import type { PatternResult, WorkshopEditorState, WorkshopConfig } from '../../features/workshop/model/types';
 import { defaultWorkshopConfig } from '../../features/workshop/model/defaults';
 import { buildPalette, getVendorCode, hexToRgb, type PatternPaletteColor } from '../../lib/pattern/color-system';
-import { getBeadBrandLabel, type BeadBrandKey } from '../../lib/pattern/brand';
+import { getBeadBrandLabel } from '../../lib/pattern/brand';
+import { ALL_PALETTE_GROUP, buildPaletteGroups, getPaletteGroupForCode } from '../../lib/pattern/palette-groups';
 import {
   createEmptyGrid,
   floodFill,
@@ -139,17 +140,7 @@ const HISTORY_LIMIT = 80;
 const SAVE_DEBOUNCE_MS = 800;
 const EDITOR_CANVAS_MAX_SIDE = 200;
 const WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX = 'dodoudou:workshop-editor-local-draft:';
-const ALL_PALETTE_GROUP = 'all';
 const DEFAULT_UNTITLED_PROJECT_TITLE = '未命名作品';
-
-type PaletteGroupType = 'all' | 'letter' | 'number';
-
-type PaletteGroup = {
-  key: string;
-  label: string;
-  type: PaletteGroupType;
-  sortValue: number;
-};
 
 function getLocalDraftKey(projectId: string) {
   return `${WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX}${projectId}`;
@@ -266,75 +257,6 @@ function getDisplayProjectTitle(title: string | null | undefined, createdAt: str
   const normalized = title?.trim() ?? '';
   if (!isUntitledProjectTitle(normalized)) return normalized;
   return `未命名-${getTitleTimestamp(createdAt)}`;
-}
-
-function getNumberPaletteGroup(code: string): PaletteGroup | null {
-  const numberMatch = code.match(/\d+/);
-  if (!numberMatch) return null;
-
-  const value = Number(numberMatch[0]);
-  if (!Number.isFinite(value)) return null;
-
-  const start = Math.floor(value / 10) * 10;
-  const label = start === 0 ? '0-9' : `${start}-${start + 9}`;
-
-  return {
-    key: `number:${start}`,
-    label,
-    type: 'number',
-    sortValue: start,
-  };
-}
-
-function getPaletteGroupForCode(brandKey: BeadBrandKey, vendorCode: string): PaletteGroup {
-  const code = vendorCode.trim().toUpperCase();
-  const letterMatch = code.match(/^[A-Z]+/);
-
-  if (brandKey !== 'PANPAN' && letterMatch) {
-    const label = letterMatch[0];
-    return {
-      key: `letter:${label}`,
-      label,
-      type: 'letter',
-      sortValue: label.charCodeAt(0),
-    };
-  }
-
-  return getNumberPaletteGroup(code) ?? {
-    key: `letter:${code || "?"}`,
-    label: code || '?',
-    type: 'letter',
-    sortValue: Number.MAX_SAFE_INTEGER,
-  };
-}
-
-function buildPaletteGroups(brandKey: BeadBrandKey, palette: PatternPaletteColor[]) {
-  const groupMap = new Map<string, PaletteGroup>();
-
-  for (const color of palette) {
-    const group = getPaletteGroupForCode(brandKey, color.vendorCode);
-    if (!groupMap.has(group.key)) groupMap.set(group.key, group);
-  }
-
-  const groups = Array.from(groupMap.values()).sort((a, b) => {
-    if (a.type !== b.type) {
-      if (a.type === 'letter') return -1;
-      if (b.type === 'letter') return 1;
-    }
-
-    if (a.sortValue !== b.sortValue) return a.sortValue - b.sortValue;
-    return a.label.localeCompare(b.label);
-  });
-
-  return [
-    {
-      key: ALL_PALETTE_GROUP,
-      label: '全部',
-      type: 'all',
-      sortValue: -1,
-    },
-    ...groups,
-  ] satisfies PaletteGroup[];
 }
 
 function buildGridFromPattern(patternResult: PatternResult) {
@@ -601,7 +523,7 @@ export function WorkshopEditorPage() {
     [currentColor],
   );
   const paletteGroups = useMemo(
-    () => buildPaletteGroups(editorBrand, editorPalette),
+    () => buildPaletteGroups(editorBrand, editorPalette, (color) => color.vendorCode),
     [editorBrand, editorPalette],
   );
   const visibleEditorPalette = useMemo(

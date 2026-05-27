@@ -2011,6 +2011,10 @@ p { margin: 0; }
   background: #eaf8f2;
   color: #338864;
 }
+.workshop-stats-sheet__inventory-summary.has-cleanup-message {
+  background: rgba(216,180,226,0.16);
+  color: var(--accent-strong);
+}
 .workshop-stats-sheet__inventory-summary span {
   font-size: 12px;
   font-weight: 900;
@@ -2099,17 +2103,52 @@ p { margin: 0; }
   font-size: 10px;
   font-weight: 900;
 }
-.workshop-stats-sheet__palette {
+.workshop-stats-sheet__palette-panel {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  grid-template-columns: 62px minmax(0, 1fr);
   gap: 8px;
   padding: 10px;
-  max-height: 220px;
-  overflow: auto;
+  max-height: 244px;
   border-radius: 18px;
   background: rgba(255,255,255,0.76);
   border: 1px solid rgba(93,83,74,0.06);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.56);
+}
+.workshop-stats-sheet__palette-nav {
+  min-width: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 2px;
+  scrollbar-width: thin;
+}
+.workshop-stats-sheet__palette-nav-button {
+  min-height: 28px;
+  border: 0;
+  border-radius: 9px;
+  padding: 0 6px;
+  background: rgba(93,83,74,0.08);
+  color: #5D534A;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: normal;
+  word-break: break-word;
+}
+.workshop-stats-sheet__palette-nav-button.is-active {
+  background: #d8b4e2;
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(216,180,226,0.32);
+}
+.workshop-stats-sheet__palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: 8px;
+  min-width: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 2px;
 }
 .workshop-stats-sheet__palette-color {
   min-width: 0;
@@ -2146,6 +2185,10 @@ p { margin: 0; }
   color: #fff;
   font-weight: 800;
   box-shadow: 0 10px 20px rgba(216,180,226,0.32);
+}
+.workshop-stats-sheet__action:disabled {
+  opacity: 0.58;
+  box-shadow: none;
 }
 .workshop-stats-sheet__secondary-action {
   width: 100%;
@@ -2904,6 +2947,15 @@ p { margin: 0; }
   }
   .workshop-stats-sheet__status {
     max-width: 86px;
+  }
+  .workshop-stats-sheet__palette-panel {
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 7px;
+    padding: 8px;
+  }
+  .workshop-stats-sheet__palette-nav-button {
+    font-size: 10px;
+    padding-inline: 4px;
   }
   .download-modal,
   .workshop-create-settings-sheet,
