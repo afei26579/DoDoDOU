@@ -1556,7 +1556,7 @@ export function FocusModePage() {
               <button type="button" onClick={() => showToast('发布作品开发中')}>
                 发布作品
               </button>
-              <button type="button" className={styles.completionModalPrimary} onClick={() => navigate('/')}>
+              <button type="button" className={styles.completionModalPrimary} onClick={() => navigate('/discovery')}>
                 返回主页
               </button>
             </div>

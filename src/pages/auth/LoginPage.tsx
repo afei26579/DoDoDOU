@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../features/auth/model/AuthProvider';
 
 type AuthMode = 'login' | 'register';
+const DEFAULT_AUTH_REDIRECT = '/discovery';
 
 function MailIcon() {
   return (
@@ -51,8 +52,8 @@ function CloudIcon() {
 }
 
 function resolveRedirect(value: string | null) {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) return '/';
-  if (value === '/account') return '/';
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return DEFAULT_AUTH_REDIRECT;
+  if (value === '/' || value === '/login' || value === '/account') return DEFAULT_AUTH_REDIRECT;
   return value;
 }
 
@@ -72,7 +73,7 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const redirectTo = useMemo(() => resolveRedirect(searchParams.get('redirect')), [searchParams]);
-  const guestRedirectTo = redirectTo === '/account' ? '/' : redirectTo;
+  const guestRedirectTo = redirectTo;
   const isLoginMode = mode === 'login';
   const hasValidPassword = password.length >= 6 && !/^\d+$/.test(password);
   const hasValidUsername = !isUsernameInput(account) || (account.trim().length >= 8 && !/^\d+$/.test(account.trim()));
@@ -122,10 +123,6 @@ export function LoginPage() {
       </section>
 
       <section className="auth-panel" aria-label="账号登录">
-        <button type="button" className="auth-page__back" onClick={() => navigate(-1)} aria-label="返回">
-          ←
-        </button>
-
         <header className="auth-brand">
           <img className="auth-logo" src="/assets/logos/logo_base.png" alt="DoDouDou 嘟豆豆" />
           <h1>

@@ -17,7 +17,7 @@ export type AppRoute =
 export const routePathMap: Record<AppRoute, string> = {
   login: '/login',
   account: '/account',
-  discovery: '/',
+  discovery: '/discovery',
   crop: '/crop',
   'workshop-settings': '/workshop/settings',
   'workshop-preview': '/workshop/preview',

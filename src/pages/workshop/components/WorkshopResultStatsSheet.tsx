@@ -33,6 +33,10 @@ function getRequirementKey(entry: { colorId: string; code: string; hex: string }
   return `${entry.colorId}-${entry.code}-${entry.hex}`;
 }
 
+function getUsedPaletteColorKey(entry: { code: string; hex: string }) {
+  return `${entry.code.trim().toUpperCase()}-${entry.hex.trim().toUpperCase()}`;
+}
+
 function isPureWhite(hex: string) {
   return hex.trim().toUpperCase() === '#FFFFFF';
 }
@@ -109,6 +113,17 @@ export function WorkshopResultStatsSheet({
     [activeReplacementGroup, brand, brandPalette],
   );
   const baseRequirements = useMemo(() => buildPatternColorRequirements(patternResult, brand), [brand, patternResult]);
+  const usedReplacementColorKeys = useMemo(() => {
+    const usedKeys = new Set<string>();
+
+    baseRequirements.forEach((entry) => {
+      const code = entry.code.trim().toUpperCase();
+      if (!code || code === '?') return;
+      usedKeys.add(getUsedPaletteColorKey(entry));
+    });
+
+    return usedKeys;
+  }, [baseRequirements]);
   const requirements = useMemo(
     () => mergeInventoryWithRequirements(baseRequirements, inventoryItems),
     [baseRequirements, inventoryItems],
@@ -271,22 +286,28 @@ export function WorkshopResultStatsSheet({
                       ))}
                     </nav>
                     <div className="workshop-stats-sheet__palette">
-                      {visibleReplacementPalette.map((color) => (
-                        <button
-                          type="button"
-                          key={color.id}
-                          className="workshop-stats-sheet__palette-color"
-                          onClick={() => handleSelectReplacement(entry, color)}
-                          title={`${getBeadBrandLabel(brand)} ${color.code}`}
-                        >
-                          <span
-                            className={`workshop-stats-sheet__palette-swatch ${isPureWhite(color.hex) ? 'is-white' : ''}`}
-                            style={{ backgroundColor: color.hex }}
-                            aria-hidden="true"
-                          />
-                          <span>{color.code}</span>
-                        </button>
-                      ))}
+                      {visibleReplacementPalette.map((color) => {
+                        const isUsedInPattern = usedReplacementColorKeys.has(getUsedPaletteColorKey(color));
+
+                        return (
+                          <button
+                            type="button"
+                            key={color.id}
+                            className={`workshop-stats-sheet__palette-color ${isUsedInPattern ? 'is-used' : ''}`}
+                            onClick={() => handleSelectReplacement(entry, color)}
+                            title={`${getBeadBrandLabel(brand)} ${color.code}`}
+                          >
+                            <span
+                              className={`workshop-stats-sheet__palette-swatch ${isPureWhite(color.hex) ? 'is-white' : ''} ${isUsedInPattern ? 'is-used' : ''}`}
+                              style={{ backgroundColor: color.hex }}
+                              aria-hidden="true"
+                            >
+                              {isUsedInPattern ? <span className="workshop-stats-sheet__palette-check">&#10003;</span> : null}
+                            </span>
+                            <span>{color.code}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 ) : null}

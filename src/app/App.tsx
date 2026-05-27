@@ -17,7 +17,7 @@ import { saveWorkshopProject } from '../features/workshop/model/projectStore';
 import type { WorkshopFlowState } from '../features/workshop/model/types';
 
 const routeToTab: Partial<Record<string, NavItemId>> = {
-  '/': 'discovery',
+  '/discovery': 'discovery',
   '/workshop': 'workshop',
   '/workshop/create': 'workshop',
   '/workshop/result': 'workshop',
@@ -97,10 +97,11 @@ export function App() {
     <div className={isFullScreenRoute ? 'app-shell app-shell--fullscreen' : 'app-shell'}>
       <div className={isFullScreenRoute ? 'layered-shell layered-shell--fullscreen' : 'layered-shell'} aria-label="页面容器">
         <Routes>
+          <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/account" element={<AccountPage />} />
           <Route
-            path="/"
+            path="/discovery"
             element={
               <DiscoveryPage
                 onUploadImage={handleUploadToWorkshop}
@@ -158,7 +159,7 @@ export function App() {
       </div>
 
       {showBottomNav ? (
-        <BottomNav items={navItems} activeTab={activeTab} onChange={(tab) => navigate(tab === 'discovery' ? '/' : `/${tab}`)} />
+        <BottomNav items={navItems} activeTab={activeTab} onChange={(tab) => navigate(tab === 'discovery' ? '/discovery' : `/${tab}`)} />
       ) : null}
     </div>
   );

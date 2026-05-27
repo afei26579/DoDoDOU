@@ -487,17 +487,67 @@ function formatDownloadFileName(options: DownloadPatternOptions, scale: number) 
   return `${safePattern}${authorSuffix}${scaleSuffix}_${safeDate}.png`;
 }
 
+function isIosSafari() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  const isIos = /iP(ad|hone|od)/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isWebKit = /WebKit/.test(ua);
+  const isOtherIosBrowser = /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
+  return isIos && isWebKit && !isOtherIosBrowser;
+}
+
+function openIosSafariDownloadWindow() {
+  if (!isIosSafari()) return null;
+  const downloadWindow = window.open('', '_blank');
+  if (!downloadWindow) return null;
+
+  downloadWindow.opener = null;
+  downloadWindow.document.title = 'Preparing download';
+  downloadWindow.document.body.style.margin = '0';
+  downloadWindow.document.body.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
+  downloadWindow.document.body.innerHTML = '<div style="min-height:100vh;display:grid;place-items:center;color:#5d534a;background:#fdfaf4">Preparing download...</div>';
+  return downloadWindow;
+}
+
+function createNamedObjectUrl(blob: Blob, fileName: string) {
+  if (typeof File === 'undefined') return URL.createObjectURL(blob);
+  return URL.createObjectURL(new File([blob], fileName, { type: blob.type || 'image/png' }));
+}
+
+function triggerBlobDownload(blob: Blob, fileName: string, fallbackWindow: Window | null) {
+  const url = createNamedObjectUrl(blob, fileName);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.rel = 'noopener';
+  link.style.display = 'none';
+  document.body.appendChild(link);
+
+  const cleanup = () => {
+    window.setTimeout(() => {
+      link.remove();
+      URL.revokeObjectURL(url);
+    }, 60_000);
+  };
+
+  if (fallbackWindow && !fallbackWindow.closed) {
+    fallbackWindow.location.href = url;
+    cleanup();
+    return;
+  }
+
+  link.click();
+  cleanup();
+}
+
 export async function downloadPatternImage(options: DownloadPatternOptions) {
   const scale = getExportScale(options);
+  const fileName = formatDownloadFileName(options, scale);
+  const iosSafariDownloadWindow = openIosSafariDownloadWindow();
   const canvas = createCanvas(1, 1, scale);
   drawToCanvas(canvas, options.patternResult, options, scale);
   const blob = await canvasToBlob(canvas);
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = formatDownloadFileName(options, scale);
-  link.click();
-  URL.revokeObjectURL(url);
+  triggerBlobDownload(blob, fileName, iosSafariDownloadWindow);
 }
 
 export function renderDownloadPatternCanvas(canvas: HTMLCanvasElement, options: DownloadPatternOptions) {

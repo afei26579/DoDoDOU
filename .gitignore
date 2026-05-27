@@ -1,5 +1,6 @@
 node_modules
 /dist
+miniprogram/dist
 .DS_Store
 .env
 .env.*
@@ -18,3 +19,5 @@ node_modules
 
 AI_CONTEXT.md
 Deployment.md
+MINIPROGRAM_REFACTOR_DESIGN.md
+miniprogram
