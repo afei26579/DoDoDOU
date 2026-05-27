@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useCapability } from '../../features/subscription/model/EntitlementProvider';
 import type { ColorSystem, PatternResult } from '../../features/workshop/model/types';
 import { DEFAULT_DOWNLOAD_AUTHOR_NAME, downloadPatternImage, type DownloadPatternOptions } from '../../lib/pattern/download';
 
@@ -20,6 +21,7 @@ const colorOptions = [
 ] as const;
 
 export function DownloadSettingsModal({ open, onClose, brand, patternResult, defaultPatternName = '' }: DownloadSettingsModalProps) {
+  const canExportHd = useCapability('export.hd');
   const [patternName, setPatternName] = useState(defaultPatternName);
   const [showGrid, setShowGrid] = useState(true);
   const [gridGap, setGridGap] = useState(10);
@@ -28,6 +30,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
   const [showSymbolStats, setShowSymbolStats] = useState(true);
   const [addWatermark, setAddWatermark] = useState(true);
   const [highDefinition, setHighDefinition] = useState(false);
+  const [entitlementMessage, setEntitlementMessage] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
@@ -35,6 +38,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
 
     setPatternName(defaultPatternName);
     setHighDefinition(false);
+    setEntitlementMessage('');
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -43,6 +47,26 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [defaultPatternName, open, onClose]);
+
+  useEffect(() => {
+    if (!canExportHd && highDefinition) setHighDefinition(false);
+  }, [canExportHd, highDefinition]);
+
+  const handleHighDefinitionToggle = () => {
+    if (highDefinition) {
+      setHighDefinition(false);
+      setEntitlementMessage('');
+      return;
+    }
+
+    if (!canExportHd) {
+      setEntitlementMessage('当前方案暂不支持高清导出');
+      return;
+    }
+
+    setHighDefinition(true);
+    setEntitlementMessage('');
+  };
 
   const handleDownload = async () => {
     if (!patternResult || isDownloading) return;
@@ -57,7 +81,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
         showSymbol,
         showSymbolStats,
         addWatermark,
-        highDefinition,
+        highDefinition: canExportHd && highDefinition,
         brand,
         patternResult,
       };
@@ -209,9 +233,10 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
                 role="switch"
                 aria-checked={highDefinition}
                 aria-label="高清导出"
-                onClick={() => setHighDefinition((current) => !current)}
+                onClick={handleHighDefinitionToggle}
               />
             </div>
+            {entitlementMessage ? <p className="download-modal__help">{entitlementMessage}</p> : null}
             
           </section>
         </div>

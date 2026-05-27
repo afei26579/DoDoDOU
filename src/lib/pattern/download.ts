@@ -487,17 +487,19 @@ function formatDownloadFileName(options: DownloadPatternOptions, scale: number) 
   return `${safePattern}${authorSuffix}${scaleSuffix}_${safeDate}.png`;
 }
 
-function isIosSafari() {
+function isMobileSafari() {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent;
-  const isIos = /iP(ad|hone|od)/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  const isWebKit = /WebKit/.test(ua);
+  const isAppleMobile =
+    /iP(ad|hone|od)/.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1 && /Mobile\//.test(ua));
+  const isSafari = /Safari/.test(ua) && /WebKit/.test(ua);
   const isOtherIosBrowser = /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua);
-  return isIos && isWebKit && !isOtherIosBrowser;
+  return isAppleMobile && isSafari && !isOtherIosBrowser;
 }
 
-function openIosSafariDownloadWindow() {
-  if (!isIosSafari()) return null;
+function openMobileSafariDownloadWindow() {
+  if (!isMobileSafari()) return null;
   const downloadWindow = window.open('', '_blank');
   if (!downloadWindow) return null;
 
@@ -543,11 +545,11 @@ function triggerBlobDownload(blob: Blob, fileName: string, fallbackWindow: Windo
 export async function downloadPatternImage(options: DownloadPatternOptions) {
   const scale = getExportScale(options);
   const fileName = formatDownloadFileName(options, scale);
-  const iosSafariDownloadWindow = openIosSafariDownloadWindow();
+  const mobileSafariDownloadWindow = openMobileSafariDownloadWindow();
   const canvas = createCanvas(1, 1, scale);
   drawToCanvas(canvas, options.patternResult, options, scale);
   const blob = await canvasToBlob(canvas);
-  triggerBlobDownload(blob, fileName, iosSafariDownloadWindow);
+  triggerBlobDownload(blob, fileName, mobileSafariDownloadWindow);
 }
 
 export function renderDownloadPatternCanvas(canvas: HTMLCanvasElement, options: DownloadPatternOptions) {

@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { requireAuth } from './auth.mjs';
+import { ensureMonthlyUsageAvailable, recordUsageEvent, requireCapability, sendUsageLimitExceeded } from './entitlements.mjs';
 
 const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
@@ -77,10 +78,15 @@ export function createAssetsRouter(prisma, { rootDir }) {
   const router = express.Router();
   const uploadDir = getAssetUploadDir(rootDir);
 
-  router.post('/upload', requireAuth(prisma), createUploadMiddleware, async (req, res, next) => {
+  router.post('/upload', requireAuth(prisma), requireCapability(prisma, 'asset.upload'), createUploadMiddleware, async (req, res, next) => {
     try {
       if (!req.file?.buffer) {
         return res.status(400).json({ message: 'Image file is required', requestId: req.id });
+      }
+
+      const usageLimit = await ensureMonthlyUsageAvailable(prisma, req.user, req.entitlements, 'asset.upload');
+      if (!usageLimit.ok) {
+        return sendUsageLimitExceeded(res, req, { capability: 'asset.upload', ...usageLimit });
       }
 
       const checksum = createHash('sha256').update(req.file.buffer).digest('hex');
@@ -127,6 +133,17 @@ export function createAssetsRouter(prisma, { rootDir }) {
           height: metadata.height ?? null,
           size: sourceBuffer.length,
           checksum,
+        },
+      });
+
+      await recordUsageEvent(prisma, {
+        userId: req.user.id,
+        capability: 'asset.upload',
+        source: 'asset.upload',
+        metadataJson: {
+          assetId: asset.id,
+          size: asset.size,
+          mimeType: asset.mimeType,
         },
       });
 

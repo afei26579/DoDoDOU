@@ -9,6 +9,8 @@ import { prisma } from './db.mjs';
 import { createInventoryRouter } from './inventory.mjs';
 import { createPatternRouter } from './pattern.mjs';
 import { createProjectsRouter } from './projects.mjs';
+import { createSubscriptionRouter } from './subscription.mjs';
+import { ensureMonthlyUsageAvailable, recordUsageEvent, requireCapability, sendUsageLimitExceeded } from './entitlements.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -218,6 +220,7 @@ app.use('/api/assets', createAssetsRouter(prisma, { rootDir }));
 app.use('/api/inventory', createInventoryRouter(prisma));
 app.use('/api/pattern', createPatternRouter(prisma, { rootDir }));
 app.use('/api/projects', createProjectsRouter(prisma));
+app.use('/api/subscription', createSubscriptionRouter(prisma));
 
 function toSlug(value) {
   return value
@@ -630,11 +633,11 @@ app.get('/api/gallery/my-items', requireAuth(prisma), async (req, res) => {
   });
 });
 
-app.get('/api/gallery/favorites', requireAuth(prisma), async (req, res) => {
+app.get('/api/gallery/favorites', requireAuth(prisma), requireCapability(prisma, 'gallery.favorite_sync'), async (req, res) => {
   res.json(await getFavoriteListForUser(req.user.id));
 });
 
-app.post('/api/gallery/favorites/sync', requireAuth(prisma), express.json({ limit: '128kb', strict: true }), async (req, res, next) => {
+app.post('/api/gallery/favorites/sync', requireAuth(prisma), requireCapability(prisma, 'gallery.favorite_sync'), express.json({ limit: '128kb', strict: true }), async (req, res, next) => {
   try {
     const normalized = normalizeFavoriteItemIdList(req.body?.itemIds);
     if (!normalized.ok) {
@@ -737,7 +740,7 @@ app.get('/api/gallery/items/:id', optionalAuth(prisma), async (req, res) => {
   res.json({ item: detail });
 });
 
-app.post('/api/gallery/items/:id/favorite', requireAuth(prisma), async (req, res, next) => {
+app.post('/api/gallery/items/:id/favorite', requireAuth(prisma), requireCapability(prisma, 'gallery.favorite_sync'), async (req, res, next) => {
   try {
     if (!isSafeLookupId(req.params.id)) {
       return res.status(400).json({ message: 'Invalid gallery item id', requestId: req.id });
@@ -789,7 +792,7 @@ app.post('/api/gallery/items/:id/favorite', requireAuth(prisma), async (req, res
   }
 });
 
-app.delete('/api/gallery/items/:id/favorite', requireAuth(prisma), async (req, res, next) => {
+app.delete('/api/gallery/items/:id/favorite', requireAuth(prisma), requireCapability(prisma, 'gallery.favorite_sync'), async (req, res, next) => {
   try {
     if (!isSafeLookupId(req.params.id)) {
       return res.status(400).json({ message: 'Invalid gallery item id', requestId: req.id });
@@ -829,7 +832,7 @@ app.delete('/api/gallery/items/:id/favorite', requireAuth(prisma), async (req, r
   }
 });
 
-app.post('/api/gallery/publish', requireAuth(prisma), requirePublishAccess, publishRateLimiter, express.json({ limit: config.jsonBodyLimit, strict: true }), async (req, res) => {
+app.post('/api/gallery/publish', requireAuth(prisma), requireCapability(prisma, 'gallery.publish'), requirePublishAccess, publishRateLimiter, express.json({ limit: config.jsonBodyLimit, strict: true }), async (req, res) => {
   const normalized = normalizePublishPayload(req.body);
   if (!normalized.ok) {
     return res.status(400).json({
@@ -840,6 +843,11 @@ app.post('/api/gallery/publish', requireAuth(prisma), requirePublishAccess, publ
   }
 
   const payload = normalized.value;
+  const usageLimit = await ensureMonthlyUsageAvailable(prisma, req.user, req.entitlements, 'gallery.publish');
+  if (!usageLimit.ok) {
+    return sendUsageLimitExceeded(res, req, { capability: 'gallery.publish', ...usageLimit });
+  }
+
   const id = `${toSlug(payload.title)}-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const coverAssetId = `cover-${id}`;
   const previewAssetId = `preview-${id}`;
@@ -935,6 +943,17 @@ app.post('/api/gallery/publish', requireAuth(prisma), requirePublishAccess, publ
       publishedAt: now.toISOString(),
     });
   }
+
+  await recordUsageEvent(prisma, {
+    userId: req.user.id,
+    capability: 'gallery.publish',
+    source: 'gallery.publish',
+    metadataJson: {
+      itemId: result.id,
+      status,
+      sourceType,
+    },
+  });
 
   res.json({
     itemId: result.id,

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchGalleryDetail } from '../../features/gallery/model/api';
 import type { GalleryItemDetail } from '../../features/gallery/model/types';
-import { findWorkshopProjectBySource, markWorkshopProjectOpened, saveWorkshopProject } from '../../features/workshop/model/projectStore';
+import { useCapability } from '../../features/subscription/model/EntitlementProvider';
+import { createWorkshopProject, findWorkshopProjectBySource, markWorkshopProjectOpened, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import type { PatternResult } from '../../features/workshop/model/types';
 import { downloadPatternImage, renderDownloadPatternCanvas } from '../../lib/pattern/download';
 
@@ -40,6 +41,7 @@ function fitCanvasToContainer(canvas: HTMLCanvasElement | null, container: HTMLE
 export function CollectionDetailPage() {
   const { itemId } = useParams();
   const navigate = useNavigate();
+  const canExportHd = useCapability('export.hd');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasShellRef = useRef<HTMLElement | null>(null);
   const [item, setItem] = useState<GalleryItemDetail | null>(null);
@@ -122,7 +124,7 @@ export function CollectionDetailPage() {
     }
 
     const projectId = createGalleryProjectId(item.id);
-    await saveWorkshopProject(projectId, {
+    await createWorkshopProject(projectId, {
       title: item.title,
       sourceType: 'gallery',
       sourceItemId: item.id,
@@ -150,7 +152,7 @@ export function CollectionDetailPage() {
       showSymbol: true,
       showSymbolStats: true,
       addWatermark: false,
-      highDefinition: true,
+      highDefinition: canExportHd,
       brand: item.pattern.config.brand,
       patternResult,
     });

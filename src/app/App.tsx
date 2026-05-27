@@ -13,7 +13,7 @@ import { WorkshopEditorPage } from '../pages/workshop/WorkshopEditorPage';
 import { WorkshopHomePage } from '../pages/workshop/WorkshopHomePage';
 import { WorkshopShell } from '../pages/workshop/WorkshopShell';
 import { defaultCropTransform, defaultWorkshopConfig, defaultWorkshopFlowState } from '../features/workshop/model/defaults';
-import { saveWorkshopProject } from '../features/workshop/model/projectStore';
+import { createWorkshopProject } from '../features/workshop/model/projectStore';
 import type { WorkshopFlowState } from '../features/workshop/model/types';
 
 const routeToTab: Partial<Record<string, NavItemId>> = {
@@ -77,7 +77,7 @@ export function App() {
     });
 
     const projectId = createProjectId();
-    await saveWorkshopProject(projectId, {
+    await createWorkshopProject(projectId, {
       uploadedImage: {
         ...image,
         ...dimensions,

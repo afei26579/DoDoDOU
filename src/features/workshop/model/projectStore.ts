@@ -393,6 +393,12 @@ export async function findWorkshopProjectBySource(sourceType: WorkshopProjectSou
 
 export async function getWorkshopProject(projectId: string) {
   if (MEMORY_CACHE.has(projectId)) return MEMORY_CACHE.get(projectId) ?? null;
+  const localRecord = await readRecord(projectId).catch(() => null);
+  if (localRecord) {
+    MEMORY_CACHE.set(projectId, localRecord);
+    return localRecord;
+  }
+
   if (shouldUseRemoteProjects()) {
     try {
       const record = normalizeRecord(await getRemoteWorkshopProject(projectId));
@@ -404,40 +410,51 @@ export async function getWorkshopProject(projectId: string) {
     }
   }
 
-  const record = await readRecord(projectId).catch(() => null);
-  if (record) MEMORY_CACHE.set(projectId, record);
-  return record;
+  return null;
 }
 
 async function persistWorkshopProject(record: WorkshopProjectRecord) {
-  if (shouldUseRemoteProjects()) {
-    try {
-      const remoteRecord = normalizeRecord(await saveRemoteWorkshopProject(record));
-      MEMORY_CACHE.set(remoteRecord.projectId, remoteRecord);
-      void writeRecord(remoteRecord).catch(() => undefined);
-      return remoteRecord;
-    } catch {
-      // Keep editing usable offline or during a temporary API failure.
-    }
-  }
-
   MEMORY_CACHE.set(record.projectId, record);
   await writeRecord(record);
+
+  if (shouldUseRemoteProjects()) {
+    void saveRemoteWorkshopProject(record).then((remoteRecord) => {
+      const normalizedRemoteRecord = normalizeRecord(remoteRecord);
+      const currentRecord = MEMORY_CACHE.get(normalizedRemoteRecord.projectId);
+      if (currentRecord && getProjectTimestamp(currentRecord).localeCompare(getProjectTimestamp(normalizedRemoteRecord)) > 0) {
+        return undefined;
+      }
+      MEMORY_CACHE.set(normalizedRemoteRecord.projectId, normalizedRemoteRecord);
+      return writeRecord(normalizedRemoteRecord);
+    }).catch(() => undefined);
+  }
+
   return record;
 }
 
-export async function ensureWorkshopProject(projectId: string, patch: WorkshopProjectPatch = {}) {
-  const current = (await getWorkshopProject(projectId)) ?? createDefaultRecord(projectId);
-  const definedPatch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as WorkshopProjectPatch;
+function getDefinedProjectPatch(patch: WorkshopProjectPatch) {
+  return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as WorkshopProjectPatch;
+}
+
+function buildWorkshopProjectRecord(projectId: string, current: WorkshopProjectRecord, patch: WorkshopProjectPatch) {
+  const definedPatch = getDefinedProjectPatch(patch);
   const shouldSyncPatternCover = definedPatch.patternResult !== undefined && Boolean(definedPatch.patternResult);
-  const next: WorkshopProjectRecord = withSyncedPatternCover(normalizeRecord({
+  return withSyncedPatternCover(normalizeRecord({
     ...current,
     ...definedPatch,
     projectId,
     createdAt: current.createdAt,
     updatedAt: new Date().toISOString(),
   }), shouldSyncPatternCover);
-  return persistWorkshopProject(next);
+}
+
+export async function createWorkshopProject(projectId: string, patch: WorkshopProjectPatch) {
+  return persistWorkshopProject(buildWorkshopProjectRecord(projectId, createDefaultRecord(projectId), patch));
+}
+
+export async function ensureWorkshopProject(projectId: string, patch: WorkshopProjectPatch = {}) {
+  const current = (await getWorkshopProject(projectId)) ?? createDefaultRecord(projectId);
+  return persistWorkshopProject(buildWorkshopProjectRecord(projectId, current, patch));
 }
 
 export async function saveWorkshopProject(projectId: string, patch: WorkshopProjectPatch) {

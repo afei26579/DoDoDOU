@@ -5,6 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { requireAuth } from './auth.mjs';
+import { ensureMonthlyUsageAvailable, recordUsageEvent, requireCapability, sendUsageLimitExceeded } from './entitlements.mjs';
 
 function parseInteger(value, fallback, { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = {}) {
   const parsed = Number(value);
@@ -268,6 +269,7 @@ export function createPatternRouter(prisma, { rootDir }) {
   const uploadDir = getUploadDir(rootDir);
 
   router.use(requireAuth(prisma));
+  router.use(requireCapability(prisma, 'pattern.server_generate'));
   router.use(express.json({ limit: config.jsonBodyLimit, strict: true }));
 
   router.post('/generate', async (req, res, next) => {
@@ -282,6 +284,11 @@ export function createPatternRouter(prisma, { rootDir }) {
       }
 
       const payload = normalized.value;
+      const usageLimit = await ensureMonthlyUsageAvailable(prisma, req.user, req.entitlements, 'pattern.server_generate');
+      if (!usageLimit.ok) {
+        return sendUsageLimitExceeded(res, req, { capability: 'pattern.server_generate', ...usageLimit });
+      }
+
       const sourceAsset = await prisma.galleryAsset.findUnique({ where: { id: payload.sourceAssetId } });
       if (!sourceAsset || sourceAsset.type !== `source:${req.user.id}`) {
         return res.status(404).json({ message: 'Source asset not found', requestId: req.id });
@@ -309,6 +316,18 @@ export function createPatternRouter(prisma, { rootDir }) {
           height: patternResult.height,
           size: previewBuffer.length,
           checksum,
+        },
+      });
+
+      await recordUsageEvent(prisma, {
+        userId: req.user.id,
+        capability: 'pattern.server_generate',
+        source: 'pattern.generate',
+        metadataJson: {
+          sourceAssetId: sourceAsset.id,
+          previewAssetId: previewAsset.id,
+          canvasSize: payload.config.canvasSize,
+          brand: payload.config.brand,
         },
       });
 

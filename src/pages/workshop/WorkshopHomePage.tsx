@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { defaultCropTransform } from '../../features/workshop/model/defaults';
-import { saveWorkshopProject } from '../../features/workshop/model/projectStore';
+import { createWorkshopProject, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import { WorkshopPage } from './WorkshopPage';
 import type { WorkshopFlowState } from '../../features/workshop/model/types';
 import type { CropTransform } from '../../features/workshop/model/types';
@@ -98,7 +98,8 @@ export function WorkshopHomePage({
             previewImage.src = dataUrl;
           });
 
-          await saveWorkshopProject(nextProjectId, {
+          const saveProject = projectId ? saveWorkshopProject : createWorkshopProject;
+          await saveProject(nextProjectId, {
             uploadedImage: {
               name: file.name,
               type: file.type,

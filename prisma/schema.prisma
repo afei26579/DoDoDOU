@@ -34,6 +34,14 @@ enum UserStatus {
   deleted
 }
 
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  canceled
+  expired
+}
+
 enum WorkshopProjectStatus {
   editing
   ready
@@ -58,8 +66,47 @@ model User {
   projects         WorkshopProject[]
   galleryAuthors   GalleryAuthor[]
   galleryFavorites GalleryFavorite[]
+  subscriptions    Subscription[]
+  usageEvents      UsageEvent[]
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
+}
+
+model Subscription {
+  id                     String             @id @default(cuid())
+  userId                 String
+  planKey                String             @default("free")
+  status                 SubscriptionStatus @default(active)
+  provider               String?
+  providerCustomerId     String?
+  providerSubscriptionId String?            @unique
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAtPeriodEnd      Boolean            @default(false)
+  metadataJson           Json?
+  user                   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  @@index([userId, status])
+  @@index([planKey])
+  @@index([provider])
+}
+
+model UsageEvent {
+  id           String   @id @default(cuid())
+  userId       String?
+  capability   String
+  amount       Int      @default(1)
+  periodKey    String
+  source       String?
+  metadataJson Json?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+
+  @@index([userId, capability, periodKey])
+  @@index([capability, periodKey])
+  @@index([createdAt])
 }
 
 model Session {

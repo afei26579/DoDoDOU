@@ -5,12 +5,17 @@ import { deltaE2000 } from './delta-e';
 
 export const SINGLE_CELL_CLEANUP_MIN_SIZE = 50;
 
+export type PatternColorCleanupSelection = {
+  code: string;
+  hex: string;
+};
+
 export type SingleCellColorCleanupResult = {
   newPatternResult: PatternResult;
   replacedCellCount: number;
   removedColorCount: number;
   eligibleColorCount: number;
-  skippedReason: 'pattern-too-small' | 'no-single-cell-colors' | 'no-target-colors' | null;
+  skippedReason: 'pattern-too-small' | 'no-single-cell-colors' | 'no-selected-colors' | 'no-target-colors' | null;
 };
 
 type ColorSummary = {
@@ -26,7 +31,7 @@ function isDrawableCell(cell: PatternCell) {
 }
 
 function getColorKey(cell: Pick<PatternCell, 'hex' | 'vendorCode'>) {
-  return `${cell.hex.toUpperCase()}-${cell.vendorCode}`;
+  return `${cell.hex.trim().toUpperCase()}-${cell.vendorCode.trim().toUpperCase()}`;
 }
 
 function summarizeCells(cells: PatternCell[]) {
@@ -98,7 +103,12 @@ function findClosestTarget(source: ColorSummary, targets: ColorSummary[]) {
   return bestTarget;
 }
 
-export function cleanupSingleCellPatternColors(patternResult: PatternResult): SingleCellColorCleanupResult {
+function cleanupPatternColors(
+  patternResult: PatternResult,
+  sourceColors: ColorSummary[],
+  targetColors: ColorSummary[],
+  noSourceReason: 'no-single-cell-colors' | 'no-selected-colors',
+): SingleCellColorCleanupResult {
   const baseResult: SingleCellColorCleanupResult = {
     newPatternResult: patternResult,
     replacedCellCount: 0,
@@ -114,27 +124,23 @@ export function cleanupSingleCellPatternColors(patternResult: PatternResult): Si
     };
   }
 
-  const summaries = summarizeCells(patternResult.cells);
-  const singleCellColors = summaries.filter((summary) => summary.count === 1);
-  const targetColors = summaries.filter((summary) => summary.count >= 2);
-
-  if (singleCellColors.length === 0) {
+  if (sourceColors.length === 0) {
     return {
       ...baseResult,
-      skippedReason: 'no-single-cell-colors',
+      skippedReason: noSourceReason,
     };
   }
 
   if (targetColors.length === 0) {
     return {
       ...baseResult,
-      eligibleColorCount: singleCellColors.length,
+      eligibleColorCount: sourceColors.length,
       skippedReason: 'no-target-colors',
     };
   }
 
   const replacements = new Map<string, ColorSummary>();
-  for (const source of singleCellColors) {
+  for (const source of sourceColors) {
     const target = findClosestTarget(source, targetColors);
     if (target) replacements.set(source.key, target);
   }
@@ -142,7 +148,7 @@ export function cleanupSingleCellPatternColors(patternResult: PatternResult): Si
   if (replacements.size === 0) {
     return {
       ...baseResult,
-      eligibleColorCount: singleCellColors.length,
+      eligibleColorCount: sourceColors.length,
       skippedReason: 'no-target-colors',
     };
   }
@@ -167,7 +173,44 @@ export function cleanupSingleCellPatternColors(patternResult: PatternResult): Si
     newPatternResult: rebuildPatternResult(patternResult, nextCells),
     replacedCellCount,
     removedColorCount: replacements.size,
-    eligibleColorCount: singleCellColors.length,
+    eligibleColorCount: sourceColors.length,
     skippedReason: null,
   };
+}
+
+export function cleanupSingleCellPatternColors(patternResult: PatternResult): SingleCellColorCleanupResult {
+  const summaries = summarizeCells(patternResult.cells);
+  const singleCellColors = summaries.filter((summary) => summary.count === 1);
+  const targetColors = summaries.filter((summary) => summary.count >= 2);
+
+  return cleanupPatternColors(patternResult, singleCellColors, targetColors, 'no-single-cell-colors');
+}
+
+export function cleanupSelectedPatternColors(
+  patternResult: PatternResult,
+  selectedColors: PatternColorCleanupSelection[],
+): SingleCellColorCleanupResult {
+  const selectedKeys = new Set<string>();
+  const selectedHexes = new Set<string>();
+
+  selectedColors.forEach((color) => {
+    const hex = color.hex.trim().toUpperCase();
+    const code = color.code.trim().toUpperCase();
+    if (!hex || hex === 'TRANSPARENT') return;
+
+    selectedHexes.add(hex);
+    if (code && code !== '?') {
+      selectedKeys.add(getColorKey({ hex, vendorCode: code }));
+    }
+  });
+
+  const summaries = summarizeCells(patternResult.cells);
+  const sourceColors = summaries.filter((summary) => (
+    selectedKeys.has(summary.key) || selectedHexes.has(summary.hex)
+  ));
+  const targetColors = summaries.filter((summary) => (
+    !selectedKeys.has(summary.key) && !selectedHexes.has(summary.hex)
+  ));
+
+  return cleanupPatternColors(patternResult, sourceColors, targetColors, 'no-selected-colors');
 }

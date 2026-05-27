@@ -182,8 +182,6 @@ export type GalleryDetailResponse = {
 export type PublishGalleryPayload = {
   title: string;
   description?: string;
-  authorId: string;
-  authorName?: string;
   sourceType?: GallerySourceType;
   tags?: string[];
   sortWeight?: number;

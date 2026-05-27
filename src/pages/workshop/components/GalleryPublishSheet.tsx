@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../features/auth/model/AuthProvider';
+import { useCapability } from '../../../features/subscription/model/EntitlementProvider';
 import type { PatternResult, WorkshopConfig, UploadedImage } from '../../../features/workshop/model/types';
 import { publishGalleryItem } from '../../../features/gallery/model/api';
 import { generatePatternCover } from '../../../lib/pattern/cover';
 import { drawPatternPreview } from '../../../lib/pattern/preview';
 
-const OFFICIAL_AUTHOR_ID = 'official';
-const OFFICIAL_AUTHOR_NAME = '官方推荐';
 const OFFICIAL_DEFAULT_TAGS = '官方, 免费, 拼豆';
 
 export type GalleryPublishSheetProps = {
@@ -57,6 +56,7 @@ export function GalleryPublishSheet({
 }: GalleryPublishSheetProps) {
   const navigate = useNavigate();
   const { status: authStatus, isAuthenticated, user } = useAuth();
+  const canPublish = useCapability('gallery.publish');
   const [title, setTitle] = useState(titleSeed ?? '');
   const [coverUrl, setCoverUrl] = useState<string | undefined>(undefined);
   const [previewUrl, setPreviewUrl] = useState<string | undefined>(undefined);
@@ -68,7 +68,7 @@ export function GalleryPublishSheet({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [publishedItemId, setPublishedItemId] = useState<string | null>(null);
 
-  const canSubmit = useMemo(() => Boolean(title.trim() && patternResult && isAuthenticated && !successMessage), [isAuthenticated, patternResult, successMessage, title]);
+  const canSubmit = useMemo(() => Boolean(title.trim() && patternResult && isAuthenticated && canPublish && !successMessage), [canPublish, isAuthenticated, patternResult, successMessage, title]);
 
   useEffect(() => {
     if (!open || !patternResult) return;
@@ -103,6 +103,10 @@ export function GalleryPublishSheet({
       setError('发布到画册需要先登录账号');
       return;
     }
+    if (!canPublish) {
+      setError('当前方案暂不支持发布到画册');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     setSuccessMessage(null);
@@ -111,8 +115,6 @@ export function GalleryPublishSheet({
       const response = await publishGalleryItem({
         title: title.trim(),
         description: description.trim() || undefined,
-        authorId: OFFICIAL_AUTHOR_ID,
-        authorName: OFFICIAL_AUTHOR_NAME,
         sortWeight: 100,
         sourceType: 'community',
         tags: splitTags(tags),
@@ -215,6 +217,8 @@ export function GalleryPublishSheet({
 
           {!isAuthenticated && authStatus !== 'loading' ? (
             <p className="gallery-publish-modal__notice">发布会绑定到真实账号，游客可以继续本地创作和下载。</p>
+          ) : isAuthenticated && !canPublish ? (
+            <p className="gallery-publish-modal__notice">当前方案暂不支持发布到画册。</p>
           ) : null}
           {successMessage ? <p className="gallery-publish-modal__success">{successMessage}</p> : null}
           {error ? <p className="gallery-publish-modal__error">{error}</p> : null}

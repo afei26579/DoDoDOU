@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { defaultCropTransform, defaultWorkshopConfig } from '../../features/workshop/model/defaults';
 import { deleteWorkshopDraft } from '../../features/workshop/model/draftStore';
-import { ensureWorkshopProject, markWorkshopProjectOpened, saveWorkshopProject } from '../../features/workshop/model/projectStore';
+import { createWorkshopProject, markWorkshopProjectOpened, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import type { PatternResult } from '../../features/workshop/model/types';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
 import { cropPatternToEffectiveBounds } from '../../lib/pattern/effectiveCrop';
@@ -208,7 +208,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     });
 
     const nextProjectId = createProjectId();
-    await ensureWorkshopProject(nextProjectId, {
+    await createWorkshopProject(nextProjectId, {
       title: file.name.replace(/\.[^.]+$/, '') || '未命名作品',
       uploadedImage: {
         name: file.name,

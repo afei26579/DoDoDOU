@@ -1,6 +1,7 @@
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import { useAuth } from '../../features/auth/model/AuthProvider';
+import { useEntitlements } from '../../features/subscription/model/EntitlementProvider';
 
 function getAccountLabel(user: { email: string | null; username: string | null }) {
   if (user.email) return user.email;
@@ -16,6 +17,7 @@ function getInitial(name: string | null, accountLabel: string | null) {
 export function AccountPage() {
   const navigate = useNavigate();
   const { status, user, logout } = useAuth();
+  const { entitlements } = useEntitlements();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   if (status === 'loading') {
@@ -51,6 +53,15 @@ export function AccountPage() {
             <h1>{user.name || accountLabel || 'Dodoudou 用户'}</h1>
             {accountLabel ? <span>{accountLabel}</span> : null}
           </div>
+        </div>
+
+        <div className="account-actions" aria-label="权益状态">
+          <button type="button" disabled>
+            当前方案：{entitlements.planLabel}
+          </button>
+          <button type="button" disabled>
+            云端作品：{entitlements.limits.cloudProjects ?? '不限'}
+          </button>
         </div>
 
         <div className="account-actions">

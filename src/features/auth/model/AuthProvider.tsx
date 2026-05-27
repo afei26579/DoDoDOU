@@ -69,11 +69,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const handleLogout = useCallback(async () => {
-    await authApi.logout().catch(() => undefined);
     setUser(null);
     setStatus('anonymous');
     configureWorkshopProjectStore({ enabled: false });
     setError(null);
+    void authApi.logout().catch(() => undefined);
   }, []);
 
   const value = useMemo<AuthContextValue>(() => ({

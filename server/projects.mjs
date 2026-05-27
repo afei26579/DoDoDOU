@@ -1,6 +1,7 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { requireAuth } from './auth.mjs';
+import { getNumericLimit, requireCapability, sendPlanLimitExceeded } from './entitlements.mjs';
 
 const projectStatuses = new Set(['editing', 'ready', 'paused', 'completed', 'archived']);
 const maxDataUrlChars = Number.parseInt(process.env.PROJECTS_MAX_DATA_URL_CHARS || '2500000', 10);
@@ -207,6 +208,61 @@ async function upsertProject(prisma, userId, data) {
   return { project, created: false };
 }
 
+async function canCreateProjectWithinPlan(prisma, req, res, clientProjectId) {
+  const limit = getNumericLimit(req.entitlements, 'cloudProjects');
+  if (limit === null) return true;
+
+  const existing = await prisma.workshopProject.findUnique({
+    where: {
+      userId_clientProjectId: {
+        userId: req.user.id,
+        clientProjectId,
+      },
+    },
+    select: { id: true },
+  });
+  if (existing) return true;
+
+  const current = await prisma.workshopProject.count({ where: { userId: req.user.id } });
+  if (current >= limit) {
+    sendPlanLimitExceeded(res, req, {
+      capability: 'project.cloud_sync',
+      current,
+      limit,
+    });
+    return false;
+  }
+  return true;
+}
+
+async function ensureProjectSyncWithinPlan(prisma, req, normalizedItems, res) {
+  const limit = getNumericLimit(req.entitlements, 'cloudProjects');
+  if (limit === null) return true;
+
+  const clientProjectIds = Array.from(new Set(normalizedItems.map((item) => item.clientProjectId)));
+  const existing = await prisma.workshopProject.findMany({
+    where: {
+      userId: req.user.id,
+      clientProjectId: { in: clientProjectIds },
+    },
+    select: { clientProjectId: true },
+  });
+  const existingIds = new Set(existing.map((item) => item.clientProjectId));
+  const newItemCount = clientProjectIds.filter((clientProjectId) => !existingIds.has(clientProjectId)).length;
+  const current = await prisma.workshopProject.count({ where: { userId: req.user.id } });
+
+  if (current + newItemCount > limit) {
+    sendPlanLimitExceeded(res, req, {
+      capability: 'project.cloud_sync',
+      current,
+      limit,
+    });
+    return false;
+  }
+
+  return true;
+}
+
 function createConflictClientProjectId(clientProjectId) {
   const suffix = randomUUID().slice(0, 8);
   return `${clientProjectId}-conflict-${Date.now()}-${suffix}`.slice(0, 180);
@@ -224,6 +280,7 @@ export function createProjectsRouter(prisma) {
   const router = express.Router();
 
   router.use(requireAuth(prisma));
+  router.use(requireCapability(prisma, 'project.cloud_sync'));
   router.use(express.json({ limit: jsonBodyLimit, strict: true }));
 
   router.get('/', async (req, res, next) => {
@@ -248,6 +305,8 @@ export function createProjectsRouter(prisma) {
           requestId: req.id,
         });
       }
+
+      if (!(await canCreateProjectWithinPlan(prisma, req, res, normalized.data.clientProjectId))) return;
 
       const { project, created } = await upsertProject(prisma, req.user.id, normalized.data);
       res.status(created ? 201 : 200).json({ item: mapProject(project) });
@@ -284,6 +343,8 @@ export function createProjectsRouter(prisma) {
           requestId: req.id,
         });
       }
+
+      if (!(await ensureProjectSyncWithinPlan(prisma, req, normalizedItems, res))) return;
 
       const stats = { created: 0, updated: 0, conflicted: 0 };
       const conflicts = [];

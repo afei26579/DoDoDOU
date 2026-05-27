@@ -1,5 +1,6 @@
 import express from 'express';
 import { requireAuth } from './auth.mjs';
+import { getNumericLimit, requireCapability, sendPlanLimitExceeded } from './entitlements.mjs';
 
 const brandKeys = new Set(['MARD', 'COCO', 'MANMAN', 'PANPAN', 'MIXIAOWO']);
 
@@ -188,10 +189,65 @@ async function upsertInventoryItem(prisma, userId, data) {
   return { item, created: !existing };
 }
 
+async function canCreateInventoryItemWithinPlan(prisma, req, res, data) {
+  const limit = getNumericLimit(req.entitlements, 'cloudInventoryItems');
+  if (limit === null) return true;
+
+  const existing = await prisma.beadInventoryItem.findUnique({
+    where: {
+      userId_brandKey_code: {
+        userId: req.user.id,
+        brandKey: data.brandKey,
+        code: data.code,
+      },
+    },
+    select: { id: true },
+  });
+  if (existing) return true;
+
+  const current = await prisma.beadInventoryItem.count({ where: { userId: req.user.id } });
+  if (current >= limit) {
+    sendPlanLimitExceeded(res, req, {
+      capability: 'inventory.cloud_sync',
+      current,
+      limit,
+    });
+    return false;
+  }
+
+  return true;
+}
+
+async function ensureInventorySyncWithinPlan(prisma, req, normalizedItems, res) {
+  const limit = getNumericLimit(req.entitlements, 'cloudInventoryItems');
+  if (limit === null) return true;
+
+  const keys = Array.from(new Set(normalizedItems.map((item) => `${item.brandKey}:${item.code}`)));
+  const existing = await prisma.beadInventoryItem.findMany({
+    where: { userId: req.user.id },
+    select: { brandKey: true, code: true },
+  });
+  const existingKeys = new Set(existing.map((item) => `${item.brandKey}:${item.code}`));
+  const newItemCount = keys.filter((key) => !existingKeys.has(key)).length;
+  const current = existing.length;
+
+  if (current + newItemCount > limit) {
+    sendPlanLimitExceeded(res, req, {
+      capability: 'inventory.cloud_sync',
+      current,
+      limit,
+    });
+    return false;
+  }
+
+  return true;
+}
+
 export function createInventoryRouter(prisma) {
   const router = express.Router();
 
   router.use(requireAuth(prisma));
+  router.use(requireCapability(prisma, 'inventory.cloud_sync'));
   router.use(express.json({ limit: '512kb', strict: true }));
 
   router.get('/', async (req, res, next) => {
@@ -216,6 +272,8 @@ export function createInventoryRouter(prisma) {
           requestId: req.id,
         });
       }
+
+      if (!(await canCreateInventoryItemWithinPlan(prisma, req, res, normalized.data))) return;
 
       const { item, created } = await upsertInventoryItem(prisma, req.user.id, normalized.data);
       res.status(created ? 201 : 200).json({ item: mapInventoryItem(item) });
@@ -337,6 +395,8 @@ export function createInventoryRouter(prisma) {
           requestId: req.id,
         });
       }
+
+      if (!(await ensureInventorySyncWithinPlan(prisma, req, normalizedItems, res))) return;
 
       const stats = { created: 0, updated: 0, skipped: 0 };
       await prisma.$transaction(async (tx) => {

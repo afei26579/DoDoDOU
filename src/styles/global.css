@@ -1959,12 +1959,13 @@ p { margin: 0; }
 .workshop-stats-sheet {
   width: 100%;
   max-width: min(100%, 420px);
-  max-height: calc(100dvh - var(--safe-top));
+  height: min(50dvh, calc(100dvh - var(--safe-top)));
+  max-height: min(50dvh, calc(100dvh - var(--safe-top)));
   margin: 0 auto;
   border-radius: 28px 28px 0 0;
   padding: 12px 14px calc(16px + var(--safe-bottom));
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
   position: relative;
   z-index: 1201;
   box-shadow: 0 -12px 30px rgba(93,83,74,0.14);
@@ -2047,11 +2048,32 @@ p { margin: 0; }
   border: 1px solid rgba(93,83,74,0.05);
   box-shadow: 0 8px 18px rgba(93,83,74,0.04);
 }
-.workshop-stats-sheet__swatch {
+.workshop-stats-sheet__swatch-button {
   width: 42px;
   height: 42px;
+  border: 0;
   border-radius: 999px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: transparent;
+}
+.workshop-stats-sheet__swatch-button:focus-visible {
+  outline: 3px solid rgba(216,180,226,0.42);
+  outline-offset: 3px;
+}
+.workshop-stats-sheet__swatch {
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5);
+}
+.workshop-stats-sheet__swatch-button.is-selected .workshop-stats-sheet__swatch {
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5), 0 0 0 3px #B48FCC;
 }
 .workshop-stats-sheet__swatch.is-white,
 .workshop-stats-sheet__palette-swatch.is-white {
@@ -2199,6 +2221,76 @@ p { margin: 0; }
   gap: 10px;
   margin-top: 14px;
 }
+.workshop-stats-sheet__cleanup-selection {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 10px;
+}
+.workshop-stats-sheet__cleanup-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(93,83,74,0.56);
+  font-size: 11px;
+  font-weight: 900;
+}
+.workshop-stats-sheet__cleanup-divider::before,
+.workshop-stats-sheet__cleanup-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: rgba(180,143,204,0.32);
+}
+.workshop-stats-sheet__cleanup-colors {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+.workshop-stats-sheet__cleanup-color {
+  flex: 0 0 auto;
+  min-width: 76px;
+  border: 0;
+  border-radius: 14px;
+  padding: 7px 9px;
+  display: grid;
+  grid-template-columns: 24px auto;
+  grid-template-areas:
+    "swatch code"
+    "swatch count";
+  align-items: center;
+  column-gap: 7px;
+  background: #fff;
+  color: rgba(63,56,50,0.82);
+  box-shadow: inset 0 0 0 1px rgba(180,143,204,0.3), 0 6px 14px rgba(93,83,74,0.05);
+}
+.workshop-stats-sheet__cleanup-swatch {
+  grid-area: swatch;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5), 0 0 0 2px #B48FCC;
+}
+.workshop-stats-sheet__cleanup-swatch.is-white {
+  border: 1px solid #111;
+}
+.workshop-stats-sheet__cleanup-color strong {
+  grid-area: code;
+  font-size: 11px;
+  line-height: 1.1;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.workshop-stats-sheet__cleanup-color span:last-child {
+  grid-area: count;
+  color: rgba(93,83,74,0.58);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.1;
+}
 .workshop-stats-sheet__action {
   width: 100%;
   border: 0;
@@ -2225,6 +2317,25 @@ p { margin: 0; }
 }
 .workshop-stats-sheet__actions:has(.workshop-stats-sheet__action:only-child) {
   grid-template-columns: 1fr;
+}
+.workshop-stats-sheet__toast {
+  position: absolute;
+  left: 50%;
+  bottom: calc(84px + var(--safe-bottom));
+  z-index: 3;
+  max-width: calc(100% - 32px);
+  transform: translateX(-50%);
+  pointer-events: none;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(93,83,74,0.92);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.2;
+  text-align: center;
+  white-space: nowrap;
+  box-shadow: 0 10px 24px rgba(93,83,74,0.22);
 }
 .workshop-generate-button {
   border: 0;
@@ -2959,6 +3070,7 @@ p { margin: 0; }
     gap: 8px;
     padding: 10px;
   }
+  .workshop-stats-sheet__swatch-button,
   .workshop-stats-sheet__swatch {
     width: 36px;
     height: 36px;

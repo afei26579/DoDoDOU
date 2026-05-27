@@ -1,15 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   listInventoryItems,
   mergeInventoryWithRequirements,
   type BeadInventoryItem,
 } from '../../../features/beads/model/inventoryStore';
-import type { ColorSystem, PatternResult } from '../../../features/workshop/model/types';
+import type { ColorSystem, PatternCell, PatternResult } from '../../../features/workshop/model/types';
 import { getBeadBrandLabel } from '../../../lib/pattern/brand';
 import { buildPatternColorRequirements } from '../../../lib/pattern/color-requirements';
 import { getBrandPalette, type BrandColor } from '../../../lib/pattern/color-system';
 import { ALL_PALETTE_GROUP, buildPaletteGroups, getPaletteGroupForCode } from '../../../lib/pattern/palette-groups';
-import { cleanupSingleCellPatternColors } from '../../../lib/pattern/single-cell-color-cleanup';
+import { cleanupSelectedPatternColors } from '../../../lib/pattern/single-cell-color-cleanup';
+
+const CLEANUP_TOAST_DURATION_MS = 1600;
 
 type WorkshopResultStatsSheetProps = {
   patternResult: PatternResult;
@@ -17,6 +19,13 @@ type WorkshopResultStatsSheetProps = {
   onClose: () => void;
   onOpenInventory?: () => void;
   onPatternResultChange?: (patternResult: PatternResult) => void;
+};
+
+type RemovedCleanupColor = {
+  key: string;
+  code: string;
+  hex: string;
+  cells: PatternCell[];
 };
 
 function formatBeads(count: number) {
@@ -41,22 +50,27 @@ function isPureWhite(hex: string) {
   return hex.trim().toUpperCase() === '#FFFFFF';
 }
 
-function replacePatternColor(patternResult: PatternResult, from: { code: string; hex: string }, to: BrandColor): PatternResult {
-  const fromHex = from.hex.toUpperCase();
-  const nextCells = patternResult.cells.map((cell) => {
-    if (cell.hex.toUpperCase() !== fromHex || (from.code && cell.vendorCode !== from.code)) return cell;
+function getCellCoordinateKey(cell: Pick<PatternCell, 'x' | 'y'>) {
+  return `${cell.x}-${cell.y}`;
+}
 
-    return {
-      ...cell,
-      colorId: to.hex,
-      vendorCode: to.code,
-      hex: to.hex,
-    };
-  });
+function isDrawableCell(cell: PatternCell) {
+  return !cell.isExternal && cell.hex !== 'transparent';
+}
 
+function doesCellMatchRequirement(cell: PatternCell, entry: { code: string; hex: string }) {
+  if (!isDrawableCell(cell)) return false;
+  if (cell.hex.trim().toUpperCase() !== entry.hex.trim().toUpperCase()) return false;
+
+  const code = entry.code.trim().toUpperCase();
+  return !code || code === '?' || cell.vendorCode.trim().toUpperCase() === code;
+}
+
+function rebuildPatternResult(patternResult: PatternResult, cells: PatternCell[]): PatternResult {
   const paletteMap = new Map<string, { colorId: string; vendorCode: string; hex: string; count: number }>();
-  nextCells.forEach((cell) => {
-    if (cell.isExternal || cell.hex === 'transparent') return;
+
+  cells.forEach((cell) => {
+    if (!isDrawableCell(cell)) return;
     const key = `${cell.hex.toUpperCase()}-${cell.vendorCode}`;
     const current = paletteMap.get(key);
     if (current) {
@@ -75,7 +89,7 @@ function replacePatternColor(patternResult: PatternResult, from: { code: string;
   const nextPalette = [...paletteMap.values()].sort((a, b) => b.count - a.count);
   return {
     ...patternResult,
-    cells: nextCells,
+    cells,
     palette: nextPalette,
     stats: {
       ...patternResult.stats,
@@ -83,6 +97,60 @@ function replacePatternColor(patternResult: PatternResult, from: { code: string;
       totalCells: nextPalette.reduce((sum, item) => sum + item.count, 0),
     },
   };
+}
+
+function replacePatternColor(patternResult: PatternResult, from: { code: string; hex: string }, to: BrandColor): PatternResult {
+  const fromHex = from.hex.toUpperCase();
+  const nextCells = patternResult.cells.map((cell) => {
+    if (cell.hex.toUpperCase() !== fromHex || (from.code && cell.vendorCode !== from.code)) return cell;
+
+    return {
+      ...cell,
+      colorId: to.hex,
+      vendorCode: to.code,
+      hex: to.hex,
+    };
+  });
+
+  return rebuildPatternResult(patternResult, nextCells);
+}
+
+function collectRemovedCleanupColors(
+  patternResult: PatternResult,
+  selectedColors: Array<{ colorId: string; code: string; hex: string }>,
+): RemovedCleanupColor[] {
+  return selectedColors.flatMap((entry) => {
+    const cells = patternResult.cells
+      .filter((cell) => doesCellMatchRequirement(cell, entry))
+      .map((cell) => ({ ...cell }));
+
+    if (!cells.length) return [];
+
+    return {
+      key: getRequirementKey(entry),
+      code: entry.code,
+      hex: entry.hex,
+      cells,
+    };
+  });
+}
+
+function mergeRemovedCleanupColors(current: RemovedCleanupColor[], next: RemovedCleanupColor[]) {
+  const nextByKey = new Map(next.map((item) => [item.key, item]));
+  const merged = current.map((item) => nextByKey.get(item.key) ?? item);
+  const existingKeys = new Set(merged.map((item) => item.key));
+
+  next.forEach((item) => {
+    if (!existingKeys.has(item.key)) merged.push(item);
+  });
+
+  return merged;
+}
+
+function restoreRemovedCleanupColor(patternResult: PatternResult, removedColor: RemovedCleanupColor) {
+  const cellsByCoordinate = new Map(removedColor.cells.map((cell) => [getCellCoordinateKey(cell), cell]));
+  const nextCells = patternResult.cells.map((cell) => cellsByCoordinate.get(getCellCoordinateKey(cell)) ?? cell);
+  return rebuildPatternResult(patternResult, nextCells);
 }
 
 export function WorkshopResultStatsSheet({
@@ -97,6 +165,10 @@ export function WorkshopResultStatsSheet({
   const [activeReplaceKey, setActiveReplaceKey] = useState<string | null>(null);
   const [activeReplacementGroup, setActiveReplacementGroup] = useState(ALL_PALETTE_GROUP);
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
+  const [cleanupToast, setCleanupToast] = useState('');
+  const [selectedCleanupColorKeys, setSelectedCleanupColorKeys] = useState<Set<string>>(() => new Set());
+  const [removedCleanupColors, setRemovedCleanupColors] = useState<RemovedCleanupColor[]>([]);
+  const cleanupToastTimerRef = useRef<number | null>(null);
   const gridSize = `${patternResult.width}x${patternResult.height}网格`;
   const totalBeads = patternResult.stats.totalCells.toLocaleString();
   const totalColors = patternResult.stats.colorCount;
@@ -104,13 +176,6 @@ export function WorkshopResultStatsSheet({
   const replacementPaletteGroups = useMemo(
     () => buildPaletteGroups(brand, brandPalette, (color) => color.code),
     [brand, brandPalette],
-  );
-  const visibleReplacementPalette = useMemo(
-    () => brandPalette.filter((color) => {
-      if (activeReplacementGroup === ALL_PALETTE_GROUP) return true;
-      return getPaletteGroupForCode(brand, color.code).key === activeReplacementGroup;
-    }),
-    [activeReplacementGroup, brand, brandPalette],
   );
   const baseRequirements = useMemo(() => buildPatternColorRequirements(patternResult, brand), [brand, patternResult]);
   const usedReplacementColorKeys = useMemo(() => {
@@ -124,6 +189,22 @@ export function WorkshopResultStatsSheet({
 
     return usedKeys;
   }, [baseRequirements]);
+  const visibleReplacementPalette = useMemo(() => {
+    return brandPalette
+      .map((color, index) => ({ color, index }))
+      .filter(({ color }) => {
+        if (activeReplacementGroup === ALL_PALETTE_GROUP) return true;
+        return getPaletteGroupForCode(brand, color.code).key === activeReplacementGroup;
+      })
+      .sort((a, b) => {
+        const aIsUsed = usedReplacementColorKeys.has(getUsedPaletteColorKey(a.color));
+        const bIsUsed = usedReplacementColorKeys.has(getUsedPaletteColorKey(b.color));
+
+        if (aIsUsed !== bIsUsed) return aIsUsed ? -1 : 1;
+        return a.index - b.index;
+      })
+      .map(({ color }) => color);
+  }, [activeReplacementGroup, brand, brandPalette, usedReplacementColorKeys]);
   const requirements = useMemo(
     () => mergeInventoryWithRequirements(baseRequirements, inventoryItems),
     [baseRequirements, inventoryItems],
@@ -131,6 +212,10 @@ export function WorkshopResultStatsSheet({
   const enoughCount = requirements.filter((entry) => entry.status === 'enough').length;
   const missingCount = requirements.filter((entry) => entry.status === 'missing').length;
   const hasInventory = inventoryItems.length > 0;
+  const selectedCleanupColors = useMemo(
+    () => requirements.filter((entry) => selectedCleanupColorKeys.has(getRequirementKey(entry))),
+    [requirements, selectedCleanupColorKeys],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -153,38 +238,109 @@ export function WorkshopResultStatsSheet({
     };
   }, []);
 
+  useEffect(() => () => {
+    if (cleanupToastTimerRef.current) {
+      window.clearTimeout(cleanupToastTimerRef.current);
+    }
+  }, []);
+
   useEffect(() => {
     if (!replacementPaletteGroups.some((group) => group.key === activeReplacementGroup)) {
       setActiveReplacementGroup(ALL_PALETTE_GROUP);
     }
   }, [activeReplacementGroup, replacementPaletteGroups]);
 
+  useEffect(() => {
+    const validKeys = new Set(requirements.map(getRequirementKey));
+
+    setSelectedCleanupColorKeys((current) => {
+      let changed = false;
+      const next = new Set<string>();
+
+      current.forEach((key) => {
+        if (validKeys.has(key)) {
+          next.add(key);
+          return;
+        }
+
+        changed = true;
+      });
+
+      return changed ? next : current;
+    });
+  }, [requirements]);
+
+  const showCleanupToast = (message: string) => {
+    setCleanupToast(message);
+
+    if (cleanupToastTimerRef.current) {
+      window.clearTimeout(cleanupToastTimerRef.current);
+    }
+
+    cleanupToastTimerRef.current = window.setTimeout(() => {
+      setCleanupToast('');
+      cleanupToastTimerRef.current = null;
+    }, CLEANUP_TOAST_DURATION_MS);
+  };
+
+  const handleToggleCleanupColor = (requirementKey: string) => {
+    setCleanupMessage(null);
+    setSelectedCleanupColorKeys((current) => {
+      const next = new Set(current);
+
+      if (next.has(requirementKey)) {
+        next.delete(requirementKey);
+      } else {
+        next.add(requirementKey);
+      }
+
+      return next;
+    });
+  };
+
   const handleSelectReplacement = (entry: (typeof requirements)[number], color: BrandColor) => {
     if (!onPatternResultChange) return;
     onPatternResultChange(replacePatternColor(patternResult, { code: entry.code, hex: entry.hex }, color));
     setActiveReplaceKey(null);
     setCleanupMessage(null);
+    setSelectedCleanupColorKeys(new Set());
+  };
+
+  const handleRestoreCleanupColor = (removedColor: RemovedCleanupColor) => {
+    if (!onPatternResultChange) return;
+
+    onPatternResultChange(restoreRemovedCleanupColor(patternResult, removedColor));
+    setRemovedCleanupColors((current) => current.filter((item) => item.key !== removedColor.key));
+    setCleanupMessage(`已复原 ${removedColor.code || '未匹配'}`);
   };
 
   const handleCleanupSingleCellColors = () => {
     if (!onPatternResultChange) return;
 
-    const result = cleanupSingleCellPatternColors(patternResult);
+    if (selectedCleanupColors.length === 0) {
+      showCleanupToast('请选择需要去除的杂色');
+      return;
+    }
+
+    const removedColors = collectRemovedCleanupColors(patternResult, selectedCleanupColors);
+    const result = cleanupSelectedPatternColors(patternResult, selectedCleanupColors);
     if (result.skippedReason === 'pattern-too-small') {
       setCleanupMessage('图纸尺寸大于 50 时才会去除杂色');
       return;
     }
-    if (result.skippedReason === 'no-single-cell-colors') {
-      setCleanupMessage('没有只有 1 颗的色号');
+    if (result.skippedReason === 'no-selected-colors') {
+      showCleanupToast('请选择需要去除的杂色');
       return;
     }
     if (result.skippedReason === 'no-target-colors') {
-      setCleanupMessage('没有可合并的已有色号');
+      setCleanupMessage('没有可替换的其他颜色');
       return;
     }
 
     onPatternResultChange(result.newPatternResult);
     setActiveReplaceKey(null);
+    setSelectedCleanupColorKeys(new Set());
+    setRemovedCleanupColors((current) => mergeRemovedCleanupColors(current, removedColors));
     setCleanupMessage(`已合并 ${result.replacedCellCount.toLocaleString()} 颗，减少 ${result.removedColorCount.toLocaleString()} 个色号`);
   };
 
@@ -234,15 +390,24 @@ export function WorkshopResultStatsSheet({
           {requirements.map((entry) => {
             const requirementKey = getRequirementKey(entry);
             const isReplacing = activeReplaceKey === requirementKey;
+            const isSelectedForCleanup = selectedCleanupColorKeys.has(requirementKey);
 
             return (
               <div key={requirementKey} className="workshop-stats-sheet__item-wrap">
                 <div className="workshop-stats-sheet__item">
-                  <span
-                    className={`workshop-stats-sheet__swatch ${isPureWhite(entry.hex) ? 'is-white' : ''}`}
-                    style={{ backgroundColor: entry.hex }}
-                    aria-hidden="true"
-                  />
+                  <button
+                    type="button"
+                    className={`workshop-stats-sheet__swatch-button ${isSelectedForCleanup ? 'is-selected' : ''}`}
+                    aria-pressed={isSelectedForCleanup}
+                    aria-label={`${isSelectedForCleanup ? '取消选择' : '选择'} ${entry.code || '未匹配'} 去除杂色`}
+                    onClick={() => handleToggleCleanupColor(requirementKey)}
+                  >
+                    <span
+                      className={`workshop-stats-sheet__swatch ${isPureWhite(entry.hex) ? 'is-white' : ''}`}
+                      style={{ backgroundColor: entry.hex }}
+                      aria-hidden="true"
+                    />
+                  </button>
                   <div className="workshop-stats-sheet__meta">
                     <strong>{entry.code || '未匹配'}</strong>
                     <span>拥有 {formatBeads(entry.ownedQuantity ?? 0)}</span>
@@ -316,6 +481,33 @@ export function WorkshopResultStatsSheet({
           })}
         </div>
 
+        {removedCleanupColors.length > 0 ? (
+          <section className="workshop-stats-sheet__cleanup-selection" aria-label="已作为杂色去除的色号，点击复原">
+            <div className="workshop-stats-sheet__cleanup-divider">
+              <span>已作为杂色去除</span>
+            </div>
+            <div className="workshop-stats-sheet__cleanup-colors">
+              {removedCleanupColors.map((entry) => (
+                <button
+                  type="button"
+                  key={entry.key}
+                  className="workshop-stats-sheet__cleanup-color"
+                  onClick={() => handleRestoreCleanupColor(entry)}
+                  title="点击复原"
+                >
+                  <span
+                    className={`workshop-stats-sheet__cleanup-swatch ${isPureWhite(entry.hex) ? 'is-white' : ''}`}
+                    style={{ backgroundColor: entry.hex }}
+                    aria-hidden="true"
+                  />
+                  <strong>{entry.code || '未匹配'}</strong>
+                  <span>{formatBeads(entry.cells.length)}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         <div className="workshop-stats-sheet__actions">
           {onOpenInventory ? (
             <button
@@ -338,6 +530,11 @@ export function WorkshopResultStatsSheet({
             去除杂色
           </button>
         </div>
+        {cleanupToast ? (
+          <div className="workshop-stats-sheet__toast" role="status" aria-live="polite">
+            {cleanupToast}
+          </div>
+        ) : null}
       </section>
     </div>
   );
