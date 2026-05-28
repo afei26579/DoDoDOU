@@ -47,7 +47,7 @@ function readAuthConfig() {
     emailCodeMaxAttempts: parseInteger(process.env.AUTH_EMAIL_CODE_MAX_ATTEMPTS, 5, { min: 1, max: 20 }),
     emailCodeEmailRateLimitMax: parseInteger(process.env.AUTH_EMAIL_CODE_EMAIL_RATE_LIMIT_MAX, 3, { min: 1, max: 100 }),
     emailCodeEmailRateLimitWindowMs: parseInteger(process.env.AUTH_EMAIL_CODE_EMAIL_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000, { min: 60_000, max: 24 * 60 * 60 * 1000 }),
-    emailFrom: process.env.AUTH_EMAIL_FROM?.trim() || '嘟豆豆 <noreply@dodoudou.xyz>',
+    emailFrom: process.env.AUTH_EMAIL_FROM?.trim() || 'DoDouDou <noreply@dodoudou.xyz>',
     emailSubject: process.env.AUTH_EMAIL_SUBJECT?.trim() || '注册验证',
     passwordResetEmailSubject: process.env.AUTH_PASSWORD_RESET_EMAIL_SUBJECT?.trim() || '重置密码验证',
     emailLogoUrl: process.env.AUTH_EMAIL_LOGO_URL?.trim() || 'https://dodoudou.xyz/assets/logos/logo_base.png',
@@ -180,7 +180,19 @@ function getUniqueConstraintMessage(error) {
 function createAuthError(message, status = 500) {
   const error = new Error(message);
   error.status = status;
+  error.expose = true;
   return error;
+}
+
+function getEmailErrorDetails(error) {
+  if (!error || typeof error !== 'object') return { message: String(error) };
+  return {
+    name: error.name,
+    message: error.message,
+    statusCode: error.statusCode,
+    status: error.status,
+    code: error.code,
+  };
 }
 
 function getResendClient() {
@@ -383,16 +395,36 @@ async function sendEmailVerificationCode(email, code, purpose) {
   }
 
   const content = getVerificationEmailContent(purpose);
-  const { data, error } = await resend.emails.send({
-    from: authConfig.emailFrom,
-    to: email,
-    subject: content.subject,
-    html: renderVerificationEmailHtml(code, purpose),
-    text: renderVerificationEmailText(code, purpose),
-  });
+  let result;
+  try {
+    result = await resend.emails.send({
+      from: authConfig.emailFrom,
+      to: email,
+      subject: content.subject,
+      html: renderVerificationEmailHtml(code, purpose),
+      text: renderVerificationEmailText(code, purpose),
+    });
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: 'Resend email verification threw',
+      purpose,
+      to: email,
+      from: authConfig.emailFrom,
+      error: getEmailErrorDetails(error),
+    }));
+    throw createAuthError('验证码邮件发送失败，请稍后再试', 502);
+  }
+
+  const { data, error } = result;
 
   if (error) {
-    console.error(JSON.stringify({ message: 'Resend email verification failed', error }));
+    console.error(JSON.stringify({
+      message: 'Resend email verification failed',
+      purpose,
+      to: email,
+      from: authConfig.emailFrom,
+      error,
+    }));
     throw createAuthError('验证码邮件发送失败，请稍后再试', 502);
   }
 

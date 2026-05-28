@@ -980,7 +980,7 @@ app.use((err, req, res, next) => {
   );
 
   res.status(status).json({
-    message: status === 413 ? 'Request body is too large' : status >= 500 ? 'Internal server error' : err.message,
+    message: status === 413 ? 'Request body is too large' : status >= 500 && !err.expose ? 'Internal server error' : err.message,
     requestId: req.id,
   });
 });
