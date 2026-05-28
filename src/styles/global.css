@@ -1959,8 +1959,8 @@ p { margin: 0; }
 .workshop-stats-sheet {
   width: 100%;
   max-width: min(100%, 420px);
-  height: min(50dvh, calc(100dvh - var(--safe-top)));
-  max-height: min(50dvh, calc(100dvh - var(--safe-top)));
+  height: min(66.666dvh, calc(100dvh - var(--safe-top)));
+  max-height: min(66.666dvh, calc(100dvh - var(--safe-top)));
   margin: 0 auto;
   border-radius: 28px 28px 0 0;
   padding: 12px 14px calc(16px + var(--safe-bottom));
@@ -3004,6 +3004,29 @@ p { margin: 0; }
 
   .collection-fab {
     bottom: calc(var(--bottom-nav-height) + var(--safe-bottom) + 40px);
+  }
+}
+
+@media (min-width: 900px) and (orientation: landscape) {
+  .workshop-stats-sheet__backdrop {
+    display: block;
+    padding: 0;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  .workshop-stats-sheet {
+    position: fixed;
+    top: var(--page-padding-block);
+    right: max(var(--page-padding-inline), calc((100vw - var(--content-max-width)) / 2 + var(--page-padding-inline)));
+    bottom: calc(var(--bottom-nav-total-height) + 16px);
+    width: min(430px, calc(100vw - var(--page-padding-inline) - var(--page-padding-inline)));
+    height: auto;
+    max-height: none;
+    margin: 0;
+    border-radius: 28px;
+    pointer-events: auto;
+    box-shadow: 0 16px 36px rgba(93,83,74,0.16);
   }
 }
 
