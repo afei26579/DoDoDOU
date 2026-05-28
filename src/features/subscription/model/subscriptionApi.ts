@@ -22,6 +22,30 @@ export class SubscriptionApiError extends Error {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getPayloadMessage(payload: unknown) {
+  return isRecord(payload) && typeof payload.message === 'string' ? payload.message : null;
+}
+
+function isEntitlementSnapshot(payload: unknown): payload is EntitlementSnapshot {
+  if (!isRecord(payload)) return false;
+  if (!isRecord(payload.limits)) return false;
+
+  return (
+    typeof payload.identity === 'string' &&
+    typeof payload.planKey === 'string' &&
+    typeof payload.planLabel === 'string' &&
+    Array.isArray(payload.capabilities) &&
+    isRecord(payload.capabilityMap) &&
+    isRecord(payload.limits.monthlyUsage) &&
+    isRecord(payload.usage) &&
+    typeof payload.periodKey === 'string'
+  );
+}
+
 async function requestSubscription<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -32,14 +56,18 @@ async function requestSubscription<T>(path: string, init?: RequestInit): Promise
     },
   });
 
-  const payload = await response.json().catch(() => null) as { message?: string } | null;
+  const payload = await response.json().catch(() => null) as unknown;
   if (!response.ok) {
-    throw new SubscriptionApiError(payload?.message || `Request failed: ${response.status}`, response.status);
+    throw new SubscriptionApiError(getPayloadMessage(payload) || `Request failed: ${response.status}`, response.status);
   }
 
   return payload as T;
 }
 
-export function fetchMyEntitlements() {
-  return requestSubscription<EntitlementSnapshot>('/api/subscription/me');
+export async function fetchMyEntitlements() {
+  const payload = await requestSubscription<unknown>('/api/subscription/me');
+  if (!isEntitlementSnapshot(payload)) {
+    throw new SubscriptionApiError('Invalid entitlement response', 502);
+  }
+  return payload;
 }

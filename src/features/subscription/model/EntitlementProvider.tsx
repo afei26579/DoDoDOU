@@ -114,8 +114,8 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
   }, [authStatus, fallbackKind, user?.id]);
 
   const hasCapability = useCallback(
-    (capability: CapabilityKey) => Boolean(entitlements.capabilityMap[capability]),
-    [entitlements.capabilityMap],
+    (capability: CapabilityKey) => Boolean(entitlements?.capabilityMap?.[capability]),
+    [entitlements?.capabilityMap],
   );
 
   const value = useMemo<EntitlementContextValue>(() => ({
