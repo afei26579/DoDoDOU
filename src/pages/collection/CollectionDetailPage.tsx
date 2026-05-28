@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { createLoginRedirectPath } from '../../features/auth/model/redirect';
 import { fetchGalleryDetail } from '../../features/gallery/model/api';
 import type { GalleryItemDetail } from '../../features/gallery/model/types';
 import { useCapability } from '../../features/subscription/model/EntitlementProvider';
@@ -8,6 +9,7 @@ import type { PatternResult } from '../../features/workshop/model/types';
 import { downloadPatternImage, renderDownloadPatternCanvas } from '../../lib/pattern/download';
 
 const GO_BACK_ICON = '/assets/system_icons/go_back.png';
+const LOGIN_REQUIRED_MESSAGE = '登录后可下载图纸';
 
 function toPatternResult(item: GalleryItemDetail): PatternResult | null {
   const payload = item.pattern?.patternPayload;
@@ -41,12 +43,16 @@ function fitCanvasToContainer(canvas: HTMLCanvasElement | null, container: HTMLE
 export function CollectionDetailPage() {
   const { itemId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const canDownload = useCapability('export.download');
   const canExportHd = useCapability('export.hd');
+  const canRemoveWatermark = useCapability('export.no_watermark');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const canvasShellRef = useRef<HTMLElement | null>(null);
   const [item, setItem] = useState<GalleryItemDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -143,6 +149,12 @@ export function CollectionDetailPage() {
 
   const handleDownload = () => {
     if (!item || !patternResult) return;
+    if (!canDownload) {
+      setActionMessage(LOGIN_REQUIRED_MESSAGE);
+      return;
+    }
+
+    setActionMessage('');
     void downloadPatternImage({
       authorName: item.author.name,
       patternName: item.title,
@@ -151,7 +163,7 @@ export function CollectionDetailPage() {
       gridColor: '#b8ad9d',
       showSymbol: true,
       showSymbolStats: true,
-      addWatermark: false,
+      addWatermark: !canRemoveWatermark,
       highDefinition: canExportHd,
       brand: item.pattern.config.brand,
       patternResult,
@@ -169,6 +181,7 @@ export function CollectionDetailPage() {
   };
 
   const isActionDisabled = !item || !patternResult || patternResult.cells.length === 0;
+  const showLoginAction = !canDownload && actionMessage === LOGIN_REQUIRED_MESSAGE;
 
   return (
     <main className="gallery-detail-page">
@@ -185,6 +198,16 @@ export function CollectionDetailPage() {
 
       {loading ? <div className="gallery-detail__state">正在加载图纸...</div> : null}
       {error ? <div className="gallery-detail__state">{error}</div> : null}
+      {actionMessage ? (
+        <div className="gallery-detail__state gallery-detail__state--actionable">
+          <span>{actionMessage}</span>
+          {showLoginAction ? (
+            <button type="button" onClick={() => navigate(createLoginRedirectPath(location))}>
+              去登录
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {!loading && !error && !patternResult ? <div className="gallery-detail__state">这张作品还没有可查看的图纸数据</div> : null}
       {!loading && !error && patternResult && patternResult.cells.length === 0 ? <div className="gallery-detail__state">这张作品缺少图纸格子数据，暂时只能查看封面</div> : null}
 

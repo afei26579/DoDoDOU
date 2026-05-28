@@ -11,9 +11,11 @@ import { defaultWorkshopConfig } from './defaults';
 import { normalizeBeadBrandKey } from '../../../lib/pattern/brand';
 import { normalizePatternAdvancedConfig } from '../../../lib/pattern/advanced-config';
 import { generatePatternCover } from '../../../lib/pattern/cover';
+import { fetchMyEntitlements } from '../../subscription/model/subscriptionApi';
 import {
   deleteRemoteWorkshopProject,
   getRemoteWorkshopProject,
+  isProjectCloudLimitError,
   listRemoteWorkshopProjects,
   saveRemoteWorkshopProject,
 } from './projectApi';
@@ -23,17 +25,35 @@ const DB_VERSION = 3;
 const STORE_NAME = 'projects';
 const DRAFT_STORE_NAME = 'editor-drafts';
 const MEMORY_CACHE = new Map<string, WorkshopProjectRecord>();
+const REMOTE_SAVE_BLOCKED_PROJECT_IDS = new Set<string>();
+const REMOTE_SAVE_IN_FLIGHT_PROJECT_IDS = new Set<string>();
+const REMOTE_SAVE_QUEUED_RECORDS = new Map<string, WorkshopProjectRecord>();
+const REMOTE_PROJECT_IDS = new Set<string>();
 let remoteProjectsEnabled = false;
 let remoteProjectsUserId: string | null = null;
+let remoteProjectCount: number | null = null;
+let remoteProjectLimit: number | null = null;
+let remoteProjectLimitLoaded = false;
 
-export function configureWorkshopProjectStore(options: { enabled: boolean; userId?: string | null }) {
+export function configureWorkshopProjectStore(options: { enabled: boolean; userId?: string | null; cloudProjectLimit?: number | null }) {
   const nextUserId = options.enabled ? options.userId ?? null : null;
   const nextEnabled = Boolean(options.enabled && nextUserId);
   if (remoteProjectsEnabled !== nextEnabled || remoteProjectsUserId !== nextUserId) {
     MEMORY_CACHE.clear();
+    REMOTE_SAVE_BLOCKED_PROJECT_IDS.clear();
+    REMOTE_SAVE_IN_FLIGHT_PROJECT_IDS.clear();
+    REMOTE_SAVE_QUEUED_RECORDS.clear();
+    REMOTE_PROJECT_IDS.clear();
+    remoteProjectCount = null;
+    remoteProjectLimit = null;
+    remoteProjectLimitLoaded = false;
   }
   remoteProjectsEnabled = nextEnabled;
   remoteProjectsUserId = nextUserId;
+  if (options.cloudProjectLimit !== undefined) {
+    remoteProjectLimit = options.cloudProjectLimit;
+    remoteProjectLimitLoaded = true;
+  }
 }
 
 function shouldUseRemoteProjects() {
@@ -259,6 +279,26 @@ function sortWorkshopProjectRecords(records: WorkshopProjectRecord[]) {
   return [...records].sort((a, b) => getProjectTimestamp(b).localeCompare(getProjectTimestamp(a)));
 }
 
+function rememberRemoteProjectRecords(records: WorkshopProjectRecord[]) {
+  REMOTE_PROJECT_IDS.clear();
+  records.forEach((record) => REMOTE_PROJECT_IDS.add(record.projectId));
+  remoteProjectCount = REMOTE_PROJECT_IDS.size;
+}
+
+function mergeWorkshopProjectRecords(remoteRecords: WorkshopProjectRecord[], localRecords: WorkshopProjectRecord[]) {
+  const merged = new Map<string, WorkshopProjectRecord>();
+  remoteRecords.forEach((record) => merged.set(record.projectId, record));
+
+  localRecords.forEach((record) => {
+    const current = merged.get(record.projectId);
+    if (!current || getProjectTimestamp(record).localeCompare(getProjectTimestamp(current)) > 0) {
+      merged.set(record.projectId, record);
+    }
+  });
+
+  return sortWorkshopProjectRecords([...merged.values()]);
+}
+
 export function toProjectCard(record: WorkshopProjectRecord): WorkshopProjectCard {
   const progress = record.beadingProgress
     ? {
@@ -365,10 +405,20 @@ export async function listLocalWorkshopProjects() {
 export async function listWorkshopProjects() {
   if (shouldUseRemoteProjects()) {
     try {
-      const records = sortWorkshopProjectRecords((await listRemoteWorkshopProjects()).map(normalizeRecord));
+      const remoteRecords = sortWorkshopProjectRecords((await listRemoteWorkshopProjects()).map(normalizeRecord));
+      rememberRemoteProjectRecords(remoteRecords);
+      const localRecords = await listLocalWorkshopProjects().catch(() => []);
+      const records = mergeWorkshopProjectRecords(remoteRecords, localRecords);
       MEMORY_CACHE.clear();
       records.forEach((record) => MEMORY_CACHE.set(record.projectId, record));
-      void Promise.all(records.map((record) => writeRecord(record))).catch(() => undefined);
+      const localRecordMap = new Map(localRecords.map((record) => [record.projectId, record]));
+      void Promise.all(remoteRecords.map((record) => {
+        const localRecord = localRecordMap.get(record.projectId);
+        if (localRecord && getProjectTimestamp(localRecord).localeCompare(getProjectTimestamp(record)) > 0) {
+          return undefined;
+        }
+        return writeRecord(record);
+      })).catch(() => undefined);
       return records;
     } catch {
       return listLocalWorkshopProjects();
@@ -413,21 +463,98 @@ export async function getWorkshopProject(projectId: string) {
   return null;
 }
 
+async function loadRemoteProjectLimit() {
+  if (remoteProjectLimitLoaded) return;
+  const entitlements = await fetchMyEntitlements();
+  remoteProjectLimit = entitlements.limits.cloudProjects;
+  remoteProjectLimitLoaded = true;
+}
+
+async function loadRemoteProjectIds() {
+  if (remoteProjectCount !== null) return;
+  const records = (await listRemoteWorkshopProjects()).map(normalizeRecord);
+  rememberRemoteProjectRecords(records);
+}
+
+async function canSaveNewRemoteProject(projectId: string) {
+  if (REMOTE_PROJECT_IDS.has(projectId)) return true;
+
+  try {
+    await loadRemoteProjectLimit();
+  } catch {
+    return true;
+  }
+
+  if (remoteProjectLimit === null) return true;
+
+  try {
+    await loadRemoteProjectIds();
+  } catch {
+    return true;
+  }
+
+  if (REMOTE_PROJECT_IDS.has(projectId)) return true;
+
+  if (remoteProjectCount !== null && remoteProjectCount >= remoteProjectLimit) {
+    REMOTE_SAVE_BLOCKED_PROJECT_IDS.add(projectId);
+    return false;
+  }
+
+  return true;
+}
+
+async function runRemoteProjectSave(record: WorkshopProjectRecord) {
+  const projectId = record.projectId;
+
+  try {
+    if (!(await canSaveNewRemoteProject(projectId))) return;
+
+    const remoteRecord = await saveRemoteWorkshopProject(record);
+    const normalizedRemoteRecord = normalizeRecord(remoteRecord);
+    const currentRecord = MEMORY_CACHE.get(normalizedRemoteRecord.projectId);
+    if (currentRecord && getProjectTimestamp(currentRecord).localeCompare(getProjectTimestamp(normalizedRemoteRecord)) > 0) {
+      return;
+    }
+    const wasKnownRemoteProject = REMOTE_PROJECT_IDS.has(normalizedRemoteRecord.projectId);
+    MEMORY_CACHE.set(normalizedRemoteRecord.projectId, normalizedRemoteRecord);
+    REMOTE_PROJECT_IDS.add(normalizedRemoteRecord.projectId);
+    if (!wasKnownRemoteProject && remoteProjectCount !== null) {
+      remoteProjectCount += 1;
+    }
+    REMOTE_SAVE_BLOCKED_PROJECT_IDS.delete(normalizedRemoteRecord.projectId);
+    await writeRecord(normalizedRemoteRecord);
+  } catch (error) {
+    if (isProjectCloudLimitError(error)) {
+      REMOTE_SAVE_BLOCKED_PROJECT_IDS.add(projectId);
+    }
+  } finally {
+    REMOTE_SAVE_IN_FLIGHT_PROJECT_IDS.delete(projectId);
+    const queuedRecord = REMOTE_SAVE_QUEUED_RECORDS.get(projectId);
+    REMOTE_SAVE_QUEUED_RECORDS.delete(projectId);
+    if (queuedRecord && !REMOTE_SAVE_BLOCKED_PROJECT_IDS.has(projectId)) {
+      scheduleRemoteProjectSave(queuedRecord);
+    }
+  }
+}
+
+function scheduleRemoteProjectSave(record: WorkshopProjectRecord) {
+  const projectId = record.projectId;
+  if (!shouldUseRemoteProjects() || REMOTE_SAVE_BLOCKED_PROJECT_IDS.has(projectId)) return;
+
+  if (REMOTE_SAVE_IN_FLIGHT_PROJECT_IDS.has(projectId)) {
+    REMOTE_SAVE_QUEUED_RECORDS.set(projectId, record);
+    return;
+  }
+
+  REMOTE_SAVE_IN_FLIGHT_PROJECT_IDS.add(projectId);
+  void runRemoteProjectSave(record);
+}
+
 async function persistWorkshopProject(record: WorkshopProjectRecord) {
   MEMORY_CACHE.set(record.projectId, record);
   await writeRecord(record);
 
-  if (shouldUseRemoteProjects()) {
-    void saveRemoteWorkshopProject(record).then((remoteRecord) => {
-      const normalizedRemoteRecord = normalizeRecord(remoteRecord);
-      const currentRecord = MEMORY_CACHE.get(normalizedRemoteRecord.projectId);
-      if (currentRecord && getProjectTimestamp(currentRecord).localeCompare(getProjectTimestamp(normalizedRemoteRecord)) > 0) {
-        return undefined;
-      }
-      MEMORY_CACHE.set(normalizedRemoteRecord.projectId, normalizedRemoteRecord);
-      return writeRecord(normalizedRemoteRecord);
-    }).catch(() => undefined);
-  }
+  scheduleRemoteProjectSave(record);
 
   return record;
 }

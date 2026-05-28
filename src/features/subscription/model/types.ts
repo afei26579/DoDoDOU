@@ -10,6 +10,7 @@ export type CapabilityKey =
   | 'pattern.local_generate'
   | 'pattern.server_generate'
   | 'asset.upload'
+  | 'export.download'
   | 'export.basic'
   | 'export.hd'
   | 'export.no_watermark'

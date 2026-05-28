@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { createLoginRedirectPath } from '../../features/auth/model/redirect';
 import { useCapability } from '../../features/subscription/model/EntitlementProvider';
 import type { ColorSystem, PatternResult } from '../../features/workshop/model/types';
 import { DEFAULT_DOWNLOAD_AUTHOR_NAME, downloadPatternImage, type DownloadPatternOptions } from '../../lib/pattern/download';
@@ -20,8 +22,14 @@ const colorOptions = [
   { label: '黄色', value: '#FDBA28' },
 ] as const;
 
+const LOGIN_REQUIRED_MESSAGE = '登录后可下载图纸';
+
 export function DownloadSettingsModal({ open, onClose, brand, patternResult, defaultPatternName = '' }: DownloadSettingsModalProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const canDownload = useCapability('export.download');
   const canExportHd = useCapability('export.hd');
+  const canRemoveWatermark = useCapability('export.no_watermark');
   const [patternName, setPatternName] = useState(defaultPatternName);
   const [showGrid, setShowGrid] = useState(true);
   const [gridGap, setGridGap] = useState(10);
@@ -50,7 +58,24 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
 
   useEffect(() => {
     if (!canExportHd && highDefinition) setHighDefinition(false);
-  }, [canExportHd, highDefinition]);
+    if (!canRemoveWatermark && !addWatermark) setAddWatermark(true);
+  }, [addWatermark, canExportHd, canRemoveWatermark, highDefinition]);
+
+  const handleWatermarkToggle = () => {
+    if (!addWatermark) {
+      setAddWatermark(true);
+      setEntitlementMessage('');
+      return;
+    }
+
+    if (!canRemoveWatermark) {
+      setEntitlementMessage('当前方案暂不支持去除水印');
+      return;
+    }
+
+    setAddWatermark(false);
+    setEntitlementMessage('');
+  };
 
   const handleHighDefinitionToggle = () => {
     if (highDefinition) {
@@ -70,6 +95,11 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
 
   const handleDownload = async () => {
     if (!patternResult || isDownloading) return;
+    if (!canDownload) {
+      setEntitlementMessage(LOGIN_REQUIRED_MESSAGE);
+      return;
+    }
+
     setIsDownloading(true);
     try {
       const downloadOptions: DownloadPatternOptions = {
@@ -80,7 +110,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
         gridColor,
         showSymbol,
         showSymbolStats,
-        addWatermark,
+        addWatermark: canRemoveWatermark ? addWatermark : true,
         highDefinition: canExportHd && highDefinition,
         brand,
         patternResult,
@@ -93,6 +123,8 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
   };
 
   if (!open) return null;
+
+  const showLoginAction = !canDownload && entitlementMessage === LOGIN_REQUIRED_MESSAGE;
 
   return (
     <div className="download-modal__backdrop" role="presentation" onClick={onClose}>
@@ -218,7 +250,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
                 role="switch"
                 aria-checked={addWatermark}
                 aria-label="添加水印"
-                onClick={() => setAddWatermark((current) => !current)}
+                onClick={handleWatermarkToggle}
               />
             </div>
             <div className="download-modal__divider" />
@@ -236,8 +268,20 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
                 onClick={handleHighDefinitionToggle}
               />
             </div>
-            {entitlementMessage ? <p className="download-modal__help">{entitlementMessage}</p> : null}
-            
+            {entitlementMessage ? (
+              <div className="download-modal__permission-row">
+                <p className="download-modal__help">{entitlementMessage}</p>
+                {showLoginAction ? (
+                  <button
+                    type="button"
+                    className="download-modal__login-action"
+                    onClick={() => navigate(createLoginRedirectPath(location))}
+                  >
+                    去登录
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </section>
         </div>
 

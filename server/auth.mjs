@@ -1,8 +1,20 @@
 import express from 'express';
-import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomInt, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import { Resend } from 'resend';
 
 const scrypt = promisify(scryptCallback);
+const emailVerificationCodes = new Map();
+const emailVerificationSendBuckets = new Map();
+const emailVerificationPepper = randomBytes(32).toString('base64url');
+const EMAIL_VERIFICATION_CODE_PATTERN = /^\d{6}$/;
+const EMAIL_CODE_PURPOSES = {
+  register: 'register',
+  passwordReset: 'password-reset',
+};
+
+let resendClient = null;
+let resendApiKey = '';
 
 function parseBoolean(value, fallback) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -18,20 +30,35 @@ function parseInteger(value, fallback, { min = Number.MIN_SAFE_INTEGER, max = Nu
   return parsed;
 }
 
-const authConfig = {
-  cookieName: process.env.AUTH_COOKIE_NAME?.trim() || 'dodoudou_session',
-  sessionDays: parseInteger(process.env.AUTH_SESSION_DAYS, 30, { min: 1, max: 365 }),
-  cookieSecure: parseBoolean(process.env.AUTH_COOKIE_SECURE, process.env.NODE_ENV === 'production'),
-  passwordMinLength: parseInteger(process.env.AUTH_PASSWORD_MIN_LENGTH, 6, { min: 6, max: 128 }),
-  usernameMinLength: parseInteger(process.env.AUTH_USERNAME_MIN_LENGTH, 8, { min: 8, max: 32 }),
-  usernameMaxLength: parseInteger(process.env.AUTH_USERNAME_MAX_LENGTH, 32, { min: 8, max: 64 }),
-  loginRateLimitMax: parseInteger(process.env.AUTH_LOGIN_RATE_LIMIT_MAX, 10, { min: 1, max: 10_000 }),
-  registerRateLimitMax: parseInteger(process.env.AUTH_REGISTER_RATE_LIMIT_MAX, 5, { min: 1, max: 10_000 }),
-  rateLimitWindowMs: parseInteger(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 60_000, { min: 1_000, max: 3_600_000 }),
-  wechatAppId: process.env.WECHAT_MINIPROGRAM_APP_ID?.trim() || '',
-  wechatAppSecret: process.env.WECHAT_MINIPROGRAM_APP_SECRET?.trim() || '',
-  wechatDevLoginEnabled: parseBoolean(process.env.WECHAT_MINIPROGRAM_DEV_LOGIN_ENABLED, process.env.NODE_ENV !== 'production'),
-};
+function readAuthConfig() {
+  return {
+    cookieName: process.env.AUTH_COOKIE_NAME?.trim() || 'dodoudou_session',
+    sessionDays: parseInteger(process.env.AUTH_SESSION_DAYS, 30, { min: 1, max: 365 }),
+    cookieSecure: parseBoolean(process.env.AUTH_COOKIE_SECURE, process.env.NODE_ENV === 'production'),
+    passwordMinLength: parseInteger(process.env.AUTH_PASSWORD_MIN_LENGTH, 6, { min: 6, max: 128 }),
+    usernameMinLength: parseInteger(process.env.AUTH_USERNAME_MIN_LENGTH, 8, { min: 8, max: 32 }),
+    usernameMaxLength: parseInteger(process.env.AUTH_USERNAME_MAX_LENGTH, 32, { min: 8, max: 64 }),
+    loginRateLimitMax: parseInteger(process.env.AUTH_LOGIN_RATE_LIMIT_MAX, 10, { min: 1, max: 10_000 }),
+    registerRateLimitMax: parseInteger(process.env.AUTH_REGISTER_RATE_LIMIT_MAX, 5, { min: 1, max: 10_000 }),
+    passwordResetRateLimitMax: parseInteger(process.env.AUTH_PASSWORD_RESET_RATE_LIMIT_MAX, 5, { min: 1, max: 10_000 }),
+    emailCodeRateLimitMax: parseInteger(process.env.AUTH_EMAIL_CODE_RATE_LIMIT_MAX, 5, { min: 1, max: 10_000 }),
+    emailCodeTtlMinutes: parseInteger(process.env.AUTH_EMAIL_CODE_TTL_MINUTES, 5, { min: 1, max: 60 }),
+    emailCodeCooldownSeconds: parseInteger(process.env.AUTH_EMAIL_CODE_COOLDOWN_SECONDS, 60, { min: 10, max: 600 }),
+    emailCodeMaxAttempts: parseInteger(process.env.AUTH_EMAIL_CODE_MAX_ATTEMPTS, 5, { min: 1, max: 20 }),
+    emailCodeEmailRateLimitMax: parseInteger(process.env.AUTH_EMAIL_CODE_EMAIL_RATE_LIMIT_MAX, 3, { min: 1, max: 100 }),
+    emailCodeEmailRateLimitWindowMs: parseInteger(process.env.AUTH_EMAIL_CODE_EMAIL_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000, { min: 60_000, max: 24 * 60 * 60 * 1000 }),
+    emailFrom: process.env.AUTH_EMAIL_FROM?.trim() || '嘟豆豆 <noreply@dodoudou.xyz>',
+    emailSubject: process.env.AUTH_EMAIL_SUBJECT?.trim() || '注册验证',
+    passwordResetEmailSubject: process.env.AUTH_PASSWORD_RESET_EMAIL_SUBJECT?.trim() || '重置密码验证',
+    emailLogoUrl: process.env.AUTH_EMAIL_LOGO_URL?.trim() || 'https://dodoudou.xyz/assets/logos/logo_base.png',
+    rateLimitWindowMs: parseInteger(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 60_000, { min: 1_000, max: 3_600_000 }),
+    wechatAppId: process.env.WECHAT_MINIPROGRAM_APP_ID?.trim() || '',
+    wechatAppSecret: process.env.WECHAT_MINIPROGRAM_APP_SECRET?.trim() || '',
+    wechatDevLoginEnabled: parseBoolean(process.env.WECHAT_MINIPROGRAM_DEV_LOGIN_ENABLED, process.env.NODE_ENV !== 'production'),
+  };
+}
+
+let authConfig = readAuthConfig();
 
 const USERNAME_PATTERN = /^[a-z0-9_]+$/;
 
@@ -148,6 +175,234 @@ function getUniqueConstraintMessage(error) {
   if (fields.some((field) => String(field).includes('username'))) return '该用户名已注册';
   if (fields.some((field) => String(field).includes('email'))) return '该邮箱已注册';
   return '该账号已注册';
+}
+
+function createAuthError(message, status = 500) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function getResendClient() {
+  const apiKey = process.env.RESEND_API_KEY?.trim() || '';
+  if (!apiKey) return null;
+  if (!resendClient || resendApiKey !== apiKey) {
+    resendClient = new Resend(apiKey);
+    resendApiKey = apiKey;
+  }
+  return resendClient;
+}
+
+function generateEmailVerificationCode() {
+  return randomInt(100000, 1000000).toString();
+}
+
+function getEmailVerificationKey(purpose, email) {
+  return `${purpose}:${email}`;
+}
+
+function hashEmailVerificationCode(purpose, email, code) {
+  return createHash('sha256')
+    .update(`${purpose}:${email}:${code}:${emailVerificationPepper}`)
+    .digest('hex');
+}
+
+function safeStringEquals(actual, expected) {
+  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected);
+  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+function pruneExpiredEmailVerificationCodes(now = Date.now()) {
+  for (const [email, record] of emailVerificationCodes.entries()) {
+    if (record.expiresAt <= now) {
+      emailVerificationCodes.delete(email);
+    }
+  }
+}
+
+function pruneEmailVerificationSendBuckets(now = Date.now()) {
+  for (const [key, bucket] of emailVerificationSendBuckets.entries()) {
+    if (bucket.resetAt <= now) {
+      emailVerificationSendBuckets.delete(key);
+    }
+  }
+}
+
+function checkEmailVerificationSendLimit(purpose, email, now = Date.now()) {
+  pruneEmailVerificationSendBuckets(now);
+  const key = getEmailVerificationKey(purpose, email);
+  const current = emailVerificationSendBuckets.get(key);
+
+  if (!current || current.resetAt <= now) {
+    emailVerificationSendBuckets.set(key, {
+      count: 1,
+      resetAt: now + authConfig.emailCodeEmailRateLimitWindowMs,
+    });
+    return { ok: true };
+  }
+
+  current.count += 1;
+  if (current.count > authConfig.emailCodeEmailRateLimitMax) {
+    return {
+      ok: false,
+      retryAfterSeconds: Math.max(1, Math.ceil((current.resetAt - now) / 1000)),
+    };
+  }
+
+  return { ok: true };
+}
+
+function storeEmailVerificationCode(purpose, email, code, now = Date.now()) {
+  pruneExpiredEmailVerificationCodes(now);
+  emailVerificationCodes.set(getEmailVerificationKey(purpose, email), {
+    codeHash: hashEmailVerificationCode(purpose, email, code),
+    expiresAt: now + authConfig.emailCodeTtlMinutes * 60 * 1000,
+    nextSendAt: now + authConfig.emailCodeCooldownSeconds * 1000,
+    attempts: 0,
+  });
+}
+
+function clearEmailVerificationCode(purpose, email) {
+  emailVerificationCodes.delete(getEmailVerificationKey(purpose, email));
+}
+
+function consumeEmailVerificationCode(purpose, email, code) {
+  const normalizedCode = typeof code === 'string' ? code.trim() : '';
+  if (!EMAIL_VERIFICATION_CODE_PATTERN.test(normalizedCode)) {
+    return { ok: false, message: '请输入 6 位邮箱验证码' };
+  }
+
+  const now = Date.now();
+  pruneExpiredEmailVerificationCodes(now);
+  const key = getEmailVerificationKey(purpose, email);
+  const record = emailVerificationCodes.get(key);
+  if (!record) {
+    return { ok: false, message: '验证码已过期，请重新获取' };
+  }
+
+  const actualHash = hashEmailVerificationCode(purpose, email, normalizedCode);
+  if (!safeStringEquals(actualHash, record.codeHash)) {
+    record.attempts += 1;
+    if (record.attempts >= authConfig.emailCodeMaxAttempts) {
+      emailVerificationCodes.delete(key);
+      return { ok: false, message: '验证码错误次数过多，请重新获取' };
+    }
+    return { ok: false, message: '验证码不正确' };
+  }
+
+  emailVerificationCodes.delete(key);
+  return { ok: true };
+}
+
+function getEmailVerificationRetryAfter(purpose, email) {
+  const record = emailVerificationCodes.get(getEmailVerificationKey(purpose, email));
+  if (!record) return 0;
+  return Math.max(0, Math.ceil((record.nextSendAt - Date.now()) / 1000));
+}
+
+function getVerificationEmailContent(purpose) {
+  if (purpose === EMAIL_CODE_PURPOSES.passwordReset) {
+    return {
+      subject: authConfig.passwordResetEmailSubject,
+      title: '重置密码验证码',
+      lead: '把这串小珠子填回找回密码页面，就可以设置新的登录密码。',
+      scope: '验证码只用于本次密码重置。',
+      ignored: '如果不是你本人操作，可以直接忽略这封邮件，你的密码不会被修改。',
+      textTitle: '嘟豆豆重置密码验证码',
+    };
+  }
+
+  return {
+    subject: authConfig.emailSubject,
+    title: '邮箱验证码',
+    lead: '把这串小珠子填回注册页面，就能继续保存你的拼豆创作。',
+    scope: '验证码只用于本次邮箱注册。',
+    ignored: '如果不是你本人操作，可以直接忽略这封邮件，你的账号不会被创建。',
+    textTitle: '嘟豆豆验证码',
+  };
+}
+
+function renderVerificationEmailText(code, purpose) {
+  const content = getVerificationEmailContent(purpose);
+  return [
+    `${content.textTitle}：${code}`,
+    `验证码 ${authConfig.emailCodeTtlMinutes} 分钟内有效。`,
+    '如果不是你本人操作，请忽略这封邮件。',
+  ].join('\n');
+}
+
+function escapeHtmlAttribute(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function renderVerificationEmailHtml(code, purpose) {
+  const content = getVerificationEmailContent(purpose);
+  const ttlText = `${authConfig.emailCodeTtlMinutes} 分钟内有效`;
+  const logoHtml = authConfig.emailLogoUrl
+    ? `<img src="${escapeHtmlAttribute(authConfig.emailLogoUrl)}" width="210" alt="嘟豆豆 DoDouDou" style="display:block;width:210px;max-width:78%;height:auto;margin:0 auto 4px;border:0;outline:none;text-decoration:none;">`
+    : '<div style="font-size:24px;font-weight:bold;color:#5D534A;margin-bottom:10px;">DoDouDou 嘟豆豆</div>';
+
+  return `
+    <div style="font-family:'PingFang SC','Microsoft YaHei',Arial,sans-serif;background:#FDFBF7;margin:0;padding:28px 12px;color:#5D534A;">
+      <div style="max-width:500px;margin:0 auto;padding:24px 24px 22px;background:#FFFFFF;border:1px solid rgba(93,83,74,0.12);border-radius:24px;box-shadow:0 4px 24px rgba(216,180,226,0.18),0 1px 4px rgba(93,83,74,0.06);">
+        <div style="text-align:center;padding:2px 0 14px;">
+          ${logoHtml}
+          <div style="font-size:0;line-height:0;margin-top:4px;">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#D8B4E2;margin:0 4px;"></span>
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#B5EAD7;margin:0 4px;"></span>
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#FFDAC1;margin:0 4px;"></span>
+            <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#D8B4E2;margin:0 4px;"></span>
+          </div>
+        </div>
+        <div style="border-radius:20px;background:#FDFBF7;border:1px solid #F0E7F4;padding:22px 20px;text-align:center;">
+          <div style="display:inline-block;color:#B48FCC;background:#F7ECFB;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:bold;margin-bottom:12px;">${ttlText}</div>
+          <h2 style="color:#5D534A;margin:0 0 8px;font-size:24px;line-height:1.35;">${content.title}</h2>
+          <p style="color:#7B6F66;font-size:14px;line-height:1.7;margin:0 auto;max-width:360px;">${content.lead}</p>
+          <div style="font-size:40px;font-weight:bold;letter-spacing:12px;color:#5D534A;background:#FFFFFF;border:1px solid rgba(216,180,226,0.55);padding:18px 22px 18px 32px;border-radius:16px;display:inline-block;margin:20px 0 14px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.9);">${code}</div>
+          <p style="color:#6DC4A8;font-size:13px;font-weight:bold;margin:0;">请在 ${authConfig.emailCodeTtlMinutes} 分钟内完成验证</p>
+        </div>
+        <div style="padding:18px 4px 0;">
+          <p style="color:#9C9188;font-size:13px;line-height:1.7;margin:0;">为了账号安全，请不要把验证码告诉其他人。${content.scope}</p>
+          <div style="height:1px;background:#F0E7F4;margin:16px 0 12px;"></div>
+          <p style="color:#C4BAB2;font-size:12px;line-height:1.6;margin:0;">${content.ignored}</p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function sendEmailVerificationCode(email, code, purpose) {
+  const resend = getResendClient();
+  if (!resend) {
+    throw createAuthError('邮件服务未配置，请稍后再试', 503);
+  }
+
+  const content = getVerificationEmailContent(purpose);
+  const { data, error } = await resend.emails.send({
+    from: authConfig.emailFrom,
+    to: email,
+    subject: content.subject,
+    html: renderVerificationEmailHtml(code, purpose),
+    text: renderVerificationEmailText(code, purpose),
+  });
+
+  if (error) {
+    console.error(JSON.stringify({ message: 'Resend email verification failed', error }));
+    throw createAuthError('验证码邮件发送失败，请稍后再试', 502);
+  }
+
+  console.info(JSON.stringify({
+    message: 'Resend email verification queued',
+    purpose,
+    to: email,
+    from: authConfig.emailFrom,
+    messageId: data?.id ?? null,
+  }));
 }
 
 function mapSafeUser(user) {
@@ -316,6 +571,7 @@ export function requireRole(role) {
 }
 
 export function createAuthRouter(prisma) {
+  authConfig = readAuthConfig();
   const router = express.Router();
   const loginLimiter = createRateLimiter({
     windowMs: authConfig.rateLimitWindowMs,
@@ -327,6 +583,16 @@ export function createAuthRouter(prisma) {
     max: authConfig.registerRateLimitMax,
     name: 'Register',
   });
+  const passwordResetLimiter = createRateLimiter({
+    windowMs: authConfig.rateLimitWindowMs,
+    max: authConfig.passwordResetRateLimitMax,
+    name: 'Password reset',
+  });
+  const emailCodeLimiter = createRateLimiter({
+    windowMs: authConfig.rateLimitWindowMs,
+    max: authConfig.emailCodeRateLimitMax,
+    name: 'Email verification',
+  });
 
   router.use(express.json({ limit: '64kb', strict: true }));
 
@@ -334,6 +600,57 @@ export function createAuthRouter(prisma) {
     try {
       const user = await resolveAuthUser(prisma, req);
       res.json({ user: mapSafeUser(user) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/register-code', emailCodeLimiter, async (req, res, next) => {
+    try {
+      const identity = normalizeIdentity(readAccountInput(req.body));
+      if (!identity.ok || identity.kind !== 'email') {
+        return res.status(400).json({ message: '请输入有效邮箱', requestId: req.id });
+      }
+
+      const exists = await findUserByIdentity(prisma, identity);
+      if (exists) {
+        return res.status(409).json({ message: '该邮箱已注册', requestId: req.id });
+      }
+
+      const retryAfterSeconds = getEmailVerificationRetryAfter(EMAIL_CODE_PURPOSES.register, identity.value);
+      if (retryAfterSeconds > 0) {
+        res.setHeader('Retry-After', String(retryAfterSeconds));
+        return res.status(429).json({
+          message: '验证码已发送，请稍后再试',
+          requestId: req.id,
+          retryAfterSeconds,
+        });
+      }
+
+      const emailSendLimit = checkEmailVerificationSendLimit(EMAIL_CODE_PURPOSES.register, identity.value);
+      if (!emailSendLimit.ok) {
+        res.setHeader('Retry-After', String(emailSendLimit.retryAfterSeconds));
+        return res.status(429).json({
+          message: '验证码请求过于频繁，请稍后再试',
+          requestId: req.id,
+          retryAfterSeconds: emailSendLimit.retryAfterSeconds,
+        });
+      }
+
+      const code = generateEmailVerificationCode();
+      storeEmailVerificationCode(EMAIL_CODE_PURPOSES.register, identity.value, code);
+      try {
+        await sendEmailVerificationCode(identity.value, code, EMAIL_CODE_PURPOSES.register);
+      } catch (error) {
+        clearEmailVerificationCode(EMAIL_CODE_PURPOSES.register, identity.value);
+        throw error;
+      }
+
+      res.json({
+        ok: true,
+        expiresInSeconds: authConfig.emailCodeTtlMinutes * 60,
+        retryAfterSeconds: authConfig.emailCodeCooldownSeconds,
+      });
     } catch (error) {
       next(error);
     }
@@ -348,9 +665,14 @@ export function createAuthRouter(prisma) {
         : typeof req.body?.confirmPassword === 'string'
           ? req.body.confirmPassword
           : '';
+      const verificationCode = typeof req.body?.verificationCode === 'string' ? req.body.verificationCode : '';
 
       if (!identity.ok) {
         return res.status(400).json({ message: identity.message, requestId: req.id });
+      }
+
+      if (identity.kind !== 'email') {
+        return res.status(400).json({ message: '注册请使用邮箱', requestId: req.id });
       }
 
       if (!passwordConfirm || password !== passwordConfirm) {
@@ -367,6 +689,11 @@ export function createAuthRouter(prisma) {
         return res.status(409).json({ message: getIdentityConflictMessage(identity), requestId: req.id });
       }
 
+      const verification = consumeEmailVerificationCode(EMAIL_CODE_PURPOSES.register, identity.value, verificationCode);
+      if (!verification.ok) {
+        return res.status(400).json({ message: verification.message, requestId: req.id });
+      }
+
       const user = await prisma.user.create({
         data: {
           ...getIdentityCreateData(identity),
@@ -380,6 +707,103 @@ export function createAuthRouter(prisma) {
       if (error?.code === 'P2002') {
         return res.status(409).json({ message: getUniqueConstraintMessage(error), requestId: req.id });
       }
+      next(error);
+    }
+  });
+
+  router.post('/password-reset-code', emailCodeLimiter, async (req, res, next) => {
+    try {
+      const identity = normalizeIdentity(readAccountInput(req.body));
+      if (!identity.ok || identity.kind !== 'email') {
+        return res.status(400).json({ message: '请输入有效邮箱', requestId: req.id });
+      }
+
+      const retryAfterSeconds = getEmailVerificationRetryAfter(EMAIL_CODE_PURPOSES.passwordReset, identity.value);
+      if (retryAfterSeconds > 0) {
+        res.setHeader('Retry-After', String(retryAfterSeconds));
+        return res.status(429).json({
+          message: '验证码已发送，请稍后再试',
+          requestId: req.id,
+          retryAfterSeconds,
+        });
+      }
+
+      const emailSendLimit = checkEmailVerificationSendLimit(EMAIL_CODE_PURPOSES.passwordReset, identity.value);
+      if (!emailSendLimit.ok) {
+        res.setHeader('Retry-After', String(emailSendLimit.retryAfterSeconds));
+        return res.status(429).json({
+          message: '验证码请求过于频繁，请稍后再试',
+          requestId: req.id,
+          retryAfterSeconds: emailSendLimit.retryAfterSeconds,
+        });
+      }
+
+      const user = await prisma.user.findUnique({ where: { email: identity.value } });
+      const code = generateEmailVerificationCode();
+      storeEmailVerificationCode(EMAIL_CODE_PURPOSES.passwordReset, identity.value, code);
+      if (user?.status === 'active') {
+        try {
+          await sendEmailVerificationCode(identity.value, code, EMAIL_CODE_PURPOSES.passwordReset);
+        } catch (error) {
+          clearEmailVerificationCode(EMAIL_CODE_PURPOSES.passwordReset, identity.value);
+          throw error;
+        }
+      }
+
+      res.json({
+        ok: true,
+        expiresInSeconds: authConfig.emailCodeTtlMinutes * 60,
+        retryAfterSeconds: authConfig.emailCodeCooldownSeconds,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post('/password-reset', passwordResetLimiter, async (req, res, next) => {
+    try {
+      const identity = normalizeIdentity(readAccountInput(req.body));
+      const password = typeof req.body?.password === 'string' ? req.body.password : '';
+      const passwordConfirm = typeof req.body?.passwordConfirm === 'string'
+        ? req.body.passwordConfirm
+        : typeof req.body?.confirmPassword === 'string'
+          ? req.body.confirmPassword
+          : '';
+      const verificationCode = typeof req.body?.verificationCode === 'string' ? req.body.verificationCode : '';
+
+      if (!identity.ok || identity.kind !== 'email') {
+        return res.status(400).json({ message: '请输入有效邮箱', requestId: req.id });
+      }
+
+      if (!passwordConfirm || password !== passwordConfirm) {
+        return res.status(400).json({ message: '两次输入的密码不一致', requestId: req.id });
+      }
+
+      const passwordError = validateRegisterPassword(password);
+      if (passwordError) {
+        return res.status(400).json({ message: passwordError, requestId: req.id });
+      }
+
+      const verification = consumeEmailVerificationCode(EMAIL_CODE_PURPOSES.passwordReset, identity.value, verificationCode);
+      if (!verification.ok) {
+        return res.status(400).json({ message: verification.message, requestId: req.id });
+      }
+
+      const user = await prisma.user.findUnique({ where: { email: identity.value } });
+      if (!user || user.status !== 'active') {
+        return res.status(400).json({ message: '验证码已过期，请重新获取', requestId: req.id });
+      }
+
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: user.id },
+          data: { passwordHash: await hashPassword(password) },
+        }),
+        prisma.session.deleteMany({ where: { userId: user.id } }),
+      ]);
+      clearSessionCookie(res);
+      res.json({ ok: true });
+    } catch (error) {
       next(error);
     }
   });

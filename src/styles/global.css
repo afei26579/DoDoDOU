@@ -2455,6 +2455,9 @@ p { margin: 0; }
 .download-modal__setting-title strong { font-size: 14px; font-family: var(--font-title); }
 .download-modal__setting-icon { width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; background: rgba(216,180,226,0.16); color: #c593d4; font-size: 12px; flex: none; }
 .download-modal__help { margin: -2px 14px 2px; font-size: 12px; color: rgba(93,83,74,0.62); line-height: 1.4; }
+.download-modal__permission-row { margin: -2px 14px 2px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.download-modal__permission-row .download-modal__help { margin: 0; flex: 1 1 auto; }
+.download-modal__login-action { flex: none; border: 0; border-radius: 999px; padding: 7px 12px; background: #1e1a12; color: #fff; font-size: 12px; font-weight: 800; font-family: var(--font-title); }
 .download-modal__value-chip { min-width: 28px; height: 22px; padding: 0 8px; border-radius: 999px; background: #f1eadf; display: grid; place-items: center; color: rgba(93,83,74,0.72); font-size: 12px; font-weight: 700; font-family: var(--font-title); }
 .download-switch { width: 42px; height: 24px; border: 0; border-radius: 999px; background: #e7e1d7; position: relative; flex: none; box-shadow: inset 0 0 0 1px rgba(93,83,74,0.04); outline: none; padding: 0; }
 .download-switch::after { content: ''; position: absolute; top: 50%; left: 3px; width: 18px; height: 18px; border-radius: 999px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.16); transform: translateY(-50%); transition: transform 160ms ease, background-color 160ms ease; }
@@ -2645,6 +2648,22 @@ p { margin: 0; }
   color: rgba(93,83,74,0.72);
   font-size: 13px;
   font-weight: 700;
+}
+.gallery-detail__state--actionable {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.gallery-detail__state--actionable button {
+  flex: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #1e1a12;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
 }
 .gallery-detail__canvas-shell {
   flex: 1 1 auto;
@@ -3559,6 +3578,42 @@ p { margin: 0; }
   box-shadow: 0 0 0 4px rgba(213, 173, 226, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
+.auth-field input:disabled {
+  cursor: not-allowed;
+  color: rgba(95, 80, 73, 0.42);
+  background: rgba(255, 255, 255, 0.46);
+}
+
+.auth-code-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(92px, 34%);
+  gap: 8px;
+  align-items: stretch;
+}
+
+.auth-code-button {
+  min-height: clamp(46px, 11.5vw, 56px);
+  border: 1.5px solid rgba(117, 202, 168, 0.62);
+  border-radius: 19px;
+  background: linear-gradient(180deg, rgba(238, 255, 248, 0.94), rgba(226, 255, 244, 0.84));
+  color: #48ad80;
+  box-shadow: 0 8px 16px rgba(93, 83, 74, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  cursor: pointer;
+  font-size: clamp(12px, 3.5vw, 15px);
+  font-weight: 900;
+  line-height: 1.1;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.auth-code-button:disabled {
+  cursor: not-allowed;
+  color: rgba(72, 173, 128, 0.5);
+  background: rgba(255, 255, 255, 0.5);
+  opacity: 0.72;
+  box-shadow: none;
+}
+
 .auth-remember,
 .auth-options__forgot {
   border: 0;
@@ -3865,6 +3920,17 @@ p { margin: 0; }
     background: rgba(255, 255, 255, 0.7);
   }
 
+  .auth-code-row {
+    grid-template-columns: minmax(0, 1fr) 118px;
+    gap: 10px;
+  }
+
+  .auth-code-button {
+    min-height: 60px;
+    border-radius: 15px;
+    font-size: 16px;
+  }
+
   .auth-field__icon--text + .auth-field__label + input {
     padding-left: 88px;
   }
@@ -4060,6 +4126,17 @@ p { margin: 0; }
     background: rgba(255, 255, 255, 0.76);
   }
 
+  .auth-code-row {
+    grid-template-columns: minmax(0, 1fr) 104px;
+    gap: 8px;
+  }
+
+  .auth-code-button {
+    min-height: 48px;
+    border-radius: 10px;
+    font-size: 13px;
+  }
+
   .auth-field__icon--text + .auth-field__label + input {
     padding-left: 66px;
   }
@@ -4234,6 +4311,18 @@ p { margin: 0; }
     font-size: 12px;
     font-weight: 800;
     background: rgba(255, 255, 255, 0.76);
+  }
+
+  .auth-code-row {
+    grid-template-columns: minmax(0, 1fr) 84px;
+    gap: 7px;
+  }
+
+  .auth-code-button {
+    min-height: 38px;
+    border-radius: 8px;
+    font-size: 11px;
+    padding: 0 7px;
   }
 
   .auth-field__icon--text + .auth-field__label + input {

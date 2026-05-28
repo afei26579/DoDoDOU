@@ -55,12 +55,35 @@ export type ProjectSyncResponse = ProjectListResponse & {
 
 export class ProjectApiError extends Error {
   status: number;
+  code?: string;
+  capability?: string;
+  current?: number;
+  limit?: number;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, details: {
+    code?: string;
+    capability?: string;
+    current?: number;
+    limit?: number;
+  } = {}) {
     super(message);
     this.name = 'ProjectApiError';
     this.status = status;
+    this.code = details.code;
+    this.capability = details.capability;
+    this.current = details.current;
+    this.limit = details.limit;
   }
+}
+
+function isProjectErrorPayload(payload: unknown): payload is {
+  message?: string;
+  code?: string;
+  capability?: string;
+  current?: number;
+  limit?: number;
+} {
+  return isPlainObject(payload);
 }
 
 async function requestProject<T>(path: string, init?: RequestInit): Promise<T> {
@@ -73,12 +96,25 @@ async function requestProject<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
 
-  const payload = await response.json().catch(() => null) as { message?: string } | null;
+  const payload = await response.json().catch(() => null) as unknown;
   if (!response.ok) {
-    throw new ProjectApiError(payload?.message || `Request failed: ${response.status}`, response.status);
+    const errorPayload = isProjectErrorPayload(payload) ? payload : null;
+    throw new ProjectApiError(errorPayload?.message || `Request failed: ${response.status}`, response.status, {
+      code: typeof errorPayload?.code === 'string' ? errorPayload.code : undefined,
+      capability: typeof errorPayload?.capability === 'string' ? errorPayload.capability : undefined,
+      current: typeof errorPayload?.current === 'number' ? errorPayload.current : undefined,
+      limit: typeof errorPayload?.limit === 'number' ? errorPayload.limit : undefined,
+    });
   }
 
   return payload as T;
+}
+
+export function isProjectCloudLimitError(error: unknown) {
+  return error instanceof ProjectApiError
+    && error.status === 402
+    && error.code === 'PLAN_LIMIT_EXCEEDED'
+    && error.capability === 'project.cloud_sync';
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

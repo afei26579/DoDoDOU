@@ -22,4 +22,30 @@ export type LoginInput = {
 
 export type RegisterInput = LoginInput & {
   passwordConfirm: string;
+  verificationCode?: string;
+};
+
+export type PasswordResetInput = {
+  account: string;
+  password: string;
+  passwordConfirm: string;
+  verificationCode: string;
+};
+
+export type SendRegisterCodeInput = {
+  account: string;
+};
+
+export type SendPasswordResetCodeInput = {
+  account: string;
+};
+
+export type SendRegisterCodeResponse = {
+  ok: true;
+  expiresInSeconds: number;
+  retryAfterSeconds: number;
+};
+
+export type PasswordResetResponse = {
+  ok: true;
 };

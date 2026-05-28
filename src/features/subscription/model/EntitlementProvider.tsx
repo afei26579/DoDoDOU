@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useAuth } from '../../auth/model/AuthProvider';
+import { configureWorkshopProjectStore } from '../../workshop/model/projectStore';
 import { fetchMyEntitlements } from './subscriptionApi';
 import type { CapabilityKey, EntitlementSnapshot } from './types';
 
@@ -18,7 +19,6 @@ const anonymousCapabilities: CapabilityKey[] = [
   'inventory.local',
   'workshop.local_create',
   'pattern.local_generate',
-  'export.basic',
 ];
 
 const freeCapabilities: CapabilityKey[] = [
@@ -29,6 +29,8 @@ const freeCapabilities: CapabilityKey[] = [
   'inventory.cloud_sync',
   'asset.upload',
   'pattern.server_generate',
+  'export.download',
+  'export.basic',
 ];
 
 const adminCapabilities: CapabilityKey[] = [
@@ -112,6 +114,15 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
       alive = false;
     };
   }, [authStatus, fallbackKind, user?.id]);
+
+  useEffect(() => {
+    if (authStatus !== 'authenticated' || !user?.id) return;
+    configureWorkshopProjectStore({
+      enabled: true,
+      userId: user.id,
+      cloudProjectLimit: entitlements.limits.cloudProjects,
+    });
+  }, [authStatus, entitlements.limits.cloudProjects, user?.id]);
 
   const hasCapability = useCallback(
     (capability: CapabilityKey) => Boolean(entitlements?.capabilityMap?.[capability]),

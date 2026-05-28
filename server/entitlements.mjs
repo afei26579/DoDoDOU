@@ -12,6 +12,7 @@ export const CAPABILITIES = [
   'pattern.local_generate',
   'pattern.server_generate',
   'asset.upload',
+  'export.download',
   'export.basic',
   'export.hd',
   'export.no_watermark',
@@ -25,7 +26,6 @@ const COMMON_LOCAL_CAPABILITIES = [
   'inventory.local',
   'workshop.local_create',
   'pattern.local_generate',
-  'export.basic',
 ];
 
 export const PLAN_DEFINITIONS = {
@@ -48,6 +48,8 @@ export const PLAN_DEFINITIONS = {
       'inventory.cloud_sync',
       'asset.upload',
       'pattern.server_generate',
+      'export.download',
+      'export.basic',
     ],
     limits: {
       cloudProjects: 20,
@@ -69,6 +71,8 @@ export const PLAN_DEFINITIONS = {
       'inventory.cloud_sync',
       'asset.upload',
       'pattern.server_generate',
+      'export.download',
+      'export.basic',
       'export.hd',
       'export.no_watermark',
       'ai.inspiration',

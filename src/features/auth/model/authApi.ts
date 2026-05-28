@@ -1,4 +1,13 @@
-import type { AuthResponse, LoginInput, RegisterInput } from './types';
+import type {
+  AuthResponse,
+  LoginInput,
+  PasswordResetInput,
+  PasswordResetResponse,
+  RegisterInput,
+  SendPasswordResetCodeInput,
+  SendRegisterCodeInput,
+  SendRegisterCodeResponse,
+} from './types';
 
 function resolveApiBaseUrl() {
   const configured = import.meta.env.VITE_API_BASE_URL?.trim() || '';
@@ -14,11 +23,13 @@ const API_BASE_URL = resolveApiBaseUrl();
 
 export class AuthApiError extends Error {
   status: number;
+  retryAfterSeconds?: number;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, retryAfterSeconds?: number) {
     super(message);
     this.name = 'AuthApiError';
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -32,9 +43,20 @@ async function requestAuth<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
 
-  const payload = await response.json().catch(() => null) as { message?: string } | null;
+  const payload = await response.json().catch(() => null) as { message?: string; retryAfterSeconds?: number } | null;
   if (!response.ok) {
-    throw new AuthApiError(payload?.message || `Request failed: ${response.status}`, response.status);
+    const payloadRetryAfterSeconds = payload?.retryAfterSeconds;
+    const retryAfterSeconds = typeof payloadRetryAfterSeconds === 'number' && Number.isInteger(payloadRetryAfterSeconds)
+      ? payloadRetryAfterSeconds
+      : Number.parseInt(response.headers.get('Retry-After') || '', 10);
+    const normalizedRetryAfterSeconds = Number.isInteger(retryAfterSeconds) && retryAfterSeconds > 0
+      ? retryAfterSeconds
+      : undefined;
+    throw new AuthApiError(
+      payload?.message || `Request failed: ${response.status}`,
+      response.status,
+      normalizedRetryAfterSeconds,
+    );
   }
 
   return payload as T;
@@ -53,6 +75,27 @@ export function login(input: LoginInput) {
 
 export function register(input: RegisterInput) {
   return requestAuth<AuthResponse>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function sendRegisterCode(input: SendRegisterCodeInput) {
+  return requestAuth<SendRegisterCodeResponse>('/api/auth/register-code', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function sendPasswordResetCode(input: SendPasswordResetCodeInput) {
+  return requestAuth<SendRegisterCodeResponse>('/api/auth/password-reset-code', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function resetPassword(input: PasswordResetInput) {
+  return requestAuth<PasswordResetResponse>('/api/auth/password-reset', {
     method: 'POST',
     body: JSON.stringify(input),
   });
