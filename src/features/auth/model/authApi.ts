@@ -11,6 +11,8 @@ import type {
 
 function resolveApiBaseUrl() {
   const configured = import.meta.env.VITE_API_BASE_URL?.trim() || '';
+  const normalized = configured.replace(/\/+$/, '').toLowerCase();
+  if (normalized === 'same-origin') return '';
   if (configured !== 'auto') return configured.replace(/\/$/, '');
 
   if (typeof window === 'undefined') return '';
