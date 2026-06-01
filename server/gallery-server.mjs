@@ -1,8 +1,10 @@
 import express from 'express';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createAdminRouter } from './admin.mjs';
 import { createAuthRouter, optionalAuth, requireAuth } from './auth.mjs';
 import { createAssetsRouter } from './assets.mjs';
 import { prisma } from './db.mjs';
@@ -15,6 +17,9 @@ import { ensureMonthlyUsageAvailable, recordUsageEvent, requireCapability, sendU
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
+const publicDir = path.join(rootDir, 'public');
+const distDir = path.join(rootDir, 'dist');
+const galleryItemDataDir = path.join(rootDir, 'public', 'data', 'gallery', 'items');
 const initialEnvKeys = new Set(Object.keys(process.env));
 
 function loadEnvFile(filePath, { override = false } = {}) {
@@ -71,9 +76,56 @@ function parseList(value, fallback) {
   return items.length ? items : fallback;
 }
 
+function normalizeHostname(value) {
+  return String(value || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase()
+    .replace(/:\d+$/, '')
+    .replace(/\.$/, '');
+}
+
+function parseHostList(value, fallback) {
+  return parseList(value, fallback)
+    .map(normalizeHostname)
+    .filter(Boolean);
+}
+
+function resolveExistingFile(paths) {
+  return paths.find((filePath) => existsSync(filePath)) || paths[0];
+}
+
+function getDisplayHost(value) {
+  try {
+    return new URL(value).hostname || value;
+  } catch {
+    return String(value || '').replace(/^https?:\/\//i, '').replace(/\/.*$/, '') || 'dodoudou.xyz';
+  }
+}
+
+function normalizeMountPath(value, fallback) {
+  const input = typeof value === 'string' ? value.trim() : '';
+  const pathValue = input || fallback;
+  const withSlash = pathValue.startsWith('/') ? pathValue : `/${pathValue}`;
+  const normalized = withSlash.replace(/\/+$/, '') || fallback;
+  return /^\/[A-Za-z0-9/_-]+$/.test(normalized) ? normalized : fallback;
+}
+
 function appendOrigin(origins, origin) {
   if (!origin) return origins;
   return origins.includes(origin) ? origins : [...origins, origin];
+}
+
+async function ensureDirs() {
+  await mkdir(galleryItemDataDir, { recursive: true });
+}
+
+function resolveGalleryItemFilePath(itemId) {
+  return path.join(galleryItemDataDir, `${itemId}.json`);
+}
+
+async function writeJsonFile(filePath, payload) {
+  await writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
 }
 
 function getAllowedOrigins() {
@@ -92,6 +144,8 @@ function getServerHost() {
   return process.env.GALLERY_SERVER_HOST || '127.0.0.1';
 }
 
+const publicBetaUrl = process.env.PUBLIC_BETA_URL?.trim() || 'https://dodoudou.xyz';
+
 const config = {
   host: getServerHost(),
   port: parseInteger(process.env.GALLERY_SERVER_PORT, 3001, { min: 1, max: 65535 }),
@@ -103,9 +157,17 @@ const config = {
   rateLimitWindowMs: parseInteger(process.env.GALLERY_RATE_LIMIT_WINDOW_MS, 60_000, { min: 1_000, max: 3_600_000 }),
   rateLimitMax: parseInteger(process.env.GALLERY_RATE_LIMIT_MAX, 120, { min: 1, max: 100_000 }),
   publishRateLimitMax: parseInteger(process.env.GALLERY_PUBLISH_RATE_LIMIT_MAX, 5, { min: 1, max: 10_000 }),
+  adminApiPrefix: normalizeMountPath(process.env.ADMIN_API_PREFIX, '/api/_ops_dodoudou_9c41f7'),
   maxPatternCells: parseInteger(process.env.GALLERY_MAX_PATTERN_CELLS, 10_000, { min: 1, max: 200_000 }),
   maxDataUrlChars: parseInteger(process.env.GALLERY_MAX_DATA_URL_CHARS, 1_500_000, { min: 1_000, max: 20_000_000 }),
   trustProxy: parseBoolean(process.env.GALLERY_TRUST_PROXY, false),
+  productionClosedHosts: parseHostList(process.env.PRODUCTION_CLOSED_HOSTS, ['dodoudou.com', 'www.dodoudou.com']),
+  productionClosedPagePath: resolveExistingFile([
+    path.join(distDir, 'official-login.html'),
+    path.join(publicDir, 'official-login.html'),
+  ]),
+  publicBetaUrl,
+  publicBetaHost: getDisplayHost(publicBetaUrl),
 };
 
 const allowAnyOrigin = config.allowedOrigins.includes('*');
@@ -143,6 +205,40 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+function isProductionClosedHost(req) {
+  return config.productionClosedHosts.includes(normalizeHostname(req.headers.host));
+}
+
+function sendProductionClosedResponse(req, res) {
+  const message = `正式服未开放。内测进行中。网址是 ${config.publicBetaHost}`;
+  res.setHeader('Cache-Control', 'no-store');
+
+  if (req.path.startsWith('/api/')) {
+    return res.status(403).json({
+      message,
+      betaUrl: config.publicBetaUrl,
+      requestId: req.id,
+    });
+  }
+
+  if (req.method === 'GET' || req.method === 'HEAD') {
+    return res.sendFile(config.productionClosedPagePath);
+  }
+
+  return res.status(403).json({
+    message,
+    betaUrl: config.publicBetaUrl,
+    requestId: req.id,
+  });
+}
+
+function productionClosedGate(req, res, next) {
+  if (!isProductionClosedHost(req)) return next();
+  if (req.path.startsWith('/assets/') || req.path.startsWith('/uploads/')) return next();
+  if (req.path.startsWith('/.well-known/acme-challenge/')) return next();
+  return sendProductionClosedResponse(req, res);
+}
 
 function applyCors(req, res, next) {
   const origin = req.headers.origin;
@@ -209,6 +305,15 @@ const publishRateLimiter = createRateLimiter({
   name: 'Publish',
 });
 
+app.use('/assets', express.static(path.join(distDir, 'assets'), {
+  index: false,
+  maxAge: '7d',
+}));
+app.use('/assets', express.static(path.join(publicDir, 'assets'), {
+  index: false,
+  maxAge: '7d',
+}));
+app.use(productionClosedGate);
 app.use(applyCors);
 app.use(globalRateLimiter);
 app.use('/uploads', express.static(path.join(rootDir, 'public', 'uploads'), {
@@ -221,6 +326,7 @@ app.use('/api/inventory', createInventoryRouter(prisma));
 app.use('/api/pattern', createPatternRouter(prisma, { rootDir }));
 app.use('/api/projects', createProjectsRouter(prisma));
 app.use('/api/subscription', createSubscriptionRouter(prisma));
+app.use(config.adminApiPrefix, createAdminRouter(prisma));
 
 function toSlug(value) {
   return value
@@ -980,7 +1086,7 @@ app.use((err, req, res, next) => {
   );
 
   res.status(status).json({
-    message: status === 413 ? 'Request body is too large' : status >= 500 && !err.expose ? 'Internal server error' : err.message,
+    message: status === 413 ? '提交内容过大，请减少数量或压缩图片后再试' : status >= 500 && !err.expose ? '服务器暂时不可用，请稍后再试' : err.message,
     requestId: req.id,
   });
 });
@@ -990,4 +1096,5 @@ app.listen(config.port, config.host, () => {
   console.log(`SQLite database via Prisma`);
   console.log(`Gallery publish enabled: ${config.publishEnabled ? 'yes' : 'no'}`);
   console.log(`Allowed origins: ${allowAnyOrigin ? '*' : config.allowedOrigins.join(', ')}`);
+  console.log(`Production closed hosts: ${config.productionClosedHosts.join(', ') || '(none)'}`);
 });

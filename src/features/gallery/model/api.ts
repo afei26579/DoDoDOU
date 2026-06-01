@@ -1,3 +1,4 @@
+import { getApiErrorMessage, type ApiErrorPayload } from '../../../lib/api/errorMessage';
 import type {
   GalleryDetailResponse,
   GalleryFavoriteResponse,
@@ -35,9 +36,9 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
 
-  const payload = await response.json().catch(() => null) as { message?: string } | null;
+  const payload = await response.json().catch(() => null) as ApiErrorPayload | null;
   if (!response.ok) {
-    throw new Error(payload?.message || `Request failed: ${response.status}`);
+    throw new Error(getApiErrorMessage(payload, response.status));
   }
 
   return payload as T;
@@ -79,7 +80,7 @@ export async function fetchGalleryList(query: GalleryListQuery = {}): Promise<Ga
 export async function fetchGalleryDetail(itemId: string): Promise<GalleryDetailResponse> {
   if (USE_MOCK) {
     const item = getMockGalleryDetail(itemId);
-    if (!item) throw new Error('Gallery item not found');
+    if (!item) throw new Error('没有找到这张作品，可能已被删除或下架。');
     return { item };
   }
 
@@ -134,7 +135,7 @@ export async function syncFavoriteGalleryItems(itemIds: string[]): Promise<Galle
 export async function addGalleryFavorite(itemId: string): Promise<GalleryFavoriteResponse> {
   if (USE_MOCK) {
     const item = getMockGalleryDetail(itemId);
-    if (!item) throw new Error('Gallery item not found');
+    if (!item) throw new Error('没有找到这张作品，可能已被删除或下架。');
     return { item };
   }
 
@@ -147,7 +148,7 @@ export async function addGalleryFavorite(itemId: string): Promise<GalleryFavorit
 export async function removeGalleryFavorite(itemId: string): Promise<GalleryFavoriteResponse> {
   if (USE_MOCK) {
     const item = getMockGalleryDetail(itemId);
-    if (!item) throw new Error('Gallery item not found');
+    if (!item) throw new Error('没有找到这张作品，可能已被删除或下架。');
     return { item };
   }
 

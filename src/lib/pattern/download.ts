@@ -498,25 +498,18 @@ function isMobileSafari() {
   return isAppleMobile && isSafari && !isOtherIosBrowser;
 }
 
-function openMobileSafariDownloadWindow() {
-  if (!isMobileSafari()) return null;
-  const downloadWindow = window.open('', '_blank');
-  if (!downloadWindow) return null;
-
-  downloadWindow.opener = null;
-  downloadWindow.document.title = 'Preparing download';
-  downloadWindow.document.body.style.margin = '0';
-  downloadWindow.document.body.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
-  downloadWindow.document.body.innerHTML = '<div style="min-height:100vh;display:grid;place-items:center;color:#5d534a;background:#fdfaf4">Preparing download...</div>';
-  return downloadWindow;
+function createDownloadBlob(blob: Blob) {
+  if (!isMobileSafari()) return blob;
+  return new Blob([blob], { type: 'application/octet-stream' });
 }
 
 function createNamedObjectUrl(blob: Blob, fileName: string) {
-  if (typeof File === 'undefined') return URL.createObjectURL(blob);
-  return URL.createObjectURL(new File([blob], fileName, { type: blob.type || 'image/png' }));
+  const downloadBlob = createDownloadBlob(blob);
+  if (typeof File === 'undefined') return URL.createObjectURL(downloadBlob);
+  return URL.createObjectURL(new File([downloadBlob], fileName, { type: downloadBlob.type || 'image/png' }));
 }
 
-function triggerBlobDownload(blob: Blob, fileName: string, fallbackWindow: Window | null) {
+function triggerBlobDownload(blob: Blob, fileName: string) {
   const url = createNamedObjectUrl(blob, fileName);
   const link = document.createElement('a');
   link.href = url;
@@ -532,12 +525,6 @@ function triggerBlobDownload(blob: Blob, fileName: string, fallbackWindow: Windo
     }, 60_000);
   };
 
-  if (fallbackWindow && !fallbackWindow.closed) {
-    fallbackWindow.location.href = url;
-    cleanup();
-    return;
-  }
-
   link.click();
   cleanup();
 }
@@ -545,11 +532,10 @@ function triggerBlobDownload(blob: Blob, fileName: string, fallbackWindow: Windo
 export async function downloadPatternImage(options: DownloadPatternOptions) {
   const scale = getExportScale(options);
   const fileName = formatDownloadFileName(options, scale);
-  const mobileSafariDownloadWindow = openMobileSafariDownloadWindow();
   const canvas = createCanvas(1, 1, scale);
   drawToCanvas(canvas, options.patternResult, options, scale);
   const blob = await canvasToBlob(canvas);
-  triggerBlobDownload(blob, fileName, mobileSafariDownloadWindow);
+  triggerBlobDownload(blob, fileName);
 }
 
 export function renderDownloadPatternCanvas(canvas: HTMLCanvasElement, options: DownloadPatternOptions) {

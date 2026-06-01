@@ -1,4 +1,6 @@
 const ACTIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
+const INTERNAL_BETA_PROVIDER = 'internal_beta';
+const INTERNAL_BETA_PROVIDER_SUBSCRIPTION_PREFIX = 'internal-beta-pro-';
 
 export const CAPABILITIES = [
   'gallery.read_public',
@@ -27,6 +29,18 @@ const COMMON_LOCAL_CAPABILITIES = [
   'workshop.local_create',
   'pattern.local_generate',
 ];
+
+function parseBoolean(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const normalized = String(value).trim().toLowerCase();
+  if (['1', 'true', 'yes', 'y', 'on', 'enabled'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'n', 'off', 'disabled'].includes(normalized)) return false;
+  return fallback;
+}
+
+export function isInternalBetaProGrantEnabled() {
+  return parseBoolean(process.env.ENTITLEMENTS_INTERNAL_BETA_GRANT_PRO, false);
+}
 
 export const PLAN_DEFINITIONS = {
   anonymous: {
@@ -146,6 +160,53 @@ async function findActiveSubscription(prisma, userId) {
   });
 }
 
+export async function ensureInternalBetaProEntitlement(prisma, user) {
+  if (!isInternalBetaProGrantEnabled() || !user?.id || user.role !== 'user') return null;
+
+  const activeSubscription = await findActiveSubscription(prisma, user.id);
+  if (activeSubscription?.planKey === 'pro') return activeSubscription;
+
+  const now = new Date();
+
+  // TODO: Remove this internal beta Pro grant before the production launch.
+  if (activeSubscription) {
+    return prisma.subscription.update({
+      where: { id: activeSubscription.id },
+      data: {
+        planKey: 'pro',
+        status: 'active',
+        currentPeriodStart: activeSubscription.currentPeriodStart ?? now,
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+      },
+    });
+  }
+
+  return prisma.subscription.upsert({
+    where: { providerSubscriptionId: `${INTERNAL_BETA_PROVIDER_SUBSCRIPTION_PREFIX}${user.id}` },
+    update: {
+      userId: user.id,
+      planKey: 'pro',
+      status: 'active',
+      provider: INTERNAL_BETA_PROVIDER,
+      currentPeriodStart: now,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      metadataJson: { source: 'internal_beta_pro_grant' },
+    },
+    create: {
+      userId: user.id,
+      planKey: 'pro',
+      status: 'active',
+      provider: INTERNAL_BETA_PROVIDER,
+      providerSubscriptionId: `${INTERNAL_BETA_PROVIDER_SUBSCRIPTION_PREFIX}${user.id}`,
+      currentPeriodStart: now,
+      currentPeriodEnd: null,
+      metadataJson: { source: 'internal_beta_pro_grant' },
+    },
+  });
+}
+
 async function getUsageTotals(prisma, userId, capabilities, periodKey) {
   if (!userId || !capabilities.length) return {};
   const totals = await Promise.all(capabilities.map(async (capability) => {
@@ -221,7 +282,7 @@ export function requireCapability(prisma, capability) {
 
       if (!hasCapability(snapshot, capability)) {
         return res.status(req.user ? 403 : 401).json({
-          message: 'Capability is not available for the current plan',
+          message: '当前套餐暂不支持该功能',
           code: 'CAPABILITY_REQUIRED',
           capability,
           planKey: snapshot.planKey,
@@ -271,7 +332,7 @@ export async function recordUsageEvent(prisma, { userId, capability, amount = 1,
 
 export function sendUsageLimitExceeded(res, req, { capability, used, limit, periodKey }) {
   return res.status(402).json({
-    message: 'Usage limit exceeded for the current plan',
+    message: '本月使用次数已用完，请下月再试或升级套餐',
     code: 'USAGE_LIMIT_EXCEEDED',
     capability,
     used,
@@ -283,7 +344,7 @@ export function sendUsageLimitExceeded(res, req, { capability, used, limit, peri
 
 export function sendPlanLimitExceeded(res, req, { capability, limit, current }) {
   return res.status(402).json({
-    message: 'Plan limit exceeded',
+    message: '当前套餐额度已用完',
     code: 'PLAN_LIMIT_EXCEEDED',
     capability,
     current,

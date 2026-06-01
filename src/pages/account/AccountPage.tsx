@@ -1,5 +1,6 @@
 import { Navigate, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import { ADMIN_ENTRY_PATH } from '../../features/admin/model/adminConfig';
 import { useAuth } from '../../features/auth/model/AuthProvider';
 import { useEntitlements } from '../../features/subscription/model/EntitlementProvider';
 
@@ -65,6 +66,11 @@ export function AccountPage() {
         </div>
 
         <div className="account-actions">
+          {user.role === 'admin' ? (
+            <button type="button" onClick={() => navigate(ADMIN_ENTRY_PATH)}>
+              后台管理
+            </button>
+          ) : null}
           <button type="button" onClick={() => navigate('/collection?tab=my')}>
             我的作品
           </button>

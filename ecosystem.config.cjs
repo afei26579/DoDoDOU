@@ -12,8 +12,10 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3001,
         DATABASE_URL: 'file:./dev.db',
-	GALLERY_ALLOWED_ORIGINS: 'https://ylongf.xyz,https://www.ylongf.xyz',
+        GALLERY_ALLOWED_ORIGINS: 'https://dodoudou.xyz,https://www.dodoudou.xyz',
         GALLERY_SERVER_HOST: '127.0.0.1',
+        PRODUCTION_CLOSED_HOSTS: 'dodoudou.com,www.dodoudou.com',
+        PUBLIC_BETA_URL: 'https://dodoudou.xyz',
       },
       // 异常时自动重启
       watch: false,

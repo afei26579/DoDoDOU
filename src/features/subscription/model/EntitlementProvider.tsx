@@ -107,7 +107,7 @@ export function EntitlementProvider({ children }: { children: ReactNode }) {
         if (!alive) return;
         setEntitlements(createFallbackSnapshot(fallbackKind));
         setStatus('error');
-        setError(err instanceof Error ? err.message : 'Failed to load entitlement state');
+        setError(err instanceof Error ? err.message : '权益信息加载失败，请稍后再试');
       });
 
     return () => {

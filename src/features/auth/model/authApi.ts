@@ -1,3 +1,4 @@
+import { getApiErrorMessage, type ApiErrorPayload } from '../../../lib/api/errorMessage';
 import type {
   AuthResponse,
   LoginInput,
@@ -45,7 +46,7 @@ async function requestAuth<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
 
-  const payload = await response.json().catch(() => null) as { message?: string; retryAfterSeconds?: number } | null;
+  const payload = await response.json().catch(() => null) as ApiErrorPayload | null;
   if (!response.ok) {
     const payloadRetryAfterSeconds = payload?.retryAfterSeconds;
     const retryAfterSeconds = typeof payloadRetryAfterSeconds === 'number' && Number.isInteger(payloadRetryAfterSeconds)
@@ -55,7 +56,7 @@ async function requestAuth<T>(path: string, init?: RequestInit): Promise<T> {
       ? retryAfterSeconds
       : undefined;
     throw new AuthApiError(
-      payload?.message || `Request failed: ${response.status}`,
+      getApiErrorMessage(payload, response.status),
       response.status,
       normalizedRetryAfterSeconds,
     );

@@ -8,6 +8,15 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function () {
+        var closedHosts = ['dodoudou.com', 'www.dodoudou.com'];
+        var host = window.location.hostname.toLowerCase();
+        if (closedHosts.indexOf(host) !== -1 && window.location.pathname !== '/official-login.html') {
+          window.location.replace('/official-login.html');
+        }
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -298,7 +298,11 @@ export function CollectionPage() {
         return;
       }
 
-      const response = await syncRemoteWorkshopProjects(localProjects);
+      const response = await syncRemoteWorkshopProjects(localProjects, {
+        onProgress: ({ synced, total, batchCount }) => {
+          if (batchCount > 1) setProjectSyncMessage(`正在同步作品 ${synced}/${total}`);
+        },
+      });
       localStorage.setItem(migrationStorageKey, 'true');
       setLocalProjectCount(0);
       setMyItems(response.items);

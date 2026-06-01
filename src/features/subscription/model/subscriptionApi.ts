@@ -1,3 +1,4 @@
+import { getApiErrorMessage, type ApiErrorPayload } from '../../../lib/api/errorMessage';
 import type { EntitlementSnapshot } from './types';
 
 function resolveApiBaseUrl() {
@@ -28,10 +29,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function getPayloadMessage(payload: unknown) {
-  return isRecord(payload) && typeof payload.message === 'string' ? payload.message : null;
-}
-
 function isEntitlementSnapshot(payload: unknown): payload is EntitlementSnapshot {
   if (!isRecord(payload)) return false;
   if (!isRecord(payload.limits)) return false;
@@ -60,7 +57,7 @@ async function requestSubscription<T>(path: string, init?: RequestInit): Promise
 
   const payload = await response.json().catch(() => null) as unknown;
   if (!response.ok) {
-    throw new SubscriptionApiError(getPayloadMessage(payload) || `Request failed: ${response.status}`, response.status);
+    throw new SubscriptionApiError(getApiErrorMessage(isRecord(payload) ? payload as ApiErrorPayload : null, response.status), response.status);
   }
 
   return payload as T;

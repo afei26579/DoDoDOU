@@ -1,3 +1,4 @@
+import { getApiErrorMessage, type ApiErrorPayload } from '../../../lib/api/errorMessage';
 import type { WorkshopProjectRecord } from './projectStore';
 
 function resolveApiBaseUrl() {
@@ -13,6 +14,8 @@ function resolveApiBaseUrl() {
 }
 
 const API_BASE_URL = resolveApiBaseUrl();
+const PROJECT_SYNC_MAX_ITEMS_PER_BATCH = 100;
+const PROJECT_SYNC_MAX_BATCH_BYTES = 8 * 1024 * 1024;
 
 type RemoteProjectItem = {
   id: string;
@@ -55,6 +58,17 @@ export type ProjectSyncResponse = ProjectListResponse & {
   }>;
 };
 
+export type ProjectSyncProgress = {
+  synced: number;
+  total: number;
+  batchIndex: number;
+  batchCount: number;
+};
+
+type ProjectSyncOptions = {
+  onProgress?: (progress: ProjectSyncProgress) => void;
+};
+
 export class ProjectApiError extends Error {
   status: number;
   code?: string;
@@ -78,13 +92,7 @@ export class ProjectApiError extends Error {
   }
 }
 
-function isProjectErrorPayload(payload: unknown): payload is {
-  message?: string;
-  code?: string;
-  capability?: string;
-  current?: number;
-  limit?: number;
-} {
+function isProjectErrorPayload(payload: unknown): payload is ApiErrorPayload {
   return isPlainObject(payload);
 }
 
@@ -101,7 +109,7 @@ async function requestProject<T>(path: string, init?: RequestInit): Promise<T> {
   const payload = await response.json().catch(() => null) as unknown;
   if (!response.ok) {
     const errorPayload = isProjectErrorPayload(payload) ? payload : null;
-    throw new ProjectApiError(errorPayload?.message || `Request failed: ${response.status}`, response.status, {
+    throw new ProjectApiError(getApiErrorMessage(errorPayload, response.status), response.status, {
       code: typeof errorPayload?.code === 'string' ? errorPayload.code : undefined,
       capability: typeof errorPayload?.capability === 'string' ? errorPayload.capability : undefined,
       current: typeof errorPayload?.current === 'number' ? errorPayload.current : undefined,
@@ -138,35 +146,101 @@ function getPatternSummary(record: WorkshopProjectRecord) {
   };
 }
 
+function createRemotePayloadJson(record: WorkshopProjectRecord, coverUrl: string | null) {
+  const payloadJson: Record<string, unknown> = {
+    ...record,
+    coverUrl: undefined,
+    previewUrl: undefined,
+  };
+
+  if (record.uploadedImage?.dataUrl && record.uploadedImage.dataUrl === coverUrl) {
+    const { dataUrl: _dataUrl, ...uploadedImageMetadata } = record.uploadedImage;
+    payloadJson.uploadedImage = uploadedImageMetadata;
+  }
+
+  return payloadJson;
+}
+
 function toRemotePayload(record: WorkshopProjectRecord) {
   const summary = getPatternSummary(record);
+  const coverUrl = record.coverUrl ?? record.uploadedImage?.dataUrl ?? null;
+  const previewUrl = record.previewUrl ?? null;
   return {
     clientProjectId: record.projectId,
     title: record.title,
     status: record.status,
     sourceType: record.sourceType,
     sourceItemId: record.sourceItemId ?? null,
-    coverUrl: record.coverUrl ?? record.uploadedImage?.dataUrl ?? null,
-    previewUrl: record.previewUrl ?? null,
+    coverUrl,
+    previewUrl,
     ...summary,
-    payloadJson: record,
+    payloadJson: createRemotePayloadJson(record, coverUrl),
     lastOpenedAt: record.lastOpenedAt ?? null,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
 }
 
+type RemoteProjectPayload = ReturnType<typeof toRemotePayload>;
+
+function getUtf8ByteLength(value: string) {
+  if (typeof TextEncoder === 'undefined') return value.length;
+  return new TextEncoder().encode(value).length;
+}
+
+function createProjectSyncBatches(payloads: RemoteProjectPayload[]) {
+  const batches: RemoteProjectPayload[][] = [];
+  const emptyBodyBytes = getUtf8ByteLength(JSON.stringify({ items: [] }));
+  let currentBatch: RemoteProjectPayload[] = [];
+  let currentBytes = emptyBodyBytes;
+
+  for (const payload of payloads) {
+    const itemBytes = getUtf8ByteLength(JSON.stringify(payload));
+    const separatorBytes = currentBatch.length ? 1 : 0;
+    const nextBytes = currentBytes + separatorBytes + itemBytes;
+
+    if (
+      currentBatch.length > 0
+      && (currentBatch.length >= PROJECT_SYNC_MAX_ITEMS_PER_BATCH || nextBytes > PROJECT_SYNC_MAX_BATCH_BYTES)
+    ) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentBytes = emptyBodyBytes;
+    }
+
+    currentBytes += (currentBatch.length ? 1 : 0) + itemBytes;
+    currentBatch.push(payload);
+  }
+
+  if (currentBatch.length) batches.push(currentBatch);
+  return batches;
+}
+
+function restoreRemoteUploadedImage(payload: Record<string, unknown>, coverUrl: string | null) {
+  const uploadedImage = payload.uploadedImage;
+  if (!isPlainObject(uploadedImage)) return null;
+  if (typeof uploadedImage.dataUrl === 'string' && uploadedImage.dataUrl) return uploadedImage;
+  if (!coverUrl?.startsWith('data:image/')) return uploadedImage;
+  return {
+    ...uploadedImage,
+    dataUrl: coverUrl,
+  };
+}
+
 function fromRemoteItem(item: RemoteProjectItem): WorkshopProjectRecord {
   const payload = isPlainObject(item.payloadJson) ? item.payloadJson : {};
+  const coverUrl = item.coverUrl ?? (payload.coverUrl as string | null | undefined) ?? null;
+  const previewUrl = item.previewUrl ?? (payload.previewUrl as string | null | undefined) ?? null;
   return {
     ...payload,
+    uploadedImage: restoreRemoteUploadedImage(payload, coverUrl),
     projectId: item.clientProjectId || String(payload.projectId ?? item.id),
     title: item.title || String(payload.title ?? '未命名作品'),
     status: item.status || (payload.status as WorkshopProjectRecord['status']) || 'editing',
     sourceType: item.sourceType || (payload.sourceType as WorkshopProjectRecord['sourceType']) || 'blank',
     sourceItemId: item.sourceItemId ?? (payload.sourceItemId as string | null | undefined) ?? null,
-    coverUrl: item.coverUrl ?? (payload.coverUrl as string | null | undefined) ?? null,
-    previewUrl: item.previewUrl ?? (payload.previewUrl as string | null | undefined) ?? null,
+    coverUrl,
+    previewUrl,
     lastOpenedAt: toNullableDate(item.lastOpenedAt) ?? (payload.lastOpenedAt as string | null | undefined) ?? null,
     createdAt: item.createdAt || String(payload.createdAt ?? new Date().toISOString()),
     updatedAt: item.updatedAt || String(payload.updatedAt ?? new Date().toISOString()),
@@ -198,16 +272,41 @@ export async function deleteRemoteWorkshopProject(projectId: string) {
   });
 }
 
-export async function syncRemoteWorkshopProjects(records: WorkshopProjectRecord[]) {
-  const response = await requestProject<ProjectSyncResponse>('/api/projects/sync', {
+async function syncRemoteProjectPayloads(payloads: RemoteProjectPayload[]) {
+  return requestProject<ProjectSyncResponse>('/api/projects/sync', {
     method: 'POST',
-    body: JSON.stringify({
-      items: records.map(toRemotePayload),
-    }),
+    body: JSON.stringify({ items: payloads }),
   });
+}
+
+export async function syncRemoteWorkshopProjects(records: WorkshopProjectRecord[], options: ProjectSyncOptions = {}) {
+  const payloads = records.map(toRemotePayload);
+  const batches = payloads.length ? createProjectSyncBatches(payloads) : [[]];
+  const stats = { created: 0, updated: 0, conflicted: 0 };
+  const conflicts: ProjectSyncResponse['conflicts'] = [];
+  let response: ProjectSyncResponse | null = null;
+  let synced = 0;
+
+  for (let index = 0; index < batches.length; index += 1) {
+    const batch = batches[index];
+    response = await syncRemoteProjectPayloads(batch);
+    stats.created += response.stats.created;
+    stats.updated += response.stats.updated;
+    stats.conflicted += response.stats.conflicted;
+    conflicts.push(...response.conflicts);
+    synced += batch.length;
+    options.onProgress?.({
+      synced,
+      total: payloads.length,
+      batchIndex: index + 1,
+      batchCount: batches.length,
+    });
+  }
 
   return {
-    ...response,
-    items: response.items.map(fromRemoteItem),
+    ...response!,
+    stats,
+    conflicts,
+    items: response!.items.map(fromRemoteItem),
   };
 }

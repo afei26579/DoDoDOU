@@ -68,6 +68,7 @@ model User {
   galleryFavorites GalleryFavorite[]
   subscriptions    Subscription[]
   usageEvents      UsageEvent[]
+  adminAuditLogs   AdminAuditLog[]    @relation("AdminAuditActor")
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 }
@@ -113,6 +114,7 @@ model Session {
   id        String   @id @default(cuid())
   userId    String
   tokenHash String   @unique
+  scope     String   @default("user")
   userAgent String?
   ipAddress String?
   expiresAt DateTime
@@ -121,7 +123,31 @@ model Session {
   updatedAt DateTime @updatedAt
 
   @@index([userId])
+  @@index([scope, expiresAt])
   @@index([expiresAt])
+}
+
+model AdminAuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String?
+  actorEmail   String?
+  action       String
+  resourceType String
+  resourceId   String?
+  outcome      String   @default("success")
+  requestId    String?
+  ipAddress    String?
+  userAgent    String?
+  beforeJson   Json?
+  afterJson    Json?
+  metadataJson Json?
+  actor        User?    @relation("AdminAuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now())
+
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
 }
 
 model OAuthAccount {

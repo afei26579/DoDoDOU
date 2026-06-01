@@ -2,6 +2,7 @@ import express from 'express';
 import { createHash, randomBytes, randomInt, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { Resend } from 'resend';
+import { ensureInternalBetaProEntitlement } from './entitlements.mjs';
 
 const scrypt = promisify(scryptCallback);
 const emailVerificationCodes = new Map();
@@ -35,6 +36,8 @@ function readAuthConfig() {
     cookieName: process.env.AUTH_COOKIE_NAME?.trim() || 'dodoudou_session',
     sessionDays: parseInteger(process.env.AUTH_SESSION_DAYS, 30, { min: 1, max: 365 }),
     cookieSecure: parseBoolean(process.env.AUTH_COOKIE_SECURE, process.env.NODE_ENV === 'production'),
+    adminCookieName: process.env.ADMIN_AUTH_COOKIE_NAME?.trim() || 'dodoudou_admin_session',
+    adminSessionHours: parseInteger(process.env.ADMIN_AUTH_SESSION_HOURS, 8, { min: 1, max: 72 }),
     passwordMinLength: parseInteger(process.env.AUTH_PASSWORD_MIN_LENGTH, 6, { min: 6, max: 128 }),
     usernameMinLength: parseInteger(process.env.AUTH_USERNAME_MIN_LENGTH, 8, { min: 8, max: 32 }),
     usernameMaxLength: parseInteger(process.env.AUTH_USERNAME_MAX_LENGTH, 32, { min: 8, max: 64 }),
@@ -437,7 +440,7 @@ async function sendEmailVerificationCode(email, code, purpose) {
   }));
 }
 
-function mapSafeUser(user) {
+export function mapSafeUser(user) {
   if (!user) return null;
   return {
     id: user.id,
@@ -494,9 +497,30 @@ function parseCookies(req) {
   );
 }
 
-function getSessionToken(req) {
+function getSessionToken(req, cookieName = authConfig.cookieName) {
   const cookies = parseCookies(req);
-  return cookies[authConfig.cookieName] || '';
+  return cookies[cookieName] || '';
+}
+
+export async function authenticatePasswordUser(prisma, { account, password }) {
+  const identity = normalizeIdentity(account);
+  const normalizedPassword = typeof password === 'string' ? password : '';
+
+  if (!identity.ok || !normalizedPassword) {
+    return { ok: false, status: 400, message: 'Account or password is incorrect', user: null };
+  }
+
+  const user = await findUserByIdentity(prisma, identity);
+  const verified = user ? await verifyPassword(normalizedPassword, user.passwordHash) : false;
+  if (!user || !verified) {
+    return { ok: false, status: 401, message: 'Account or password is incorrect', user: user ?? null };
+  }
+
+  if (user.status !== 'active') {
+    return { ok: false, status: 403, message: 'Account is not available', user };
+  }
+
+  return { ok: true, user };
 }
 
 function getBearerToken(req) {
@@ -505,9 +529,9 @@ function getBearerToken(req) {
   return match ? match[1].trim() : '';
 }
 
-function getCookieOptions({ maxAgeSeconds }) {
+function getCookieOptions({ maxAgeSeconds, cookieName = authConfig.cookieName }) {
   const parts = [
-    `${authConfig.cookieName}=`,
+    `${cookieName}=`,
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
@@ -517,33 +541,33 @@ function getCookieOptions({ maxAgeSeconds }) {
   return parts;
 }
 
-function setSessionCookie(res, token) {
-  const maxAgeSeconds = authConfig.sessionDays * 24 * 60 * 60;
-  const parts = getCookieOptions({ maxAgeSeconds });
-  parts[0] = `${authConfig.cookieName}=${encodeURIComponent(token)}`;
+function setSessionCookie(res, token, { cookieName = authConfig.cookieName, maxAgeSeconds = authConfig.sessionDays * 24 * 60 * 60 } = {}) {
+  const parts = getCookieOptions({ cookieName, maxAgeSeconds });
+  parts[0] = `${cookieName}=${encodeURIComponent(token)}`;
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 
-function clearSessionCookie(res) {
-  res.setHeader('Set-Cookie', getCookieOptions({ maxAgeSeconds: 0 }).join('; '));
+function clearSessionCookie(res, { cookieName = authConfig.cookieName } = {}) {
+  res.setHeader('Set-Cookie', getCookieOptions({ cookieName, maxAgeSeconds: 0 }).join('; '));
 }
 
-async function createSession(prisma, req, userId) {
+async function createSession(prisma, req, userId, { scope = 'user', expiresAt } = {}) {
   const token = randomBytes(32).toString('base64url');
-  const expiresAt = new Date(Date.now() + authConfig.sessionDays * 24 * 60 * 60 * 1000);
+  const sessionExpiresAt = expiresAt ?? new Date(Date.now() + authConfig.sessionDays * 24 * 60 * 60 * 1000);
   await prisma.session.create({
     data: {
       userId,
       tokenHash: hashSessionToken(token),
+      scope,
       userAgent: req.get('User-Agent')?.slice(0, 500) || null,
       ipAddress: req.ip || null,
-      expiresAt,
+      expiresAt: sessionExpiresAt,
     },
   });
   return token;
 }
 
-async function findSessionUser(prisma, token) {
+async function findSession(prisma, token, { scope = 'user' } = {}) {
   if (!token) return null;
 
   const session = await prisma.session.findUnique({
@@ -552,19 +576,51 @@ async function findSessionUser(prisma, token) {
   });
 
   if (!session) return null;
+  if (session.scope !== scope) return null;
   if (session.expiresAt <= new Date()) {
     await prisma.session.delete({ where: { id: session.id } }).catch(() => undefined);
     return null;
   }
 
   if (session.user.status !== 'active') return null;
+  return session;
+}
+
+async function findSessionUser(prisma, token, { scope = 'user', role } = {}) {
+  const session = await findSession(prisma, token, { scope });
+  if (!session) return null;
+  if (role && session.user.role !== role) return null;
   return session.user;
 }
 
 export async function resolveAuthUser(prisma, req) {
-  const bearerUser = await findSessionUser(prisma, getBearerToken(req));
+  const bearerUser = await findSessionUser(prisma, getBearerToken(req), { scope: 'user' });
   if (bearerUser) return bearerUser;
-  return findSessionUser(prisma, getSessionToken(req));
+  return findSessionUser(prisma, getSessionToken(req), { scope: 'user' });
+}
+
+export async function resolveAdminAuthSession(prisma, req) {
+  const session = await findSession(prisma, getSessionToken(req, authConfig.adminCookieName), { scope: 'admin' });
+  if (!session || session.user.role !== 'admin') return null;
+  return session;
+}
+
+export async function createAdminSession(prisma, req, userId) {
+  return createSession(prisma, req, userId, {
+    scope: 'admin',
+    expiresAt: new Date(Date.now() + authConfig.adminSessionHours * 60 * 60 * 1000),
+  });
+}
+
+export function setAdminSessionCookie(res, token) {
+  setSessionCookie(res, token, {
+    cookieName: authConfig.adminCookieName,
+    maxAgeSeconds: authConfig.adminSessionHours * 60 * 60,
+  });
+}
+
+export function clearAdminSessionCookie(res) {
+  clearSessionCookie(res, { cookieName: authConfig.adminCookieName });
 }
 
 export function optionalAuth(prisma) {
@@ -732,6 +788,7 @@ export function createAuthRouter(prisma) {
           passwordHash: await hashPassword(password),
         },
       });
+      await ensureInternalBetaProEntitlement(prisma, user);
       const token = await createSession(prisma, req, user.id);
       setSessionCookie(res, token);
       res.status(201).json({ user: mapSafeUser(user) });
@@ -878,6 +935,7 @@ export function createAuthRouter(prisma) {
         });
       }
 
+      await ensureInternalBetaProEntitlement(prisma, user);
       const token = await createSession(prisma, req, user.id);
       res.json({
         token,
@@ -907,6 +965,7 @@ export function createAuthRouter(prisma) {
         return res.status(403).json({ message: '账号当前不可用', requestId: req.id });
       }
 
+      await ensureInternalBetaProEntitlement(prisma, user);
       const token = await createSession(prisma, req, user.id);
       setSessionCookie(res, token);
       res.json({ user: mapSafeUser(user) });
@@ -969,5 +1028,21 @@ async function exchangeWechatLoginCode(code) {
   return {
     openid: `dev_${createHash('sha256').update(code).digest('hex').slice(0, 32)}`,
     unionid: null,
+  };
+}
+
+export function requireAdminAuth(prisma) {
+  return async (req, res, next) => {
+    try {
+      const session = await resolveAdminAuthSession(prisma, req);
+      if (!session) {
+        return res.status(401).json({ message: 'Admin authentication required', requestId: req.id });
+      }
+      req.user = session.user;
+      req.authSession = session;
+      next();
+    } catch (error) {
+      next(error);
+    }
   };
 }

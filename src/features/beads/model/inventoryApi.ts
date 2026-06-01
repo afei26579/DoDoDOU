@@ -1,3 +1,4 @@
+import { getApiErrorMessage, type ApiErrorPayload } from '../../../lib/api/errorMessage';
 import type { BeadInventoryItem, SaveBeadInventoryItemInput } from './inventoryStore';
 
 function resolveApiBaseUrl() {
@@ -50,9 +51,9 @@ async function requestInventory<T>(path: string, init?: RequestInit): Promise<T>
     },
   });
 
-  const payload = await response.json().catch(() => null) as { message?: string } | null;
+  const payload = await response.json().catch(() => null) as ApiErrorPayload | null;
   if (!response.ok) {
-    throw new InventoryApiError(payload?.message || `Request failed: ${response.status}`, response.status);
+    throw new InventoryApiError(getApiErrorMessage(payload, response.status), response.status);
   }
 
   return payload as T;
