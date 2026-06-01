@@ -16,6 +16,7 @@ import { WorkshopShell } from '../pages/workshop/WorkshopShell';
 import { defaultCropTransform, defaultWorkshopConfig, defaultWorkshopFlowState } from '../features/workshop/model/defaults';
 import { createWorkshopProject } from '../features/workshop/model/projectStore';
 import { ADMIN_ENTRY_PATH } from '../features/admin/model/adminConfig';
+import { getImageDimensions, type ImageUploadPayload } from '../lib/imageFile';
 import type { WorkshopFlowState } from '../features/workshop/model/types';
 
 const routeToTab: Partial<Record<string, NavItemId>> = {
@@ -71,13 +72,10 @@ export function App() {
     normalizedPath.startsWith('/workshop/editor') ||
     normalizedPath === '/collection/detail';
 
-  const handleUploadToWorkshop = async (image: { name: string; type: string; size: number; dataUrl: string }) => {
-    const dimensions = await new Promise<{ width: number; height: number }>((resolve, reject) => {
-      const previewImage = new Image();
-      previewImage.onload = () => resolve({ width: previewImage.naturalWidth || previewImage.width, height: previewImage.naturalHeight || previewImage.height });
-      previewImage.onerror = () => reject(new Error('图片加载失败'));
-      previewImage.src = image.dataUrl;
-    });
+  const handleUploadToWorkshop = async (image: ImageUploadPayload) => {
+    const dimensions = image.width && image.height
+      ? { width: image.width, height: image.height }
+      : await getImageDimensions(image.dataUrl);
 
     const projectId = createProjectId();
     await createWorkshopProject(projectId, {

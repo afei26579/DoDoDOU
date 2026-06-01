@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { defaultCropTransform, defaultWorkshopConfig } from '../../features/workshop/model/defaults';
 import { deleteWorkshopDraft } from '../../features/workshop/model/draftStore';
 import { createWorkshopProject, markWorkshopProjectOpened, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import type { PatternResult } from '../../features/workshop/model/types';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
+import { readUploadedImageFile, waitForLoadingPaint } from '../../lib/imageFile';
 import { cropPatternToEffectiveBounds } from '../../lib/pattern/effectiveCrop';
 import { generatePatternFromImage } from '../../lib/pattern/generator';
 import { removePatternBackground } from '../../lib/pattern/remove-background';
+import { LoadingOverlay } from '../../shared/ui/LoadingOverlay';
 import { WorkshopPage } from './WorkshopPage';
 import { GalleryPublishSheet } from './components/GalleryPublishSheet';
 
@@ -52,6 +54,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const { state, actions, isHydrating } = useWorkshopFlow(projectId ?? null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   useEffect(() => {
     if (!projectId) return;
@@ -193,44 +196,38 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
   };
 
   const handleUploadSelected = async (file: File) => {
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result ?? ''));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
+    setIsUploadingImage(true);
+    try {
+      await waitForLoadingPaint();
+      const uploadedImage = await readUploadedImageFile(file);
+      const nextProjectId = createProjectId();
 
-    const imageSize = await new Promise<{ width: number; height: number }>((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve({ width: image.naturalWidth || image.width, height: image.naturalHeight || image.height });
-      image.onerror = () => reject(new Error('图片加载失败'));
-      image.src = dataUrl;
-    });
+      await createWorkshopProject(nextProjectId, {
+        title: file.name.replace(/\.[^.]+$/, '') || '未命名作品',
+        uploadedImage,
+        cropTransform: defaultCropTransform,
+        config: defaultWorkshopConfig,
+        patternResult: null,
+        viewMode: 'image',
+        kind: 'upload',
+        status: 'editing',
+        beadingState: 'idle',
+        sourceType: 'upload',
+        sourceItemId: null,
+        lastOpenedAt: new Date().toISOString(),
+      });
 
-    const nextProjectId = createProjectId();
-    await createWorkshopProject(nextProjectId, {
-      title: file.name.replace(/\.[^.]+$/, '') || '未命名作品',
-      uploadedImage: {
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        dataUrl,
-        width: imageSize.width,
-        height: imageSize.height,
-      },
-      cropTransform: defaultCropTransform,
-      config: defaultWorkshopConfig,
-      patternResult: null,
-      viewMode: 'image',
-      kind: 'upload',
-      status: 'editing',
-      beadingState: 'idle',
-      sourceType: 'upload',
-      sourceItemId: null,
-      lastOpenedAt: new Date().toISOString(),
-    });
+      navigate(`/workshop/create/${nextProjectId}`);
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
-    navigate(`/workshop/create/${nextProjectId}`);
+  const handleUploadInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    await handleUploadSelected(file);
   };
 
   return (
@@ -240,12 +237,12 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         hidden
         type="file"
         accept="image/*"
-        onChange={async (event) => {
-          const file = event.target.files?.[0];
-          event.target.value = '';
-          if (!file) return;
-          await handleUploadSelected(file);
-        }}
+        onChange={handleUploadInputChange}
+      />
+      <LoadingOverlay
+        open={isUploadingImage}
+        title="正在上传图片"
+        message="正在读取大图并创建新项目..."
       />
       <WorkshopPage
         flowState={state}

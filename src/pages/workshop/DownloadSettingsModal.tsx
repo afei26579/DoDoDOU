@@ -3,7 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { createLoginRedirectPath } from '../../features/auth/model/redirect';
 import { useCapability } from '../../features/subscription/model/EntitlementProvider';
 import type { ColorSystem, PatternResult } from '../../features/workshop/model/types';
+import { waitForLoadingPaint } from '../../lib/imageFile';
 import { DEFAULT_DOWNLOAD_AUTHOR_NAME, downloadPatternImage, type DownloadPatternOptions } from '../../lib/pattern/download';
+import { LoadingOverlay } from '../../shared/ui/LoadingOverlay';
 
 type DownloadSettingsModalProps = {
   open: boolean;
@@ -47,14 +49,18 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
     setPatternName(defaultPatternName);
     setHighDefinition(false);
     setEntitlementMessage('');
+  }, [defaultPatternName, open]);
+
+  useEffect(() => {
+    if (!open) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape' && !isDownloading) onClose();
     };
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [defaultPatternName, open, onClose]);
+  }, [isDownloading, open, onClose]);
 
   useEffect(() => {
     if (!canExportHd && highDefinition) setHighDefinition(false);
@@ -102,6 +108,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
 
     setIsDownloading(true);
     try {
+      await waitForLoadingPaint();
       const downloadOptions: DownloadPatternOptions = {
         authorName: DEFAULT_DOWNLOAD_AUTHOR_NAME,
         patternName,
@@ -127,19 +134,26 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
   const showLoginAction = !canDownload && entitlementMessage === LOGIN_REQUIRED_MESSAGE;
 
   return (
-    <div className="download-modal__backdrop" role="presentation" onClick={onClose}>
+    <div
+      className="download-modal__backdrop"
+      role="presentation"
+      onClick={() => {
+        if (!isDownloading) onClose();
+      }}
+    >
       <section
         className="download-modal"
         role="dialog"
         aria-modal="true"
         aria-label="下载设置"
+        aria-busy={isDownloading}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="download-modal__handle" aria-hidden="true" />
 
         <header className="download-modal__header">
           <h3>下载设置</h3>
-          <button type="button" className="download-modal__close" aria-label="关闭" onClick={onClose}>
+          <button type="button" className="download-modal__close" aria-label="关闭" onClick={onClose} disabled={isDownloading}>
             ×
           </button>
         </header>
@@ -288,6 +302,12 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
         <button type="button" className="download-modal__action" onClick={handleDownload} disabled={!patternResult || isDownloading}>
           {isDownloading ? '生成中...' : '下载图纸'}
         </button>
+        <LoadingOverlay
+          open={isDownloading}
+          scope="modal"
+          title="正在生成图纸"
+          message="正在整理格子、色号和物料清单..."
+        />
       </section>
     </div>
   );

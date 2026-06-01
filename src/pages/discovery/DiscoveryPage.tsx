@@ -8,9 +8,11 @@ import {
   listWorkshopProjects,
   type WorkshopProjectCard,
 } from '../../features/workshop/model/projectStore';
+import { readUploadedImageFile, waitForLoadingPaint, type ImageUploadPayload } from '../../lib/imageFile';
+import { LoadingOverlay } from '../../shared/ui/LoadingOverlay';
 
 type DiscoveryPageProps = {
-  onUploadImage: (image: { name: string; type: string; size: number; dataUrl: string }) => void;
+  onUploadImage: (image: ImageUploadPayload) => void | Promise<void>;
   onOpenWorkshop: () => void;
   onCreateCanvas: () => void;
 };
@@ -99,6 +101,7 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
   const [isPaused, setIsPaused] = useState(false);
   const [inspirationItems, setInspirationItems] = useState<GalleryItemCard[]>([]);
   const [continueBeadingItems, setContinueBeadingItems] = useState<WorkshopProjectCard[]>([]);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const shouldLoopInspiration = inspirationItems.length > 1;
   const accountEntryLabel = getAccountEntryLabel(user);
   const accountEntryStyle = user ? { backgroundColor: getAccountEntryColor(user) } : undefined;
@@ -108,19 +111,14 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
     event.target.value = '';
     if (!file) return;
 
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result ?? ''));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(file);
-    });
-
-    onUploadImage({
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      dataUrl,
-    });
+    setIsUploadingImage(true);
+    try {
+      await waitForLoadingPaint();
+      const uploadedImage = await readUploadedImageFile(file);
+      await onUploadImage(uploadedImage);
+    } finally {
+      setIsUploadingImage(false);
+    }
   };
 
   useEffect(() => {
@@ -171,7 +169,13 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
   }, [isAuthenticated, status, user?.id]);
 
   return (
-    <main className="discovery-page">
+    <>
+      <LoadingOverlay
+        open={isUploadingImage}
+        title="正在上传图片"
+        message="正在读取大图并创建图纸项目..."
+      />
+      <main className="discovery-page">
       <section className="page-hero" aria-label="首页问候">
         <h2>今天想拼点什么？</h2>
         <button
@@ -325,6 +329,7 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
           </div>
         </div>
       </section>
-    </main>
+      </main>
+    </>
   );
 }

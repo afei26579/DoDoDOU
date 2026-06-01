@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { defaultCropTransform } from '../../features/workshop/model/defaults';
 import { createWorkshopProject, saveWorkshopProject } from '../../features/workshop/model/projectStore';
+import { readUploadedImageFile, waitForLoadingPaint } from '../../lib/imageFile';
+import { LoadingOverlay } from '../../shared/ui/LoadingOverlay';
 import { WorkshopPage } from './WorkshopPage';
 import type { WorkshopFlowState } from '../../features/workshop/model/types';
 import type { CropTransform } from '../../features/workshop/model/types';
@@ -35,6 +37,7 @@ export function WorkshopHomePage({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const [developmentNotice, setDevelopmentNotice] = useState('');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -71,6 +74,36 @@ export function WorkshopHomePage({
     showDevelopmentNotice();
   };
 
+  const handleFileInputChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setIsUploadingImage(true);
+    try {
+      await waitForLoadingPaint();
+      const uploadedImage = await readUploadedImageFile(file);
+      const nextProjectId = projectId ?? createProjectId();
+      const saveProject = projectId ? saveWorkshopProject : createWorkshopProject;
+
+      await saveProject(nextProjectId, {
+        uploadedImage,
+        cropTransform: defaultCropTransform,
+        config: flowState.config,
+        patternResult: null,
+        viewMode: 'image',
+        beadingState: 'idle',
+        sourceType: 'upload',
+        sourceItemId: null,
+      });
+
+      await onUploadImage();
+      navigate(`/workshop/create/${nextProjectId}`);
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
   return (
     <>
       <input
@@ -78,47 +111,12 @@ export function WorkshopHomePage({
         hidden
         type="file"
         accept="image/*"
-        onChange={async (event) => {
-          const file = event.target.files?.[0];
-          event.target.value = '';
-          if (!file) return;
-
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result ?? ''));
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(file);
-          });
-
-          const nextProjectId = projectId ?? createProjectId();
-          const imageSize = await new Promise<{ width: number; height: number }>((resolve, reject) => {
-            const previewImage = new Image();
-            previewImage.onload = () => resolve({ width: previewImage.naturalWidth || previewImage.width, height: previewImage.naturalHeight || previewImage.height });
-            previewImage.onerror = () => reject(new Error('图片加载失败'));
-            previewImage.src = dataUrl;
-          });
-
-          const saveProject = projectId ? saveWorkshopProject : createWorkshopProject;
-          await saveProject(nextProjectId, {
-            uploadedImage: {
-              name: file.name,
-              type: file.type,
-              size: file.size,
-              dataUrl,
-              ...imageSize,
-            },
-            cropTransform: defaultCropTransform,
-            config: flowState.config,
-            patternResult: null,
-            viewMode: 'image',
-            beadingState: 'idle',
-            sourceType: 'upload',
-            sourceItemId: null,
-          });
-
-          await onUploadImage();
-          navigate(`/workshop/create/${nextProjectId}`);
-        }}
+        onChange={handleFileInputChange}
+      />
+      <LoadingOverlay
+        open={isUploadingImage}
+        title="正在上传图片"
+        message="正在读取大图并准备裁剪画布..."
       />
       <WorkshopPage
         flowState={flowState}

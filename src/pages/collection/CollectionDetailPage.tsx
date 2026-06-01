@@ -6,7 +6,9 @@ import type { GalleryItemDetail } from '../../features/gallery/model/types';
 import { useCapability } from '../../features/subscription/model/EntitlementProvider';
 import { createWorkshopProject, findWorkshopProjectBySource, markWorkshopProjectOpened, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import type { PatternResult } from '../../features/workshop/model/types';
+import { waitForLoadingPaint } from '../../lib/imageFile';
 import { downloadPatternImage, renderDownloadPatternCanvas } from '../../lib/pattern/download';
+import { LoadingOverlay } from '../../shared/ui/LoadingOverlay';
 
 const GO_BACK_ICON = '/assets/system_icons/go_back.png';
 const LOGIN_REQUIRED_MESSAGE = '登录后可下载图纸';
@@ -53,6 +55,7 @@ export function CollectionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState('');
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -147,27 +150,33 @@ export function CollectionDetailPage() {
     return projectId;
   };
 
-  const handleDownload = () => {
-    if (!item || !patternResult) return;
+  const handleDownload = async () => {
+    if (!item || !patternResult || isDownloading) return;
     if (!canDownload) {
       setActionMessage(LOGIN_REQUIRED_MESSAGE);
       return;
     }
 
     setActionMessage('');
-    void downloadPatternImage({
-      authorName: item.author.name,
-      patternName: item.title,
-      showGrid: true,
-      gridGap: 10,
-      gridColor: '#b8ad9d',
-      showSymbol: true,
-      showSymbolStats: true,
-      addWatermark: !canRemoveWatermark,
-      highDefinition: canExportHd,
-      brand: item.pattern.config.brand,
-      patternResult,
-    });
+    setIsDownloading(true);
+    try {
+      await waitForLoadingPaint();
+      await downloadPatternImage({
+        authorName: item.author.name,
+        patternName: item.title,
+        showGrid: true,
+        gridGap: 10,
+        gridColor: '#b8ad9d',
+        showSymbol: true,
+        showSymbolStats: true,
+        addWatermark: !canRemoveWatermark,
+        highDefinition: canExportHd,
+        brand: item.pattern.config.brand,
+        patternResult,
+      });
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const handleEdit = async () => {
@@ -180,11 +189,16 @@ export function CollectionDetailPage() {
     if (projectId) navigate(`/workshop/focus/${projectId}`, { state: { returnTo: `/collection/${encodeURIComponent(item?.id ?? itemId ?? '')}` } });
   };
 
-  const isActionDisabled = !item || !patternResult || patternResult.cells.length === 0;
+  const isActionDisabled = !item || !patternResult || patternResult.cells.length === 0 || isDownloading;
   const showLoginAction = !canDownload && actionMessage === LOGIN_REQUIRED_MESSAGE;
 
   return (
-    <main className="gallery-detail-page">
+    <main className="gallery-detail-page" aria-busy={isDownloading}>
+      <LoadingOverlay
+        open={isDownloading}
+        title="正在生成图纸"
+        message="正在整理画册图纸，请稍等..."
+      />
       <header className="gallery-detail__topbar">
         <button type="button" className="gallery-detail__back" onClick={() => navigate('/collection')} aria-label="返回画册">
           <img src={GO_BACK_ICON} alt="" />
