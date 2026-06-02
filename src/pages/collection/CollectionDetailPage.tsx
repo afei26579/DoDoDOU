@@ -56,6 +56,7 @@ export function CollectionDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [navigationLoading, setNavigationLoading] = useState<null | 'editor' | 'focus'>(null);
 
   useEffect(() => {
     let alive = true;
@@ -180,24 +181,65 @@ export function CollectionDetailPage() {
   };
 
   const handleEdit = async () => {
-    const projectId = await saveAsWorkshopProject();
-    if (projectId) navigate(`/workshop/editor/${projectId}`);
+    if (isDownloading || navigationLoading) return;
+
+    let didNavigate = false;
+    setActionMessage('');
+    setNavigationLoading('editor');
+    try {
+      await waitForLoadingPaint();
+      const projectId = await saveAsWorkshopProject();
+      if (projectId) {
+        didNavigate = true;
+        navigate(`/workshop/editor/${projectId}`);
+      }
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : '进入编辑失败，请稍后再试');
+    } finally {
+      if (!didNavigate) setNavigationLoading(null);
+    }
   };
 
   const handleFocus = async () => {
-    const projectId = await saveAsWorkshopProject();
-    if (projectId) navigate(`/workshop/focus/${projectId}`, { state: { returnTo: `/collection/${encodeURIComponent(item?.id ?? itemId ?? '')}` } });
+    if (isDownloading || navigationLoading) return;
+
+    let didNavigate = false;
+    setActionMessage('');
+    setNavigationLoading('focus');
+    try {
+      await waitForLoadingPaint();
+      const projectId = await saveAsWorkshopProject();
+      if (projectId) {
+        didNavigate = true;
+        navigate(`/workshop/focus/${projectId}`, { state: { returnTo: `/collection/${encodeURIComponent(item?.id ?? itemId ?? '')}` } });
+      }
+    } catch (err) {
+      setActionMessage(err instanceof Error ? err.message : '进入拼豆失败，请稍后再试');
+    } finally {
+      if (!didNavigate) setNavigationLoading(null);
+    }
   };
 
-  const isActionDisabled = !item || !patternResult || patternResult.cells.length === 0 || isDownloading;
+  const isBusy = isDownloading || Boolean(navigationLoading);
+  const isActionDisabled = !item || !patternResult || patternResult.cells.length === 0 || isBusy;
   const showLoginAction = !canDownload && actionMessage === LOGIN_REQUIRED_MESSAGE;
+  const loadingTitle = isDownloading
+    ? '正在生成图纸'
+    : navigationLoading === 'editor'
+      ? '正在进入编辑'
+      : '正在进入拼豆';
+  const loadingMessage = isDownloading
+    ? '正在整理画册图纸，请稍等...'
+    : navigationLoading === 'editor'
+      ? '正在保存画册图纸并打开编辑器...'
+      : '正在保存画册图纸并打开拼豆画布...';
 
   return (
-    <main className="gallery-detail-page" aria-busy={isDownloading}>
+    <main className="gallery-detail-page" aria-busy={isBusy}>
       <LoadingOverlay
-        open={isDownloading}
-        title="正在生成图纸"
-        message="正在整理画册图纸，请稍等..."
+        open={isBusy}
+        title={loadingTitle}
+        message={loadingMessage}
       />
       <header className="gallery-detail__topbar">
         <button type="button" className="gallery-detail__back" onClick={() => navigate('/collection')} aria-label="返回画册">

@@ -13,6 +13,12 @@ type WorkshopGenerateButtonProps = {
   onOpenFocusMode?: () => void;
 };
 
+const RESULT_ACTION_ICONS = {
+  removeBackground: '/assets/pngs/remove_bg.png',
+  download: '/assets/pngs/download.png',
+  edit: '/assets/pngs/edit.png',
+} as const;
+
 export function WorkshopGenerateButton({
   mode,
   resultLayout = 'combined',
@@ -42,15 +48,21 @@ export function WorkshopGenerateButton({
       <div className="workshop-result-actions" aria-label="图纸操作">
         <div className="workshop-result-actions__grid">
           <button type="button" className="workshop-result-actions__tile workshop-result-actions__tile--mint" onClick={onRemoveBackground} disabled={isGenerating}>
-            <span className="workshop-result-actions__icon workshop-result-actions__icon--mint">✦</span>
+            <span className="workshop-result-actions__icon workshop-result-actions__icon--mint">
+              <img src={RESULT_ACTION_ICONS.removeBackground} alt="" />
+            </span>
             <span className="workshop-result-actions__label">一键去背景</span>
           </button>
           <button type="button" className="workshop-result-actions__tile workshop-result-actions__tile--lavender" onClick={onOpenDownloadSettings ?? onViewPattern} disabled={isGenerating}>
-            <span className="workshop-result-actions__icon workshop-result-actions__icon--lavender">↓</span>
+            <span className="workshop-result-actions__icon workshop-result-actions__icon--lavender">
+              <img src={RESULT_ACTION_ICONS.download} alt="" />
+            </span>
             <span className="workshop-result-actions__label">下载图纸</span>
           </button>
           <button type="button" className="workshop-result-actions__tile workshop-result-actions__tile--amber" onClick={onManualEditNavigate ?? onOpenEditor} disabled={isGenerating}>
-            <span className="workshop-result-actions__icon workshop-result-actions__icon--amber">✎</span>
+            <span className="workshop-result-actions__icon workshop-result-actions__icon--amber">
+              <img src={RESULT_ACTION_ICONS.edit} alt="" />
+            </span>
             <span className="workshop-result-actions__label">手动编辑</span>
           </button>
         </div>

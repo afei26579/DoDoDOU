@@ -25,6 +25,7 @@ import { FocusRulers } from './FocusRulers';
 import { FocusSettingsSheet } from './FocusSettingsSheet';
 import { FocusToolbar } from './FocusToolbar';
 import { FocusTopbar } from './FocusTopbar';
+import { LoadingOverlay } from '../../../shared/ui/LoadingOverlay';
 import {
   buildRulerData,
   clamp,
@@ -1497,7 +1498,12 @@ export function FocusModePage() {
   };
 
   return (
-    <main className={styles.page} aria-label="拼豆专注模式">
+    <main className={styles.page} aria-label="拼豆专注模式" aria-busy={isHydrating}>
+      <LoadingOverlay
+        open={isHydrating}
+        title="正在载入拼豆"
+        message="正在恢复图纸和拼豆进度，图纸较大时请稍候..."
+      />
       <div className={styles.canvasWrap}>
         <canvas
           ref={canvasRef}

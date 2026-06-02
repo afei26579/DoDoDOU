@@ -55,6 +55,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
   const noticeTimerRef = useRef<number | null>(null);
   const { state, actions, isHydrating } = useWorkshopFlow(projectId ?? null);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [navigationLoading, setNavigationLoading] = useState<null | 'editor' | 'focus'>(null);
 
   useEffect(() => {
     if (!projectId) return;
@@ -230,6 +231,31 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     await handleUploadSelected(file);
   };
 
+  const handleOpenEditor = async () => {
+    const nextProjectId = projectId ?? createProjectId();
+    setNavigationLoading('editor');
+    await waitForLoadingPaint();
+    navigate(`/workshop/editor/${nextProjectId}`);
+  };
+
+  const handleOpenFocusMode = async () => {
+    const nextProjectId = projectId ?? createProjectId();
+    setNavigationLoading('focus');
+    await waitForLoadingPaint();
+    navigate(`/workshop/focus/${nextProjectId}`, { state: { returnTo: `/workshop/result/${nextProjectId}` } });
+  };
+
+  const loadingTitle = isUploadingImage
+    ? '正在上传图片'
+    : navigationLoading === 'editor'
+      ? '正在进入编辑'
+      : '正在进入拼豆';
+  const loadingMessage = isUploadingImage
+    ? '正在读取大图并创建新项目...'
+    : navigationLoading === 'editor'
+      ? '正在载入图纸编辑器，请稍候...'
+      : '正在载入拼豆画布，请稍候...';
+
   return (
     <>
       <input
@@ -240,9 +266,9 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         onChange={handleUploadInputChange}
       />
       <LoadingOverlay
-        open={isUploadingImage}
-        title="正在上传图片"
-        message="正在读取大图并创建新项目..."
+        open={isUploadingImage || Boolean(navigationLoading)}
+        title={loadingTitle}
+        message={loadingMessage}
       />
       <WorkshopPage
         flowState={state}
@@ -266,11 +292,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
           fileInputRef.current?.click();
         }}
         onViewPattern={() => navigate(`/workshop/result/${projectId ?? createProjectId()}`)}
-        onOpenEditor={() => navigate(`/workshop/editor/${projectId ?? createProjectId()}`)}
-        onOpenFocusMode={() => {
-          const nextProjectId = projectId ?? createProjectId();
-          navigate(`/workshop/focus/${nextProjectId}`, { state: { returnTo: `/workshop/result/${nextProjectId}` } });
-        }}
+        onOpenEditor={handleOpenEditor}
+        onOpenFocusMode={handleOpenFocusMode}
         onOpenInventory={() => navigate('/workshop/inventory')}
         onPatternResultChange={actions.setPatternResult}
         onUploadToGallery={ENABLE_GALLERY_PUBLISH ? () => setIsPublishOpen(true) : undefined}

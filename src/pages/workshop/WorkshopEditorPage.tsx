@@ -11,9 +11,12 @@ import {
 } from '../../features/workshop/model/draftStore';
 import type { PatternResult, WorkshopEditorState, WorkshopConfig } from '../../features/workshop/model/types';
 import { defaultWorkshopConfig } from '../../features/workshop/model/defaults';
+import { waitForLoadingPaint } from '../../lib/imageFile';
 import { buildPalette, getVendorCode, hexToRgb, type PatternPaletteColor } from '../../lib/pattern/color-system';
 import { getBeadBrandLabel } from '../../lib/pattern/brand';
 import { ALL_PALETTE_GROUP, buildPaletteGroups, getPaletteGroupForCode } from '../../lib/pattern/palette-groups';
+import { removePatternBackground } from '../../lib/pattern/remove-background';
+import { LoadingOverlay } from '../../shared/ui/LoadingOverlay';
 import {
   createEmptyGrid,
   floodFill,
@@ -85,6 +88,8 @@ const ICONS = {
   fill: '/assets/pngs/06_paint_bucket_no_border.png',
   picker: '/assets/pngs/07_eyedropper_no_border.png',
   pan: '/assets/pngs/move_no_border.png',
+  removeBg: '/assets/pngs/remove_bg.png',
+  stroke: '/assets/pngs/Stroke.png',
 } as const;
 
 function DownloadIcon() {
@@ -215,6 +220,21 @@ function getDisplayVendorCodeForColor(hex: string, brand: WorkshopConfig['brand'
   return getNearestPaletteColor(hex, palette)?.vendorCode ?? '?';
 }
 
+function normalizeVendorCodeInput(value: string) {
+  return value.trim().toUpperCase();
+}
+
+function getPaletteColorKey(color: PatternPaletteColor) {
+  return `${normalizeVendorCodeInput(color.vendorCode)}:${color.hex}`;
+}
+
+function findPaletteColorByVendorCode(palette: PatternPaletteColor[], vendorCode: string) {
+  const normalizedCode = normalizeVendorCodeInput(vendorCode);
+  if (!normalizedCode) return null;
+
+  return palette.find((color) => normalizeVendorCodeInput(color.vendorCode) === normalizedCode) ?? null;
+}
+
 function getRelativeLuminance(hex: string) {
   const rgb = hexToRgb(hex);
   if (!rgb) return 1;
@@ -303,6 +323,113 @@ function resizeGridCanvas(grid: string[][], nextCols: number, nextRows: number) 
     const currentRow = grid[rowIndex] ?? [];
     return Array.from({ length: nextCols }, (_, colIndex) => currentRow[colIndex] ?? '');
   });
+}
+
+function isFilledGridCell(hex: string | undefined) {
+  return Boolean(hex && hex !== 'transparent');
+}
+
+function normalizeHexColorInput(value: string) {
+  const match = value.trim().match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
+  if (!match) return null;
+
+  const raw = match[1];
+  const expanded = raw.length === 3
+    ? raw.split('').map((char) => `${char}${char}`).join('')
+    : raw;
+
+  return `#${expanded.toUpperCase()}`;
+}
+
+function getPaletteColorForHex(hex: string, palette: PatternPaletteColor[]) {
+  const normalizedHex = normalizeHexColorInput(hex);
+  if (!normalizedHex) return null;
+
+  return palette.find((color) => color.hex === normalizedHex) ?? getNearestPaletteColor(normalizedHex, palette);
+}
+
+function findExteriorOutlineCells(grid: string[][]) {
+  const rowCount = grid.length;
+  const colCount = grid[0]?.length ?? 0;
+  const outlineCells: Array<{ row: number; col: number }> = [];
+  if (!rowCount || !colCount) return outlineCells;
+
+  const paddedRows = rowCount + 2;
+  const paddedCols = colCount + 2;
+  const keyOf = (row: number, col: number) => `${row},${col}`;
+  const directions = [
+    { row: -1, col: 0 },
+    { row: 1, col: 0 },
+    { row: 0, col: -1 },
+    { row: 0, col: 1 },
+  ];
+
+  const isPaddedFilled = (row: number, col: number) => {
+    if (row <= 0 || col <= 0 || row > rowCount || col > colCount) return false;
+    return isFilledGridCell(grid[row - 1]?.[col - 1]);
+  };
+
+  const exterior = new Set<string>();
+  const queue: Array<{ row: number; col: number }> = [{ row: 0, col: 0 }];
+  exterior.add(keyOf(0, 0));
+
+  for (let index = 0; index < queue.length; index += 1) {
+    const current = queue[index];
+    for (const direction of directions) {
+      const next = {
+        row: current.row + direction.row,
+        col: current.col + direction.col,
+      };
+      if (next.row < 0 || next.row >= paddedRows || next.col < 0 || next.col >= paddedCols) continue;
+      if (isPaddedFilled(next.row, next.col)) continue;
+
+      const key = keyOf(next.row, next.col);
+      if (exterior.has(key)) continue;
+      exterior.add(key);
+      queue.push(next);
+    }
+  }
+
+  for (let row = 0; row < rowCount; row += 1) {
+    for (let col = 0; col < colCount; col += 1) {
+      if (!isFilledGridCell(grid[row]?.[col])) continue;
+
+      const paddedRow = row + 1;
+      const paddedCol = col + 1;
+      const touchesExterior = directions.some((direction) => (
+        exterior.has(keyOf(paddedRow + direction.row, paddedCol + direction.col))
+      ));
+
+      if (touchesExterior) outlineCells.push({ row, col });
+    }
+  }
+
+  return outlineCells;
+}
+
+function getDominantExteriorOutlinePaletteColor(grid: string[][], palette: PatternPaletteColor[]) {
+  const outlineCells = findExteriorOutlineCells(grid);
+  const counts = new Map<string, { color: PatternPaletteColor; count: number }>();
+
+  for (const cell of outlineCells) {
+    const color = getPaletteColorForHex(grid[cell.row]?.[cell.col] ?? '', palette);
+    if (!color) continue;
+
+    const key = getPaletteColorKey(color);
+    const current = counts.get(key);
+    if (current) {
+      current.count += 1;
+    } else {
+      counts.set(key, { color, count: 1 });
+    }
+  }
+
+  let dominant: { color: PatternPaletteColor; count: number } | null = null;
+  for (const entry of counts.values()) {
+    if (!dominant || entry.count > dominant.count) dominant = entry;
+  }
+
+  return dominant?.color ?? null;
 }
 
 function cloneHistory(history: string[][][]) {
@@ -477,6 +604,10 @@ export function WorkshopEditorPage() {
   const [toast, setToast] = useState('');
   const [toolbarPos, setToolbarPos] = useState({ x: 0, y: 0 });
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [outlinePanelOpen, setOutlinePanelOpen] = useState(false);
+  const [outlineColor, setOutlineColor] = useState('#D8B4E2');
+  const [outlineColorCode, setOutlineColorCode] = useState('');
+  const [isPickingOutlineColor, setIsPickingOutlineColor] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [scale, setScale] = useState(1);
   const [renderScale, setRenderScale] = useState(1);
@@ -498,6 +629,7 @@ export function WorkshopEditorPage() {
   const pendingTouchActionRef = useRef<PendingTouchAction | null>(null);
   const touchZoomPointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const [projectReady, setProjectReady] = useState(false);
+  const [isOpeningFocusMode, setIsOpeningFocusMode] = useState(false);
   const [historyState, setHistoryState] = useState<HistoryState>({ index: 0, length: 1 });
   const [downloadModalOpen, setDownloadModalOpen] = useState(false);
   const [downloadBrand, setDownloadBrand] = useState<WorkshopConfig['brand']>(defaultWorkshopConfig.brand);
@@ -532,6 +664,26 @@ export function WorkshopEditorPage() {
       return getPaletteGroupForCode(editorBrand, color.vendorCode).key === activePaletteGroup;
     }),
     [activePaletteGroup, editorBrand, editorPalette],
+  );
+  const outlineSelectedColor = useMemo(() => {
+    const normalizedCode = normalizeVendorCodeInput(outlineColorCode);
+    const normalizedHex = normalizeHexColorInput(outlineColor);
+    const exactSelectedColor = normalizedHex
+      ? editorPalette.find((color) => (
+          color.hex === normalizedHex
+          && normalizeVendorCodeInput(color.vendorCode) === normalizedCode
+        ))
+      : null;
+
+    return exactSelectedColor ?? findPaletteColorByVendorCode(editorPalette, outlineColorCode);
+  }, [editorPalette, outlineColor, outlineColorCode]);
+  const outlineSelectedColorKey = useMemo(
+    () => (outlineSelectedColor ? getPaletteColorKey(outlineSelectedColor) : ''),
+    [outlineSelectedColor],
+  );
+  const outlineColorCodeTextStyle = useMemo(
+    () => getCurrentSwatchTextStyle(outlineSelectedColor?.hex ?? '#FFFFFF'),
+    [outlineSelectedColor],
   );
   const minimumCanvasSize = useMemo(() => {
     const contentSize = getMinimumCanvasSize(grid);
@@ -632,13 +784,19 @@ export function WorkshopEditorPage() {
   };
 
   const handleOpenFocusMode = async () => {
-    if (!projectId) return;
+    if (!projectId || isOpeningFocusMode) return;
 
+    let didNavigate = false;
+    setIsOpeningFocusMode(true);
     try {
+      await waitForLoadingPaint();
       await persistEditorSnapshot();
+      didNavigate = true;
       navigate(`/workshop/focus/${projectId}`, { state: { returnTo: `/workshop/editor/${projectId}` } });
     } catch {
       showToast('保存失败，请稍后再试');
+    } finally {
+      if (!didNavigate) setIsOpeningFocusMode(false);
     }
   };
 
@@ -748,6 +906,8 @@ export function WorkshopEditorPage() {
     let alive = true;
 
     async function loadProjectPattern() {
+      if (alive) setProjectReady(false);
+
       if (!projectId) {
         if (alive) setProjectReady(true);
         return;
@@ -959,6 +1119,19 @@ export function WorkshopEditorPage() {
   const applyColor = (hex: string) => {
     setCurrentColor(hex);
     setRecentColors((current) => [hex, ...current.filter((item) => item !== hex)].slice(0, 8));
+  };
+
+  const selectOutlinePaletteColor = (color: PatternPaletteColor) => {
+    setOutlineColor(color.hex);
+    setOutlineColorCode(color.vendorCode);
+  };
+
+  const updateOutlineColorCodeInput = (nextCode: string) => {
+    const normalizedCode = nextCode.toUpperCase();
+    setOutlineColorCode(normalizedCode);
+
+    const matchedColor = findPaletteColorByVendorCode(editorPalette, normalizedCode);
+    if (matchedColor) setOutlineColor(matchedColor.hex);
   };
 
   const clampScale = (nextScale: number) => Math.min(12, Math.max(0.2, +nextScale.toFixed(2)));
@@ -1437,6 +1610,35 @@ export function WorkshopEditorPage() {
       return;
     }
 
+    if (isPickingOutlineColor) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const cell = toCellPoint(event.clientX, event.clientY, canvasRef.current, cols, rows);
+      const picked = cell ? grid[cell.row]?.[cell.col] : null;
+
+      if (!isFilledGridCell(picked)) {
+        setOutlinePanelOpen(true);
+        setIsPickingOutlineColor(false);
+        showToast('请点击已有豆豆取色');
+        return;
+      }
+
+      const pickedColor = getPaletteColorForHex(picked, editorPalette);
+      if (!pickedColor) {
+        setOutlinePanelOpen(true);
+        setIsPickingOutlineColor(false);
+        showToast('这个颜色不在当前品牌色卡中');
+        return;
+      }
+
+      selectOutlinePaletteColor(pickedColor);
+      setOutlinePanelOpen(true);
+      setIsPickingOutlineColor(false);
+      showToast(`已取色 ${pickedColor.vendorCode}`);
+      return;
+    }
+
     if (event.pointerType === 'touch') {
       touchZoomPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
@@ -1711,6 +1913,71 @@ export function WorkshopEditorPage() {
     setClearConfirmOpen(true);
   };
 
+  const removeEditorBackground = () => {
+    const result = removePatternBackground(gridToPatternResult(grid, editorBrand));
+    if (!result || result.removedCount <= 0) {
+      showToast('未检测到可去除背景');
+      return;
+    }
+
+    commitGrid(buildGridFromPattern(result.newPatternResult));
+    setOutlinePanelOpen(false);
+    setIsPickingOutlineColor(false);
+    showToast(`完成，共去除${result.removedCount.toLocaleString()}颗，可撤回`);
+  };
+
+  const openOutlinePanel = () => {
+    const defaultColor =
+      getDominantExteriorOutlinePaletteColor(grid, editorPalette)
+      ?? getPaletteColorForHex(currentColor, editorPalette)
+      ?? editorPalette[0]
+      ?? null;
+
+    if (defaultColor) selectOutlinePaletteColor(defaultColor);
+    setOutlinePanelOpen(true);
+    setIsPickingOutlineColor(false);
+    showToast('选择描边色后开始描边');
+  };
+
+  const pickOutlineColorFromCanvas = () => {
+    setOutlinePanelOpen(false);
+    setIsPickingOutlineColor(true);
+    showToast('请点击图纸上的豆豆取色');
+  };
+
+  const applyOutlineColor = () => {
+    if (!outlineSelectedColor) {
+      showToast(`请输入 ${getBeadBrandLabel(editorBrand)} 的有效色号`);
+      return;
+    }
+
+    const outlineCells = findExteriorOutlineCells(grid);
+    if (!outlineCells.length) {
+      showToast('当前图纸没有可描边的豆豆');
+      return;
+    }
+
+    const nextGrid = cloneGrid(grid);
+    let changedCount = 0;
+    for (const cell of outlineCells) {
+      if (nextGrid[cell.row][cell.col] === outlineSelectedColor.hex) continue;
+      nextGrid[cell.row][cell.col] = outlineSelectedColor.hex;
+      changedCount += 1;
+    }
+
+    if (!changedCount) {
+      showToast('轮廓已经是这个颜色');
+      return;
+    }
+
+    commitGrid(nextGrid);
+    applyColor(outlineSelectedColor.hex);
+    selectOutlinePaletteColor(outlineSelectedColor);
+    setOutlinePanelOpen(false);
+    setIsPickingOutlineColor(false);
+    showToast(`已描边 ${changedCount} 颗豆豆`);
+  };
+
   const confirmClearCanvas = () => {
     setClearConfirmOpen(false);
     const clearedGrid = createEmptyGrid(cols, rows);
@@ -1782,7 +2049,13 @@ export function WorkshopEditorPage() {
   };
 
   return (
-    <main className={styles.page}>
+    <>
+      <LoadingOverlay
+        open={!projectReady || isOpeningFocusMode}
+        title={isOpeningFocusMode ? '正在进入拼豆' : '正在载入图纸'}
+        message={isOpeningFocusMode ? '正在保存当前编辑内容并打开拼豆画布...' : '正在恢复图纸数据，画布较大时请稍候...'}
+      />
+      <main className={styles.page} aria-busy={!projectReady || isOpeningFocusMode}>
       <header className={styles.titlebar}>
         <div className={styles.titlebarLeft}>
           <button
@@ -1900,7 +2173,126 @@ export function WorkshopEditorPage() {
           >
             <img src={ICONS.clear} alt="" />
           </button>
+          <button
+            type="button"
+            className={styles.canvasActionBtn}
+            onClick={removeEditorBackground}
+            disabled={!grid.length}
+            title="去背景"
+            aria-label="去背景"
+          >
+            <img src={ICONS.removeBg} alt="" />
+          </button>
+          <button
+            type="button"
+            className={styles.canvasActionBtn}
+            onClick={openOutlinePanel}
+            disabled={!grid.length}
+            title="描边"
+            aria-label="描边"
+          >
+            <img src={ICONS.stroke} alt="" />
+          </button>
         </div>
+
+        {outlinePanelOpen ? (
+          <section
+            className={styles.outlinePanel}
+            aria-label="描边设置"
+            onPointerDown={(event) => event.stopPropagation()}
+            onPointerMove={(event) => event.stopPropagation()}
+            onPointerUp={(event) => event.stopPropagation()}
+          >
+            <div className={styles.outlinePanelHeader}>
+              <div>
+                <p>描边</p>
+                <h3>选择轮廓颜色</h3>
+              </div>
+              <button
+                type="button"
+                className={styles.closeBtn}
+                aria-label="关闭描边设置"
+                onClick={() => {
+                  setOutlinePanelOpen(false);
+                  setIsPickingOutlineColor(false);
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <label className={styles.outlineField}>
+              <span>色号 · {getBeadBrandLabel(editorBrand)}</span>
+              <div className={styles.outlineInputRow}>
+                <span
+                  className={styles.outlinePreviewSwatch}
+                  style={{
+                    background: outlineSelectedColor?.hex ?? '#F5F0EA',
+                    ...outlineColorCodeTextStyle,
+                  }}
+                >
+                  {outlineSelectedColor?.vendorCode ?? '?'}
+                </span>
+                <input
+                  className={styles.outlineTextInput}
+                  value={outlineColorCode}
+                  placeholder="输入当前品牌色号"
+                  aria-label="手动输入描边色号"
+                  onChange={(event) => updateOutlineColorCodeInput(event.target.value)}
+                />
+              </div>
+            </label>
+
+            <div className={styles.outlinePaletteBody}>
+              <nav className={styles.outlinePaletteNav} aria-label="描边色号系列">
+                {paletteGroups.map((group) => (
+                  <button
+                    key={group.key}
+                    type="button"
+                    className={`${styles.paletteNavBtn} ${activePaletteGroup === group.key ? styles.paletteNavBtnActive : ''}`}
+                    onClick={() => setActivePaletteGroup(group.key)}
+                  >
+                    {group.label}
+                  </button>
+                ))}
+              </nav>
+              <div className={styles.outlinePaletteGrid}>
+                {visibleEditorPalette.map((color) => (
+                  <button
+                    key={`outline-${color.hex}-${color.vendorCode}`}
+                    type="button"
+                    className={`${styles.outlinePaletteSwatch} ${outlineSelectedColorKey === getPaletteColorKey(color) ? styles.outlinePaletteSwatchActive : ''}`}
+                    style={{ background: color.hex }}
+                    title={`${getBeadBrandLabel(editorBrand)} ${color.vendorCode}`}
+                    aria-label={`${getBeadBrandLabel(editorBrand)} ${color.vendorCode}`}
+                    onClick={() => {
+                      selectOutlinePaletteColor(color);
+                      setIsPickingOutlineColor(false);
+                    }}
+                  >
+                    <span>{color.vendorCode}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <p className={`${styles.outlineHint} ${isPickingOutlineColor ? styles.outlineHintActive : ''}`}>
+              可以手动输入当前品牌色号，也可以从图纸中取色。
+            </p>
+
+            <div className={styles.outlineActions}>
+              <button
+                type="button"
+                onClick={pickOutlineColorFromCanvas}
+              >
+                图纸取色
+              </button>
+              <button type="button" onClick={applyOutlineColor} disabled={!outlineSelectedColor}>
+                开始描边
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         <WorkshopPreviewPanel
           previewCanvasRef={previewCanvasRef}
@@ -2098,6 +2490,7 @@ export function WorkshopEditorPage() {
         onBeadShapeChange={setBeadShape}
         onBackgroundModeChange={setBackgroundMode}
       />
-    </main>
+      </main>
+    </>
   );
 }
