@@ -30,7 +30,7 @@ type FocusSettingsSheetProps = {
   onBoardLayoutChange: (patch: Partial<WorkshopBoardLayout>) => void;
 };
 
-const MAX_BOARD_SIDE = 200;
+const MAX_BOARD_SIDE = 300;
 type SettingHelpKey = 'direction' | 'strategy' | 'board' | 'handedness' | 'ruler' | 'guide';
 type DirectionPreset = 'horizontal' | 'vertical';
 

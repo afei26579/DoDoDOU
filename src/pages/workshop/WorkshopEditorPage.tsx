@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import styles from './WorkshopEditorPage.module.css';
 import { WorkshopPreviewPanel } from './components/WorkshopPreviewPanel';
@@ -29,7 +29,39 @@ import {
   type EditorBeadShape,
 } from './editor/WorkshopEditor.utils';
 
-type Tool = 'brush' | 'eraser' | 'fill' | 'picker' | 'pan';
+type Tool = 'brush' | 'eraser' | 'fill' | 'picker' | 'pan' | 'select';
+type EraserMode = 'brush' | 'area';
+type SelectionOperation = 'copy' | 'move';
+
+type SelectionRect = {
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+};
+
+type SelectionClipboard = {
+  rect: SelectionRect;
+  cells: string[][];
+};
+
+type SelectionGesture =
+  | {
+      kind: 'draw';
+      pointerId: number;
+      startCell: { row: number; col: number };
+      currentCell: { row: number; col: number };
+    }
+  | {
+      kind: 'place';
+      pointerId: number;
+      startCell: { row: number; col: number };
+      originRect: SelectionRect;
+      currentRect: SelectionRect;
+      sourceRect: SelectionRect;
+      cells: string[][];
+      operation: SelectionOperation;
+    };
 
 type DragState = {
   kind: 'paint' | 'pan' | 'toolbar';
@@ -72,10 +104,24 @@ type PaintSession = {
 
 type PendingTouchAction = {
   pointerId: number;
-  tool: Exclude<Tool, 'pan'>;
+  tool: Exclude<Tool, 'pan' | 'select'>;
   cell: { row: number; col: number };
   clientX: number;
   clientY: number;
+};
+
+type EditorRulerLabel = {
+  key: string;
+  value: number;
+  x: number;
+  y: number;
+  major: boolean;
+  current: boolean;
+};
+
+type EditorRulerData = {
+  columns: EditorRulerLabel[];
+  rows: EditorRulerLabel[];
 };
 
 const ICONS = {
@@ -123,6 +169,15 @@ function SettingsIcon() {
   );
 }
 
+function SelectionToolIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M5 5h14v14H5z" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 3v4M15 3v4M9 17v4M15 17v4M3 9h4M3 15h4M17 9h4M17 15h4" fill="none" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function EditTitleIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -132,11 +187,12 @@ function EditTitleIcon() {
   );
 }
 
-const TOOL_ITEMS: Array<{ id: Tool; label: string; icon?: string; iconSrc?: string }> = [
+const TOOL_ITEMS: Array<{ id: Tool; label: string; icon?: ReactNode; iconSrc?: string }> = [
   { id: 'brush', label: '画笔', iconSrc: ICONS.brush },
   { id: 'eraser', label: '橡皮', iconSrc: ICONS.eraser },
   { id: 'fill', label: '填充', iconSrc: ICONS.fill },
   { id: 'picker', label: '取色', iconSrc: ICONS.picker },
+  { id: 'select', label: '框选', icon: <SelectionToolIcon /> },
   { id: 'pan', label: '平移', iconSrc: ICONS.pan },
 ];
 
@@ -144,8 +200,145 @@ const DEFAULT_COLORS = ['#000000', '#FFFFFF', '#FF6600', '#FFDAC1', '#D8B4E2'];
 const HISTORY_LIMIT = 80;
 const SAVE_DEBOUNCE_MS = 800;
 const EDITOR_CANVAS_MAX_SIDE = 200;
+const EDITOR_RULER_HEIGHT = 30;
+const EDITOR_RULER_OVERSCAN = 40;
 const WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX = 'dodoudou:workshop-editor-local-draft:';
 const DEFAULT_UNTITLED_PROJECT_TITLE = '未命名作品';
+
+function getEditorRulerStep(cellPx: number) {
+  if (cellPx >= 24) return 1;
+  if (cellPx >= 15) return 2;
+  if (cellPx >= 9) return 5;
+  if (cellPx >= 5) return 10;
+  return 20;
+}
+
+function shouldShowEditorRulerLabel(index: number, step: number, currentIndex: number | null) {
+  return index === currentIndex || index === 0 || (index + 1) % step === 0;
+}
+
+function buildEditorRulerData(params: {
+  cols: number;
+  rows: number;
+  canvasLayout: { width: number; height: number };
+  viewport: { width: number; height: number };
+  offset: { x: number; y: number };
+  scale: number;
+  currentCell: { row: number; col: number } | null;
+}): EditorRulerData {
+  const { cols, rows, canvasLayout, viewport, offset, scale, currentCell } = params;
+  if (cols <= 0 || rows <= 0 || canvasLayout.width <= 0 || canvasLayout.height <= 0 || viewport.width <= 0 || viewport.height <= 0 || scale <= 0) {
+    return { columns: [], rows: [] };
+  }
+
+  const cellWidth = (canvasLayout.width / cols) * scale;
+  const cellHeight = (canvasLayout.height / rows) * scale;
+  if (cellWidth <= 0 || cellHeight <= 0) return { columns: [], rows: [] };
+
+  const step = getEditorRulerStep(Math.min(cellWidth, cellHeight));
+  const currentCol = currentCell?.col ?? null;
+  const currentRow = currentCell?.row ?? null;
+  const startCol = Math.max(0, Math.floor((-offset.x) / cellWidth) - 1);
+  const endCol = Math.min(cols - 1, Math.ceil((viewport.width - offset.x) / cellWidth) + 1);
+  const startRow = Math.max(0, Math.floor((EDITOR_RULER_HEIGHT - offset.y) / cellHeight) - 1);
+  const endRow = Math.min(rows - 1, Math.ceil((viewport.height - offset.y) / cellHeight) + 1);
+  const sideHeight = Math.max(0, viewport.height - EDITOR_RULER_HEIGHT);
+  const columns: EditorRulerLabel[] = [];
+  const rowsData: EditorRulerLabel[] = [];
+
+  for (let col = startCol; col <= endCol; col += 1) {
+    const screenX = offset.x + (col + 0.5) * cellWidth;
+    if (screenX < -EDITOR_RULER_OVERSCAN || screenX > viewport.width + EDITOR_RULER_OVERSCAN) continue;
+    const value = col + 1;
+    const current = currentCol === col;
+    if (!shouldShowEditorRulerLabel(col, step, currentCol)) continue;
+
+    columns.push({
+      key: `c-${col}`,
+      value,
+      x: screenX,
+      y: EDITOR_RULER_HEIGHT / 2,
+      major: value === 1 || value % 10 === 0,
+      current,
+    });
+  }
+
+  for (let row = startRow; row <= endRow; row += 1) {
+    const screenY = offset.y + (row + 0.5) * cellHeight;
+    const localY = screenY - EDITOR_RULER_HEIGHT;
+    if (localY < -EDITOR_RULER_OVERSCAN || localY > sideHeight + EDITOR_RULER_OVERSCAN) continue;
+    const value = row + 1;
+    const current = currentRow === row;
+    if (!shouldShowEditorRulerLabel(row, step, currentRow)) continue;
+
+    rowsData.push({
+      key: `r-${row}`,
+      value,
+      x: 17,
+      y: localY,
+      major: value === 1 || value % 10 === 0,
+      current,
+    });
+  }
+
+  return { columns, rows: rowsData };
+}
+
+function WorkshopEditorRulers({
+  data,
+  toolbarHeight,
+  visible,
+}: {
+  data: EditorRulerData;
+  toolbarHeight: number;
+  visible: boolean;
+}) {
+  if (!visible) return null;
+
+  return (
+    <section className={styles.rulerLayer} aria-label="editor coordinate ruler">
+      <div className={styles.topRuler}>
+        {data.columns.map((label) => (
+          <span
+            key={label.key}
+            className={`${styles.rulerTick} ${label.current ? styles.rulerCurrent : ''}`}
+            style={{ left: `${Math.round(label.x)}px` }}
+            aria-hidden="true"
+          />
+        ))}
+        {data.columns.map((label) => (
+          <span
+            key={`${label.key}-label`}
+            className={`${styles.rulerLabel} ${label.major ? styles.rulerMajor : ''} ${label.current ? styles.rulerCurrent : ''}`}
+            style={{ left: `${Math.round(label.x)}px`, top: `${Math.round(label.y)}px` }}
+          >
+            {label.value}
+          </span>
+        ))}
+      </div>
+
+      <div className={styles.sideRuler} style={{ bottom: `${Math.max(0, toolbarHeight + 32)}px` }}>
+        {data.rows.map((label) => (
+          <span
+            key={label.key}
+            className={`${styles.rulerTick} ${styles.sideTick} ${label.current ? styles.rulerCurrent : ''}`}
+            style={{ top: `${Math.round(label.y)}px` }}
+            aria-hidden="true"
+          />
+        ))}
+        {data.rows.map((label) => (
+          <span
+            key={`${label.key}-label`}
+            className={`${styles.rulerLabel} ${styles.sideLabel} ${label.major ? styles.rulerMajor : ''} ${label.current ? styles.rulerCurrent : ''}`}
+            style={{ left: `${Math.round(label.x)}px`, top: `${Math.round(label.y)}px` }}
+          >
+            {label.value}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function getLocalDraftKey(projectId: string) {
   return `${WORKSHOP_EDITOR_LOCAL_DRAFT_PREFIX}${projectId}`;
@@ -220,21 +413,6 @@ function getDisplayVendorCodeForColor(hex: string, brand: WorkshopConfig['brand'
   return getNearestPaletteColor(hex, palette)?.vendorCode ?? '?';
 }
 
-function normalizeVendorCodeInput(value: string) {
-  return value.trim().toUpperCase();
-}
-
-function getPaletteColorKey(color: PatternPaletteColor) {
-  return `${normalizeVendorCodeInput(color.vendorCode)}:${color.hex}`;
-}
-
-function findPaletteColorByVendorCode(palette: PatternPaletteColor[], vendorCode: string) {
-  const normalizedCode = normalizeVendorCodeInput(vendorCode);
-  if (!normalizedCode) return null;
-
-  return palette.find((color) => normalizeVendorCodeInput(color.vendorCode) === normalizedCode) ?? null;
-}
-
 function getRelativeLuminance(hex: string) {
   const rgb = hexToRgb(hex);
   if (!rgb) return 1;
@@ -301,6 +479,78 @@ function buildGridFromPattern(patternResult: PatternResult) {
 
 function cloneGrid(grid: string[][]) {
   return grid.map((row) => [...row]);
+}
+
+function normalizeSelectionRect(
+  startCell: { row: number; col: number },
+  endCell: { row: number; col: number },
+): SelectionRect {
+  return {
+    startRow: Math.min(startCell.row, endCell.row),
+    startCol: Math.min(startCell.col, endCell.col),
+    endRow: Math.max(startCell.row, endCell.row),
+    endCol: Math.max(startCell.col, endCell.col),
+  };
+}
+
+function getSelectionDimensions(rect: SelectionRect) {
+  return {
+    rows: rect.endRow - rect.startRow + 1,
+    cols: rect.endCol - rect.startCol + 1,
+  };
+}
+
+function isSameSelectionRect(a: SelectionRect, b: SelectionRect) {
+  return (
+    a.startRow === b.startRow
+    && a.startCol === b.startCol
+    && a.endRow === b.endRow
+    && a.endCol === b.endCol
+  );
+}
+
+function copyGridRect(grid: string[][], rect: SelectionRect) {
+  const dimensions = getSelectionDimensions(rect);
+
+  return Array.from({ length: dimensions.rows }, (_, rowOffset) => (
+    Array.from({ length: dimensions.cols }, (_, colOffset) => (
+      grid[rect.startRow + rowOffset]?.[rect.startCol + colOffset] ?? ''
+    ))
+  ));
+}
+
+function shiftSelectionRectWithinGrid(
+  rect: SelectionRect,
+  rowDelta: number,
+  colDelta: number,
+  rowCount: number,
+  colCount: number,
+) {
+  const dimensions = getSelectionDimensions(rect);
+  const nextStartRow = Math.max(0, Math.min(rowCount - dimensions.rows, rect.startRow + rowDelta));
+  const nextStartCol = Math.max(0, Math.min(colCount - dimensions.cols, rect.startCol + colDelta));
+
+  return {
+    startRow: nextStartRow,
+    startCol: nextStartCol,
+    endRow: nextStartRow + dimensions.rows - 1,
+    endCol: nextStartCol + dimensions.cols - 1,
+  };
+}
+
+function toClampedCellPoint(clientX: number, clientY: number, canvas: HTMLCanvasElement | null, cols: number, rows: number) {
+  if (!canvas || cols <= 0 || rows <= 0) return null;
+
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+
+  const x = Math.max(0, Math.min(rect.width - 0.01, clientX - rect.left));
+  const y = Math.max(0, Math.min(rect.height - 0.01, clientY - rect.top));
+
+  return {
+    row: Math.max(0, Math.min(rows - 1, Math.floor((y / rect.height) * rows))),
+    col: Math.max(0, Math.min(cols - 1, Math.floor((x / rect.width) * cols))),
+  };
 }
 
 function getMinimumCanvasSize(grid: string[][]) {
@@ -405,31 +655,6 @@ function findExteriorOutlineCells(grid: string[][]) {
   }
 
   return outlineCells;
-}
-
-function getDominantExteriorOutlinePaletteColor(grid: string[][], palette: PatternPaletteColor[]) {
-  const outlineCells = findExteriorOutlineCells(grid);
-  const counts = new Map<string, { color: PatternPaletteColor; count: number }>();
-
-  for (const cell of outlineCells) {
-    const color = getPaletteColorForHex(grid[cell.row]?.[cell.col] ?? '', palette);
-    if (!color) continue;
-
-    const key = getPaletteColorKey(color);
-    const current = counts.get(key);
-    if (current) {
-      current.count += 1;
-    } else {
-      counts.set(key, { color, count: 1 });
-    }
-  }
-
-  let dominant: { color: PatternPaletteColor; count: number } | null = null;
-  for (const entry of counts.values()) {
-    if (!dominant || entry.count > dominant.count) dominant = entry;
-  }
-
-  return dominant?.color ?? null;
 }
 
 function cloneHistory(history: string[][][]) {
@@ -598,20 +823,20 @@ export function WorkshopEditorPage() {
   const [tool, setTool] = useState<Tool>('pan');
   const [brushSize, setBrushSize] = useState(1);
   const [eraserSize, setEraserSize] = useState(1);
+  const [eraserMode, setEraserMode] = useState<EraserMode>('brush');
   const [currentColor, setCurrentColor] = useState('#D8B4E2');
   const [recentColors, setRecentColors] = useState(DEFAULT_COLORS);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [toolbarPos, setToolbarPos] = useState({ x: 0, y: 0 });
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
-  const [outlinePanelOpen, setOutlinePanelOpen] = useState(false);
-  const [outlineColor, setOutlineColor] = useState('#D8B4E2');
-  const [outlineColorCode, setOutlineColorCode] = useState('');
   const [isPickingOutlineColor, setIsPickingOutlineColor] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [scale, setScale] = useState(1);
   const [renderScale, setRenderScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [rulerTransform, setRulerTransform] = useState({ offset: { x: 0, y: 0 }, scale: 1 });
+  const [rulerCurrentCell, setRulerCurrentCell] = useState<{ row: number; col: number } | null>(null);
   const offsetRef = useRef(offset);
   const scaleRef = useRef(scale);
   const [projectTitle, setProjectTitle] = useState('');
@@ -635,6 +860,13 @@ export function WorkshopEditorPage() {
   const [downloadBrand, setDownloadBrand] = useState<WorkshopConfig['brand']>(defaultWorkshopConfig.brand);
   const [editorBrand, setEditorBrand] = useState<WorkshopConfig['brand']>(defaultWorkshopConfig.brand);
   const [activePaletteGroup, setActivePaletteGroup] = useState(ALL_PALETTE_GROUP);
+  const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
+  const [draftSelectionRect, setDraftSelectionRect] = useState<SelectionRect | null>(null);
+  const [selectionOperation, setSelectionOperation] = useState<SelectionOperation | null>(null);
+  const [selectionPreviewCells, setSelectionPreviewCells] = useState<string[][] | null>(null);
+  const selectionClipboardRef = useRef<SelectionClipboard | null>(null);
+  const selectionGestureRef = useRef<SelectionGesture | null>(null);
+  const selectionPreviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const currentRecentColors = makeRecentColors(currentColor, recentColors);
   const displayProjectTitle = useMemo(
@@ -664,26 +896,6 @@ export function WorkshopEditorPage() {
       return getPaletteGroupForCode(editorBrand, color.vendorCode).key === activePaletteGroup;
     }),
     [activePaletteGroup, editorBrand, editorPalette],
-  );
-  const outlineSelectedColor = useMemo(() => {
-    const normalizedCode = normalizeVendorCodeInput(outlineColorCode);
-    const normalizedHex = normalizeHexColorInput(outlineColor);
-    const exactSelectedColor = normalizedHex
-      ? editorPalette.find((color) => (
-          color.hex === normalizedHex
-          && normalizeVendorCodeInput(color.vendorCode) === normalizedCode
-        ))
-      : null;
-
-    return exactSelectedColor ?? findPaletteColorByVendorCode(editorPalette, outlineColorCode);
-  }, [editorPalette, outlineColor, outlineColorCode]);
-  const outlineSelectedColorKey = useMemo(
-    () => (outlineSelectedColor ? getPaletteColorKey(outlineSelectedColor) : ''),
-    [outlineSelectedColor],
-  );
-  const outlineColorCodeTextStyle = useMemo(
-    () => getCurrentSwatchTextStyle(outlineSelectedColor?.hex ?? '#FFFFFF'),
-    [outlineSelectedColor],
   );
   const minimumCanvasSize = useMemo(() => {
     const contentSize = getMinimumCanvasSize(grid);
@@ -802,6 +1014,14 @@ export function WorkshopEditorPage() {
 
   const isDownloadModalOpen = downloadModalOpen;
 
+  const syncRulerTransform = (nextOffset: { x: number; y: number }, nextScale: number) => {
+    setRulerTransform((current) => (
+      current.scale === nextScale && current.offset.x === nextOffset.x && current.offset.y === nextOffset.y
+        ? current
+        : { offset: { ...nextOffset }, scale: nextScale }
+    ));
+  };
+
   const writeCanvasTransform = (nextOffset = offsetRef.current, nextScale = scaleRef.current) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -822,6 +1042,7 @@ export function WorkshopEditorPage() {
       if (!pendingTransform) return;
       pendingTransformRef.current = null;
       writeCanvasTransform(pendingTransform.offset, pendingTransform.scale);
+      syncRulerTransform(pendingTransform.offset, pendingTransform.scale);
     });
   };
 
@@ -833,6 +1054,7 @@ export function WorkshopEditorPage() {
     offsetRef.current = offset;
     scaleRef.current = scale;
     writeCanvasTransform(offset, scale);
+    syncRulerTransform(offset, scale);
   }, [offset, scale]);
 
   useEffect(() => {
@@ -1054,6 +1276,30 @@ export function WorkshopEditorPage() {
     };
   }, []);
 
+  useEffect(() => {
+    const canvas = selectionPreviewCanvasRef.current;
+    if (!canvas || !selectionOperation || !selectionPreviewCells?.length) return;
+
+    const previewRows = selectionPreviewCells.length;
+    const previewCols = selectionPreviewCells[0]?.length ?? 0;
+    if (!previewRows || !previewCols) return;
+
+    canvas.width = previewCols;
+    canvas.height = previewRows;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, previewCols, previewRows);
+    selectionPreviewCells.forEach((row, rowIndex) => {
+      row.forEach((hex, colIndex) => {
+        if (!hex || hex === 'transparent') return;
+        ctx.fillStyle = hex;
+        ctx.fillRect(colIndex, rowIndex, 1, 1);
+      });
+    });
+  }, [selectionOperation, selectionPreviewCells]);
+
   const flushPersistedState = async (payload = pendingPersistRef.current) => {
     if (!payload || !projectId) return;
 
@@ -1121,17 +1367,43 @@ export function WorkshopEditorPage() {
     setRecentColors((current) => [hex, ...current.filter((item) => item !== hex)].slice(0, 8));
   };
 
-  const selectOutlinePaletteColor = (color: PatternPaletteColor) => {
-    setOutlineColor(color.hex);
-    setOutlineColorCode(color.vendorCode);
+  const clearActiveSelection = () => {
+    selectionGestureRef.current = null;
+    selectionClipboardRef.current = null;
+    setSelectionRect(null);
+    setDraftSelectionRect(null);
+    setSelectionOperation(null);
+    setSelectionPreviewCells(null);
   };
 
-  const updateOutlineColorCodeInput = (nextCode: string) => {
-    const normalizedCode = nextCode.toUpperCase();
-    setOutlineColorCode(normalizedCode);
+  const activateTool = (nextTool: Tool) => {
+    setTool(nextTool);
+    setIsPickingOutlineColor(false);
+    if (nextTool !== 'select') clearActiveSelection();
+  };
 
-    const matchedColor = findPaletteColorByVendorCode(editorPalette, normalizedCode);
-    if (matchedColor) setOutlineColor(matchedColor.hex);
+  const releasePointerCapture = (target: HTMLElement, pointerId: number) => {
+    try {
+      target.releasePointerCapture(pointerId);
+    } catch {
+      // Ignore release errors.
+    }
+  };
+
+  const capturePointer = (target: HTMLElement, pointerId: number) => {
+    try {
+      target.setPointerCapture(pointerId);
+    } catch {
+      // Ignore capture errors.
+    }
+  };
+
+  const updateRulerCurrentCell = (clientX: number, clientY: number) => {
+    const cell = toCellPoint(clientX, clientY, canvasRef.current, cols, rows);
+    setRulerCurrentCell((current) => (
+      current?.row === cell?.row && current?.col === cell?.col ? current : cell
+    ));
+    return cell;
   };
 
   const clampScale = (nextScale: number) => Math.min(12, Math.max(0.2, +nextScale.toFixed(2)));
@@ -1170,6 +1442,181 @@ export function WorkshopEditorPage() {
     applyZoom(scaleRef.current * factor, { clientX, clientY });
   };
 
+  const getClampedPointerCell = (clientX: number, clientY: number) => (
+    toClampedCellPoint(clientX, clientY, canvasRef.current, cols, rows)
+  );
+
+  const updateSelectionGesture = (pointerId: number, clientX: number, clientY: number) => {
+    const gesture = selectionGestureRef.current;
+    if (!gesture || gesture.pointerId !== pointerId) return false;
+
+    const cell = getClampedPointerCell(clientX, clientY);
+    if (!cell) return true;
+
+    if (gesture.kind === 'draw') {
+      gesture.currentCell = cell;
+      setDraftSelectionRect(normalizeSelectionRect(gesture.startCell, cell));
+      return true;
+    }
+
+    const rowDelta = cell.row - gesture.startCell.row;
+    const colDelta = cell.col - gesture.startCell.col;
+    const nextRect = shiftSelectionRectWithinGrid(gesture.originRect, rowDelta, colDelta, rows, cols);
+    gesture.currentRect = nextRect;
+    setSelectionRect((current) => (current && isSameSelectionRect(current, nextRect) ? current : nextRect));
+    return true;
+  };
+
+  const applySelectionPlacement = (
+    operation: SelectionOperation,
+    sourceRect: SelectionRect,
+    targetRect: SelectionRect,
+    cells: string[][],
+  ) => {
+    if (operation === 'move' && isSameSelectionRect(sourceRect, targetRect)) {
+      showToast('移动位置未变化');
+      return;
+    }
+
+    const nextGrid = cloneGrid(grid);
+    let changed = false;
+    const writeCell = (row: number, col: number, value: string) => {
+      if (row < 0 || row >= rows || col < 0 || col >= cols) return;
+      if (nextGrid[row][col] === value) return;
+      nextGrid[row][col] = value;
+      changed = true;
+    };
+
+    if (operation === 'move') {
+      for (let row = sourceRect.startRow; row <= sourceRect.endRow; row += 1) {
+        for (let col = sourceRect.startCol; col <= sourceRect.endCol; col += 1) {
+          writeCell(row, col, '');
+        }
+      }
+    }
+
+    cells.forEach((line, rowOffset) => {
+      line.forEach((hex, colOffset) => {
+        writeCell(targetRect.startRow + rowOffset, targetRect.startCol + colOffset, hex ?? '');
+      });
+    });
+
+    if (!changed) {
+      showToast('目标区域没有变化');
+      return;
+    }
+
+    commitGrid(nextGrid);
+    clearActiveSelection();
+    showToast(operation === 'copy' ? '已复制并覆盖目标区域' : '已移动并覆盖目标区域');
+  };
+
+  const finishSelectionGesture = (pointerId: number, target: HTMLElement) => {
+    const gesture = selectionGestureRef.current;
+    if (!gesture || gesture.pointerId !== pointerId) return false;
+
+    selectionGestureRef.current = null;
+    releasePointerCapture(target, pointerId);
+
+    if (gesture.kind === 'draw') {
+      const rect = normalizeSelectionRect(gesture.startCell, gesture.currentCell);
+      const dimensions = getSelectionDimensions(rect);
+      selectionClipboardRef.current = {
+        rect,
+        cells: copyGridRect(grid, rect),
+      };
+      setDraftSelectionRect(null);
+      setSelectionRect(rect);
+      setSelectionOperation(null);
+      setSelectionPreviewCells(null);
+      showToast(`已框选 ${dimensions.cols} x ${dimensions.rows}`);
+      return true;
+    }
+
+    applySelectionPlacement(gesture.operation, gesture.sourceRect, gesture.currentRect, gesture.cells);
+    return true;
+  };
+
+  const cancelSelectionGesture = () => {
+    const gesture = selectionGestureRef.current;
+    if (!gesture) return;
+
+    selectionGestureRef.current = null;
+    if (gesture.kind === 'draw') {
+      setDraftSelectionRect(null);
+      return;
+    }
+
+    setSelectionRect(gesture.originRect);
+  };
+
+  const beginSelectionDraw = (event: React.PointerEvent<HTMLElement>, startCell: { row: number; col: number }) => {
+    event.preventDefault();
+    event.stopPropagation();
+    clearActiveSelection();
+
+    const rect = normalizeSelectionRect(startCell, startCell);
+    selectionGestureRef.current = {
+      kind: 'draw',
+      pointerId: event.pointerId,
+      startCell,
+      currentCell: startCell,
+    };
+    selectionClipboardRef.current = null;
+    setDraftSelectionRect(rect);
+    setSelectionRect(null);
+    setSelectionOperation(null);
+    setSelectionPreviewCells(null);
+    capturePointer(event.currentTarget, event.pointerId);
+  };
+
+  const beginSelectionPlacement = (event: React.PointerEvent<HTMLElement>) => {
+    if (!selectionRect || !selectionOperation) return;
+    const clipboard = selectionClipboardRef.current;
+    if (!clipboard) return;
+
+    const startCell = getClampedPointerCell(event.clientX, event.clientY);
+    if (!startCell) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    selectionGestureRef.current = {
+      kind: 'place',
+      pointerId: event.pointerId,
+      startCell,
+      originRect: selectionRect,
+      currentRect: selectionRect,
+      sourceRect: clipboard.rect,
+      cells: clipboard.cells.map((line) => [...line]),
+      operation: selectionOperation,
+    };
+    capturePointer(event.currentTarget, event.pointerId);
+  };
+
+  const handleSelectionBoxPointerMove = (event: React.PointerEvent<HTMLElement>) => {
+    if (!updateSelectionGesture(event.pointerId, event.clientX, event.clientY)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const handleSelectionBoxPointerUp = (event: React.PointerEvent<HTMLElement>) => {
+    if (!finishSelectionGesture(event.pointerId, event.currentTarget)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const startSelectionOperation = (operation: SelectionOperation) => {
+    if (!selectionRect) return;
+    const cells = copyGridRect(grid, selectionRect);
+    selectionClipboardRef.current = {
+      rect: selectionRect,
+      cells,
+    };
+    setSelectionOperation(operation);
+    setSelectionPreviewCells(cells);
+    showToast(operation === 'copy' ? '拖动选框复制到目标位置' : '拖动选框移动到目标位置');
+  };
+
   const persistEditorState = (nextGrid: string[][], nextHistory: string[][][], nextIndex: number) => {
     historyRef.current = nextHistory;
     historyIndexRef.current = nextIndex;
@@ -1181,6 +1628,7 @@ export function WorkshopEditorPage() {
   };
 
   const commitGrid = (nextGrid: string[][]) => {
+    clearActiveSelection();
     const nextHistory = historyRef.current.slice(0, historyIndexRef.current + 1);
     nextHistory.push(cloneGrid(nextGrid));
 
@@ -1218,7 +1666,7 @@ export function WorkshopEditorPage() {
     const paintSession = paintSessionRef.current;
     if (!drag || drag.pointerId !== pointerId || drag.kind !== 'paint' || !paintSession) return;
 
-    const cell = toCellPoint(clientX, clientY, canvasRef.current, cols, rows);
+    const cell = updateRulerCurrentCell(clientX, clientY);
     if (!cell) return;
 
     const key = `${cell.row},${cell.col}`;
@@ -1344,6 +1792,7 @@ export function WorkshopEditorPage() {
     const nextIndex = historyIndexRef.current - 1;
     const nextGrid = cloneGrid(historyRef.current[nextIndex]);
 
+    clearActiveSelection();
     persistEditorState(nextGrid, historyRef.current, nextIndex);
   };
 
@@ -1353,6 +1802,7 @@ export function WorkshopEditorPage() {
     const nextIndex = historyIndexRef.current + 1;
     const nextGrid = cloneGrid(historyRef.current[nextIndex]);
 
+    clearActiveSelection();
     persistEditorState(nextGrid, historyRef.current, nextIndex);
   };
 
@@ -1479,7 +1929,27 @@ export function WorkshopEditorPage() {
           </div>
           <div className={styles.toolSep} />
           <div className={styles.paramGroup}>
-            
+            <span className={styles.paramLabel}>模式</span>
+            <div className={styles.modeToggle} role="group" aria-label="橡皮模式">
+              {[
+                { id: 'brush' as const, label: '点擦' },
+                { id: 'area' as const, label: '区域' },
+              ].map((mode) => (
+                <button
+                  key={mode.id}
+                  type="button"
+                  className={`${styles.modeToggleBtn} ${eraserMode === mode.id ? styles.isActive : ''}`}
+                  aria-pressed={eraserMode === mode.id}
+                  onClick={() => setEraserMode(mode.id)}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className={styles.toolSep} />
+          <div className={styles.paramGroup}>
+            <span className={styles.paramLabel}>大小</span>
             <div className={styles.sizeDots}>
               {[1, 2, 3].map((size) => {
                 const active = eraserSize === size;
@@ -1507,6 +1977,7 @@ export function WorkshopEditorPage() {
               })}
             </div>
           </div>
+          {eraserMode === 'area' ? <span className={styles.fillTip}>点击同色区域删除</span> : null}
         </>
       );
     }
@@ -1554,6 +2025,38 @@ export function WorkshopEditorPage() {
             点击画布格子取色
             <br />
             <span>自动吸取颜色并切回画笔</span>
+          </div>
+        </>
+      );
+    }
+
+    if (tool === 'select') {
+      const dimensions = selectionRect ? getSelectionDimensions(selectionRect) : null;
+      const operationLabel = selectionOperation === 'copy'
+        ? '复制'
+        : selectionOperation === 'move'
+          ? '移动'
+          : '待选择';
+
+      return (
+        <>
+          <div className={styles.toolInfoTag}>
+            <span className={styles.tagSvgIcon}><SelectionToolIcon /></span>
+            <span className={styles.tagText}>框选</span>
+          </div>
+          <div className={styles.toolSep} />
+          <div className={styles.selectionToolTip}>
+            {dimensions ? (
+              <>
+                <strong>{dimensions.cols} x {dimensions.rows}</strong>
+                <span>{operationLabel}，拖动选框到目标位置后覆盖</span>
+              </>
+            ) : (
+              <>
+                <strong>拖拽画框</strong>
+                <span>框旁选择复制或移动</span>
+              </>
+            )}
           </div>
         </>
       );
@@ -1610,32 +2113,27 @@ export function WorkshopEditorPage() {
       return;
     }
 
+    const pointerCell = updateRulerCurrentCell(event.clientX, event.clientY);
+
     if (isPickingOutlineColor) {
       event.preventDefault();
       event.stopPropagation();
 
-      const cell = toCellPoint(event.clientX, event.clientY, canvasRef.current, cols, rows);
+      const cell = pointerCell;
       const picked = cell ? grid[cell.row]?.[cell.col] : null;
 
       if (!isFilledGridCell(picked)) {
-        setOutlinePanelOpen(true);
-        setIsPickingOutlineColor(false);
         showToast('请点击已有豆豆取色');
         return;
       }
 
       const pickedColor = getPaletteColorForHex(picked, editorPalette);
       if (!pickedColor) {
-        setOutlinePanelOpen(true);
-        setIsPickingOutlineColor(false);
         showToast('这个颜色不在当前品牌色卡中');
         return;
       }
 
-      selectOutlinePaletteColor(pickedColor);
-      setOutlinePanelOpen(true);
-      setIsPickingOutlineColor(false);
-      showToast(`已取色 ${pickedColor.vendorCode}`);
+      applyOutlineColor(pickedColor);
       return;
     }
 
@@ -1644,6 +2142,7 @@ export function WorkshopEditorPage() {
 
       if (touchZoomPointersRef.current.size >= 2) {
         pendingTouchActionRef.current = null;
+        cancelSelectionGesture();
         cancelActivePaintStroke();
         dragRef.current = null;
         const [a, b] = Array.from(touchZoomPointersRef.current.values());
@@ -1670,7 +2169,14 @@ export function WorkshopEditorPage() {
       return;
     }
 
-    const cell = toCellPoint(event.clientX, event.clientY, canvasRef.current, cols, rows);
+    if (tool === 'select') {
+      const cell = pointerCell ?? getClampedPointerCell(event.clientX, event.clientY);
+      if (!cell) return;
+      beginSelectionDraw(event, cell);
+      return;
+    }
+
+    const cell = pointerCell;
     if (!cell) return;
 
     if (event.pointerType === 'touch') {
@@ -1687,7 +2193,7 @@ export function WorkshopEditorPage() {
     if (tool === 'picker') {
       const picked = grid[cell.row]?.[cell.col];
       if (picked) applyColor(picked);
-      setTool('brush');
+      activateTool('brush');
       showToast('已取色');
       return;
     }
@@ -1698,10 +2204,22 @@ export function WorkshopEditorPage() {
       return;
     }
 
+    if (tool === 'eraser' && eraserMode === 'area') {
+      eraseConnectedArea(cell);
+      return;
+    }
+
     startPaintStroke(event.pointerId, cell, event.clientX, event.clientY);
   };
 
   const handleCanvasPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    updateRulerCurrentCell(event.clientX, event.clientY);
+
+    if (updateSelectionGesture(event.pointerId, event.clientX, event.clientY)) {
+      event.preventDefault();
+      return;
+    }
+
     if (event.pointerType === 'touch' && touchZoomPointersRef.current.has(event.pointerId)) {
       touchZoomPointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
@@ -1733,7 +2251,10 @@ export function WorkshopEditorPage() {
       if (
         pendingTouchAction
         && pendingTouchAction.pointerId === event.pointerId
-        && (pendingTouchAction.tool === 'brush' || pendingTouchAction.tool === 'eraser')
+        && (
+          pendingTouchAction.tool === 'brush'
+          || (pendingTouchAction.tool === 'eraser' && eraserMode === 'brush')
+        )
       ) {
         const moveDistance = Math.hypot(
           event.clientX - pendingTouchAction.clientX,
@@ -1818,7 +2339,7 @@ export function WorkshopEditorPage() {
           if (pendingTouchAction.tool === 'picker') {
             const picked = grid[pendingTouchAction.cell.row]?.[pendingTouchAction.cell.col];
             if (picked) applyColor(picked);
-            setTool('brush');
+            activateTool('brush');
             showToast('已取色');
             return;
           }
@@ -1826,6 +2347,11 @@ export function WorkshopEditorPage() {
           if (pendingTouchAction.tool === 'fill') {
             commitGrid(floodFill(grid, pendingTouchAction.cell.row, pendingTouchAction.cell.col, currentColor));
             showToast('已执行填充');
+            return;
+          }
+
+          if (pendingTouchAction.tool === 'eraser' && eraserMode === 'area') {
+            eraseConnectedArea(pendingTouchAction.cell);
             return;
           }
 
@@ -1840,6 +2366,11 @@ export function WorkshopEditorPage() {
           return;
         }
       }
+    }
+
+    if (finishSelectionGesture(event.pointerId, event.currentTarget)) {
+      event.preventDefault();
+      return;
     }
 
     const drag = dragRef.current;
@@ -1894,6 +2425,12 @@ export function WorkshopEditorPage() {
     const target = event.target as HTMLElement;
     if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
 
+    if (event.key === 'Escape' && (selectionRect || draftSelectionRect || selectionOperation)) {
+      event.preventDefault();
+      clearActiveSelection();
+      return;
+    }
+
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
       event.preventDefault();
       undo();
@@ -1910,6 +2447,7 @@ export function WorkshopEditorPage() {
   };
 
   const clearCanvas = () => {
+    clearActiveSelection();
     setClearConfirmOpen(true);
   };
 
@@ -1921,38 +2459,38 @@ export function WorkshopEditorPage() {
     }
 
     commitGrid(buildGridFromPattern(result.newPatternResult));
-    setOutlinePanelOpen(false);
     setIsPickingOutlineColor(false);
     showToast(`完成，共去除${result.removedCount.toLocaleString()}颗，可撤回`);
   };
 
-  const openOutlinePanel = () => {
-    const defaultColor =
-      getDominantExteriorOutlinePaletteColor(grid, editorPalette)
-      ?? getPaletteColorForHex(currentColor, editorPalette)
-      ?? editorPalette[0]
-      ?? null;
-
-    if (defaultColor) selectOutlinePaletteColor(defaultColor);
-    setOutlinePanelOpen(true);
-    setIsPickingOutlineColor(false);
-    showToast('选择描边色后开始描边');
-  };
-
-  const pickOutlineColorFromCanvas = () => {
-    setOutlinePanelOpen(false);
-    setIsPickingOutlineColor(true);
-    showToast('请点击图纸上的豆豆取色');
-  };
-
-  const applyOutlineColor = () => {
-    if (!outlineSelectedColor) {
-      showToast(`请输入 ${getBeadBrandLabel(editorBrand)} 的有效色号`);
+  const eraseConnectedArea = (cell: { row: number; col: number }) => {
+    const target = grid[cell.row]?.[cell.col] ?? '';
+    if (!isFilledGridCell(target)) {
+      showToast('这里已经是透明区域');
       return;
     }
 
+    const nextGrid = floodFill(grid, cell.row, cell.col, '');
+    if (nextGrid === grid) {
+      showToast('这里已经是透明区域');
+      return;
+    }
+
+    commitGrid(nextGrid);
+    showToast('已删除这片区域');
+  };
+
+  const startOutlineColorPick = () => {
+    clearActiveSelection();
+    setPaletteOpen(false);
+    setIsPickingOutlineColor(true);
+    showToast('选择描边色开始描边');
+  };
+
+  const applyOutlineColor = (outlineColor: PatternPaletteColor) => {
     const outlineCells = findExteriorOutlineCells(grid);
     if (!outlineCells.length) {
+      setIsPickingOutlineColor(false);
       showToast('当前图纸没有可描边的豆豆');
       return;
     }
@@ -1960,22 +2498,20 @@ export function WorkshopEditorPage() {
     const nextGrid = cloneGrid(grid);
     let changedCount = 0;
     for (const cell of outlineCells) {
-      if (nextGrid[cell.row][cell.col] === outlineSelectedColor.hex) continue;
-      nextGrid[cell.row][cell.col] = outlineSelectedColor.hex;
+      if (nextGrid[cell.row][cell.col] === outlineColor.hex) continue;
+      nextGrid[cell.row][cell.col] = outlineColor.hex;
       changedCount += 1;
     }
 
+    setIsPickingOutlineColor(false);
     if (!changedCount) {
       showToast('轮廓已经是这个颜色');
       return;
     }
 
     commitGrid(nextGrid);
-    applyColor(outlineSelectedColor.hex);
-    selectOutlinePaletteColor(outlineSelectedColor);
-    setOutlinePanelOpen(false);
-    setIsPickingOutlineColor(false);
-    showToast(`已描边 ${changedCount} 颗豆豆`);
+    applyColor(outlineColor.hex);
+    showToast(`已使用 ${outlineColor.vendorCode} 描边 ${changedCount} 颗豆豆`);
   };
 
   const confirmClearCanvas = () => {
@@ -2005,6 +2541,7 @@ export function WorkshopEditorPage() {
       return;
     }
 
+    clearActiveSelection();
     commitGrid(resizeGridCanvas(grid, safeCols, safeRows));
     showToast(didClamp
       ? `画布不能小于已编辑范围，已调整为 ${safeCols} × ${safeRows}`
@@ -2042,11 +2579,61 @@ export function WorkshopEditorPage() {
     bottom: `${Math.max(0, toolbarHeight + 32)}px`,
   };
 
+  const rulerData = useMemo(() => buildEditorRulerData({
+    cols,
+    rows,
+    canvasLayout,
+    viewport: canvasViewport,
+    offset: rulerTransform.offset,
+    scale: rulerTransform.scale,
+    currentCell: rulerCurrentCell,
+  }), [canvasLayout, canvasViewport, cols, rows, rulerCurrentCell, rulerTransform]);
+
   const canvasTransformStyle = {
     width: `${canvasLayout.width}px`,
     height: `${canvasLayout.height}px`,
     transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${scale})`,
   };
+
+  const selectionDisplayRect = draftSelectionRect ?? selectionRect;
+  const selectionBoxStyle = useMemo(() => {
+    if (!selectionDisplayRect || cols <= 0 || rows <= 0 || canvasLayout.width <= 0 || canvasLayout.height <= 0) {
+      return null;
+    }
+
+    const cellWidth = (canvasLayout.width / cols) * rulerTransform.scale;
+    const cellHeight = (canvasLayout.height / rows) * rulerTransform.scale;
+
+    return {
+      left: `${rulerTransform.offset.x + selectionDisplayRect.startCol * cellWidth}px`,
+      top: `${rulerTransform.offset.y + selectionDisplayRect.startRow * cellHeight}px`,
+      width: `${Math.max(1, (selectionDisplayRect.endCol - selectionDisplayRect.startCol + 1) * cellWidth)}px`,
+      height: `${Math.max(1, (selectionDisplayRect.endRow - selectionDisplayRect.startRow + 1) * cellHeight)}px`,
+    };
+  }, [canvasLayout.height, canvasLayout.width, cols, rows, rulerTransform, selectionDisplayRect]);
+
+  const selectionMenuStyle = useMemo(() => {
+    if (!selectionRect || !selectionBoxStyle) return null;
+
+    const boxLeft = Number.parseFloat(selectionBoxStyle.left);
+    const boxTop = Number.parseFloat(selectionBoxStyle.top);
+    const boxWidth = Number.parseFloat(selectionBoxStyle.width);
+    const viewportWidth = Math.max(1, canvasViewport.width);
+    const viewportHeight = Math.max(1, canvasViewport.height);
+    const menuWidth = 190;
+    const menuHeight = 112;
+    const gap = 10;
+    const sideLeft = boxLeft + boxWidth + gap;
+    const left = sideLeft + menuWidth <= viewportWidth - gap
+      ? sideLeft
+      : Math.max(gap, boxLeft - menuWidth - gap);
+    const top = Math.max(gap, Math.min(viewportHeight - menuHeight - gap, boxTop));
+
+    return {
+      left: `${left}px`,
+      top: `${top}px`,
+    };
+  }, [canvasViewport.height, canvasViewport.width, selectionBoxStyle, selectionRect]);
 
   return (
     <>
@@ -2138,6 +2725,73 @@ export function WorkshopEditorPage() {
           />
         </div>
 
+        <WorkshopEditorRulers
+          data={rulerData}
+          toolbarHeight={toolbarHeight}
+          visible={projectReady && grid.length > 0}
+        />
+
+        {selectionBoxStyle ? (
+          <div
+            className={`${styles.selectionBox} ${draftSelectionRect ? styles.selectionDraftBox : ''} ${selectionOperation ? styles.selectionBoxDraggable : ''}`}
+            style={{
+              ...selectionBoxStyle,
+              pointerEvents: selectionOperation ? 'auto' : 'none',
+            }}
+            aria-hidden={!selectionRect && !draftSelectionRect}
+            onPointerDown={beginSelectionPlacement}
+            onPointerMove={handleSelectionBoxPointerMove}
+            onPointerUp={handleSelectionBoxPointerUp}
+            onPointerCancel={handleSelectionBoxPointerUp}
+          >
+            {selectionOperation && selectionPreviewCells ? (
+              <canvas
+                ref={selectionPreviewCanvasRef}
+                className={styles.selectionPreviewCanvas}
+                aria-hidden="true"
+              />
+            ) : null}
+          </div>
+        ) : null}
+
+        {selectionRect && selectionMenuStyle ? (
+          <div
+            className={styles.selectionMenu}
+            style={selectionMenuStyle}
+            role="status"
+            aria-live="polite"
+            onPointerDown={(event) => event.stopPropagation()}
+            onPointerMove={(event) => event.stopPropagation()}
+            onPointerUp={(event) => event.stopPropagation()}
+          >
+            <strong>{selectionOperation ? (selectionOperation === 'copy' ? '复制中' : '移动中') : '已框选'}</strong>
+            <span>{selectionOperation ? '拖动选框到目标位置，松手后覆盖' : '选择复制或移动，再拖动选框'}</span>
+            <div className={styles.selectionMenuActions}>
+              <button
+                type="button"
+                className={`${styles.selectionMenuBtn} ${selectionOperation === 'copy' ? styles.selectionMenuBtnActive : ''}`}
+                onClick={() => startSelectionOperation('copy')}
+              >
+                复制
+              </button>
+              <button
+                type="button"
+                className={`${styles.selectionMenuBtn} ${selectionOperation === 'move' ? styles.selectionMenuBtnActive : ''}`}
+                onClick={() => startSelectionOperation('move')}
+              >
+                移动
+              </button>
+              <button
+                type="button"
+                className={styles.selectionMenuBtn}
+                onClick={clearActiveSelection}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div
           className={styles.canvasActions}
           onPointerDown={(event) => event.stopPropagation()}
@@ -2186,7 +2840,7 @@ export function WorkshopEditorPage() {
           <button
             type="button"
             className={styles.canvasActionBtn}
-            onClick={openOutlinePanel}
+            onClick={startOutlineColorPick}
             disabled={!grid.length}
             title="描边"
             aria-label="描边"
@@ -2195,103 +2849,11 @@ export function WorkshopEditorPage() {
           </button>
         </div>
 
-        {outlinePanelOpen ? (
-          <section
-            className={styles.outlinePanel}
-            aria-label="描边设置"
-            onPointerDown={(event) => event.stopPropagation()}
-            onPointerMove={(event) => event.stopPropagation()}
-            onPointerUp={(event) => event.stopPropagation()}
-          >
-            <div className={styles.outlinePanelHeader}>
-              <div>
-                <p>描边</p>
-                <h3>选择轮廓颜色</h3>
-              </div>
-              <button
-                type="button"
-                className={styles.closeBtn}
-                aria-label="关闭描边设置"
-                onClick={() => {
-                  setOutlinePanelOpen(false);
-                  setIsPickingOutlineColor(false);
-                }}
-              >
-                ×
-              </button>
-            </div>
-
-            <label className={styles.outlineField}>
-              <span>色号 · {getBeadBrandLabel(editorBrand)}</span>
-              <div className={styles.outlineInputRow}>
-                <span
-                  className={styles.outlinePreviewSwatch}
-                  style={{
-                    background: outlineSelectedColor?.hex ?? '#F5F0EA',
-                    ...outlineColorCodeTextStyle,
-                  }}
-                >
-                  {outlineSelectedColor?.vendorCode ?? '?'}
-                </span>
-                <input
-                  className={styles.outlineTextInput}
-                  value={outlineColorCode}
-                  placeholder="输入当前品牌色号"
-                  aria-label="手动输入描边色号"
-                  onChange={(event) => updateOutlineColorCodeInput(event.target.value)}
-                />
-              </div>
-            </label>
-
-            <div className={styles.outlinePaletteBody}>
-              <nav className={styles.outlinePaletteNav} aria-label="描边色号系列">
-                {paletteGroups.map((group) => (
-                  <button
-                    key={group.key}
-                    type="button"
-                    className={`${styles.paletteNavBtn} ${activePaletteGroup === group.key ? styles.paletteNavBtnActive : ''}`}
-                    onClick={() => setActivePaletteGroup(group.key)}
-                  >
-                    {group.label}
-                  </button>
-                ))}
-              </nav>
-              <div className={styles.outlinePaletteGrid}>
-                {visibleEditorPalette.map((color) => (
-                  <button
-                    key={`outline-${color.hex}-${color.vendorCode}`}
-                    type="button"
-                    className={`${styles.outlinePaletteSwatch} ${outlineSelectedColorKey === getPaletteColorKey(color) ? styles.outlinePaletteSwatchActive : ''}`}
-                    style={{ background: color.hex }}
-                    title={`${getBeadBrandLabel(editorBrand)} ${color.vendorCode}`}
-                    aria-label={`${getBeadBrandLabel(editorBrand)} ${color.vendorCode}`}
-                    onClick={() => {
-                      selectOutlinePaletteColor(color);
-                      setIsPickingOutlineColor(false);
-                    }}
-                  >
-                    <span>{color.vendorCode}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <p className={`${styles.outlineHint} ${isPickingOutlineColor ? styles.outlineHintActive : ''}`}>
-              可以手动输入当前品牌色号，也可以从图纸中取色。
-            </p>
-
-            <div className={styles.outlineActions}>
-              <button
-                type="button"
-                onClick={pickOutlineColorFromCanvas}
-              >
-                图纸取色
-              </button>
-              <button type="button" onClick={applyOutlineColor} disabled={!outlineSelectedColor}>
-                开始描边
-              </button>
-            </div>
-          </section>
+        {isPickingOutlineColor ? (
+          <div className={styles.outlineNotice} role="status" aria-live="polite">
+            <strong>选择描边色开始描边</strong>
+            <span>点击图纸上的任意豆豆，外轮廓会直接使用该颜色。</span>
+          </div>
         ) : null}
 
         <WorkshopPreviewPanel
@@ -2323,7 +2885,7 @@ export function WorkshopEditorPage() {
                 key={item.id}
                 type="button"
                 className={`${styles.toolBtn} ${tool === item.id ? styles.toolActive : ''}`}
-                onClick={() => setTool(item.id)}
+                onClick={() => activateTool(item.id)}
                 title={item.label}
                 aria-label={item.label}
               >

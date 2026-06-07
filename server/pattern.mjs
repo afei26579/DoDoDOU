@@ -15,7 +15,7 @@ function parseInteger(value, fallback, { min = Number.MIN_SAFE_INTEGER, max = Nu
 
 const config = {
   jsonBodyLimit: process.env.PATTERN_JSON_BODY_LIMIT || '256kb',
-  maxCanvasSize: parseInteger(process.env.PATTERN_MAX_CANVAS_SIZE, 120, { min: 16, max: 256 }),
+  maxCanvasSize: parseInteger(process.env.PATTERN_MAX_CANVAS_SIZE, 300, { min: 16, max: 300 }),
   uploadDir: process.env.ASSET_UPLOAD_DIR?.trim() || path.join('public', 'uploads', 'assets'),
   publicBaseUrl: process.env.ASSET_PUBLIC_BASE_URL?.trim().replace(/\/$/, '') || '',
 };

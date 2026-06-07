@@ -1,7 +1,7 @@
 import type { PatternResult } from '../../features/workshop/model/types';
 
 const MAX_COVER_SIDE = 960;
-const MIN_CELL_SIZE = 4;
+const MIN_CELL_SIZE = 3;
 
 export type PatternCoverImage = {
   dataUrl: string;

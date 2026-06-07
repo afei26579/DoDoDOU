@@ -150,7 +150,7 @@ const config = {
   host: getServerHost(),
   port: parseInteger(process.env.GALLERY_SERVER_PORT, 3001, { min: 1, max: 65535 }),
   allowedOrigins: getAllowedOrigins(),
-  jsonBodyLimit: process.env.GALLERY_JSON_BODY_LIMIT || '5mb',
+  jsonBodyLimit: process.env.GALLERY_JSON_BODY_LIMIT || '20mb',
   publishEnabled: parseBoolean(process.env.GALLERY_PUBLISH_ENABLED, true),
   requireWriteToken: parseBoolean(process.env.GALLERY_REQUIRE_WRITE_TOKEN, true),
   writeToken: process.env.GALLERY_WRITE_TOKEN?.trim() || '',
@@ -158,8 +158,8 @@ const config = {
   rateLimitMax: parseInteger(process.env.GALLERY_RATE_LIMIT_MAX, 120, { min: 1, max: 100_000 }),
   publishRateLimitMax: parseInteger(process.env.GALLERY_PUBLISH_RATE_LIMIT_MAX, 5, { min: 1, max: 10_000 }),
   adminApiPrefix: normalizeMountPath(process.env.ADMIN_API_PREFIX, '/api/_ops_dodoudou_9c41f7'),
-  maxPatternCells: parseInteger(process.env.GALLERY_MAX_PATTERN_CELLS, 10_000, { min: 1, max: 200_000 }),
-  maxDataUrlChars: parseInteger(process.env.GALLERY_MAX_DATA_URL_CHARS, 1_500_000, { min: 1_000, max: 20_000_000 }),
+  maxPatternCells: parseInteger(process.env.GALLERY_MAX_PATTERN_CELLS, 90_000, { min: 1, max: 200_000 }),
+  maxDataUrlChars: parseInteger(process.env.GALLERY_MAX_DATA_URL_CHARS, 5_000_000, { min: 1_000, max: 20_000_000 }),
   trustProxy: parseBoolean(process.env.GALLERY_TRUST_PROXY, false),
   productionClosedHosts: parseHostList(process.env.PRODUCTION_CLOSED_HOSTS, ['dodoudou.com', 'www.dodoudou.com']),
   productionClosedPagePath: resolveExistingFile([
@@ -478,8 +478,8 @@ function normalizePatternDetail(value, errors) {
     return null;
   }
 
-  const width = normalizeInteger(value.width, 'patternDetail.width', 1, 256, errors);
-  const height = normalizeInteger(value.height, 'patternDetail.height', 1, 256, errors);
+  const width = normalizeInteger(value.width, 'patternDetail.width', 1, 300, errors);
+  const height = normalizeInteger(value.height, 'patternDetail.height', 1, 300, errors);
   const beadCount = normalizeInteger(value.beadCount, 'patternDetail.beadCount', 0, config.maxPatternCells, errors);
   const paletteCount = normalizeInteger(value.paletteCount, 'patternDetail.paletteCount', 0, 512, errors);
   const colorStats = Array.isArray(value.colorStats) ? value.colorStats.slice(0, 512) : [];
@@ -712,17 +712,45 @@ async function getFavoriteListForUser(userId) {
   };
 }
 
+function parsePositiveInteger(value, fallback) {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  const parsed = Number.parseInt(String(rawValue ?? ''), 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getGalleryListPagination(query) {
+  const page = parsePositiveInteger(query.page, 1);
+  const requestedPageSize = parsePositiveInteger(query.pageSize, 12);
+  const pageSize = Math.min(48, Math.max(1, requestedPageSize));
+  return { page, pageSize };
+}
+
+function getGalleryListOrderBy(sort) {
+  const sortKey = Array.isArray(sort) ? sort[0] : sort;
+  if (sortKey === 'latest') return [{ publishedAt: 'desc' }, { createdAt: 'desc' }];
+  if (sortKey === 'hot') return [{ hotScore: 'desc' }, { favoriteCount: 'desc' }, { publishedAt: 'desc' }];
+  if (sortKey === 'most_favorite') return [{ favoriteCount: 'desc' }, { publishedAt: 'desc' }];
+  return [{ sortWeight: 'desc' }, { publishedAt: 'desc' }];
+}
+
 app.get('/api/gallery/items', optionalAuth(prisma), async (req, res) => {
-  const items = await prisma.galleryItem.findMany({
-    where: { visibility: 'public', status: 'published' },
-    include: { author: true, coverAsset: true, patternDetail: true },
-    orderBy: [{ sortWeight: 'desc' }, { publishedAt: 'desc' }],
-  });
+  const { page, pageSize } = getGalleryListPagination(req.query);
+  const where = { visibility: 'public', status: 'published' };
+  const [items, total] = await Promise.all([
+    prisma.galleryItem.findMany({
+      where,
+      include: { author: true, coverAsset: true, patternDetail: true },
+      orderBy: getGalleryListOrderBy(req.query.sort),
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.galleryItem.count({ where }),
+  ]);
   const favoriteItemIds = await findFavoriteItemIds(req.user?.id, items.map((item) => item.id));
   res.json({
     items: items.map((item) => mapItem(item, { favoriteItemIds })),
-    total: items.length,
-    nextPage: null,
+    total,
+    nextPage: page * pageSize < total ? page + 1 : null,
   });
 });
 

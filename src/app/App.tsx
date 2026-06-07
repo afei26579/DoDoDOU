@@ -9,6 +9,7 @@ import { CollectionDetailPage } from '../pages/collection/CollectionDetailPage';
 import { CollectionPage } from '../pages/collection/CollectionPage';
 import { BeadInventoryPage } from '../pages/beads/BeadInventoryPage';
 import { DiscoveryPage } from '../pages/discovery/DiscoveryPage';
+import { MyPage } from '../pages/my/MyPage';
 import { FocusModePage } from '../pages/workshop/focus/FocusModePage';
 import { WorkshopEditorPage } from '../pages/workshop/WorkshopEditorPage';
 import { WorkshopHomePage } from '../pages/workshop/WorkshopHomePage';
@@ -21,6 +22,7 @@ import type { WorkshopFlowState } from '../features/workshop/model/types';
 
 const routeToTab: Partial<Record<string, NavItemId>> = {
   '/discovery': 'discovery',
+  '/my': 'my',
   '/workshop': 'workshop',
   '/workshop/create': 'workshop',
   '/workshop/result': 'workshop',
@@ -101,6 +103,7 @@ export function App() {
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/account" element={<AccountPage />} />
+          <Route path="/my" element={<MyPage />} />
           <Route path={ADMIN_ENTRY_PATH} element={<AdminPage />} />
           <Route
             path="/discovery"
@@ -161,7 +164,7 @@ export function App() {
       </div>
 
       {showBottomNav ? (
-        <BottomNav items={navItems} activeTab={activeTab} onChange={(tab) => navigate(tab === 'discovery' ? '/discovery' : `/${tab}`)} />
+        <BottomNav items={navItems} activeTab={activeTab} onChange={(tab) => navigate(tab === 'discovery' ? '/discovery' : tab === 'my' ? '/my' : `/${tab}`)} />
       ) : null}
     </div>
   );

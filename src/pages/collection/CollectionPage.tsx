@@ -26,6 +26,7 @@ const collectionFilters = [
 ] as const;
 const collectionCardBackgrounds = ['#F9F0FF', '#F0FBF6', '#FFF8F0', '#FFF0F6', '#EDF2FF'];
 const FAVORITE_GALLERY_ITEM_IDS_KEY = 'dodoudou.favoriteGalleryItemIds';
+const GALLERY_PAGE_SIZE = 12;
 
 type CollectionFilter = (typeof collectionFilters)[number]['label'];
 
@@ -43,7 +44,9 @@ function getFilterFromParams(searchParams: URLSearchParams): CollectionFilter {
 
 function getSortFromFilter(filter: CollectionFilter): GallerySortKey {
   if (filter === '我的') return 'recommended';
-  return 'latest';
+  if (filter === '最新') return 'latest';
+  if (filter === '最热') return 'hot';
+  return 'recommended';
 }
 
 function getGalleryTimestamp(item: GalleryItemCard) {
@@ -55,6 +58,11 @@ function sortGalleryItems(items: GalleryItemCard[], filter: CollectionFilter, fa
     if (filter === '全部' || filter === '最热') {
       const favoriteDiff = Number(favoriteItemIds.has(b.id)) - Number(favoriteItemIds.has(a.id));
       if (favoriteDiff !== 0) return favoriteDiff;
+    }
+
+    if (filter === '最热') {
+      const hotDiff = (b.stats.hotScore ?? 0) - (a.stats.hotScore ?? 0);
+      if (hotDiff !== 0) return hotDiff;
     }
 
     return getGalleryTimestamp(b).localeCompare(getGalleryTimestamp(a));
@@ -101,6 +109,13 @@ function applyFavoriteState(items: GalleryItemCard[], favoriteIds: Set<string>) 
   }));
 }
 
+function appendUniqueGalleryItems(current: GalleryItemCard[], nextItems: GalleryItemCard[]) {
+  const itemMap = new Map<string, GalleryItemCard>();
+  current.forEach((item) => itemMap.set(item.id, item));
+  nextItems.forEach((item) => itemMap.set(item.id, item));
+  return [...itemMap.values()];
+}
+
 function readFavoriteGalleryItemIds() {
   if (typeof window === 'undefined') return [];
   try {
@@ -134,9 +149,13 @@ export function CollectionPage() {
   const [myPublishedItems, setMyPublishedItems] = useState<GalleryItemCard[]>([]);
   const [favoriteGalleryItems, setFavoriteGalleryItems] = useState<GalleryItemCard[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [myLoading, setMyLoading] = useState(true);
   const [publishedLoading, setPublishedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState('');
+  const [nextGalleryPage, setNextGalleryPage] = useState<number | null>(null);
+  const [galleryTotal, setGalleryTotal] = useState<number | null>(null);
   const [favoriteItemIds, setFavoriteItemIds] = useState<string[]>(() => readFavoriteGalleryItemIds());
   const [favoriteSyncMessage, setFavoriteSyncMessage] = useState('');
   const [favoriteUpdatingIds, setFavoriteUpdatingIds] = useState<string[]>([]);
@@ -152,11 +171,15 @@ export function CollectionPage() {
   useEffect(() => {
     let alive = true;
     setLoading(true);
-    fetchGalleryList({ pageSize: 24, sort: gallerySort })
+    setLoadMoreError('');
+    setNextGalleryPage(null);
+    setGalleryTotal(null);
+    fetchGalleryList({ page: 1, pageSize: GALLERY_PAGE_SIZE, sort: gallerySort })
       .then((response) => {
         if (!alive) return;
-        const favoriteIds = new Set(favoriteItemIds);
-        setItems(applyFavoriteState(response.items, favoriteIds));
+        setItems(response.items);
+        setNextGalleryPage(response.nextPage ?? null);
+        setGalleryTotal(response.total ?? response.items.length);
         setError(null);
       })
       .catch((err) => {
@@ -171,7 +194,7 @@ export function CollectionPage() {
     return () => {
       alive = false;
     };
-  }, [favoriteItemIds, gallerySort]);
+  }, [gallerySort]);
 
   useEffect(() => {
     if (authStatus === 'loading') return;
@@ -363,6 +386,31 @@ export function CollectionPage() {
   ], [favoriteItems, myPatterns]);
   const visiblePatternCards = patternsExpanded ? myPatternCards : myPatternCards.slice(0, 2);
   const visibleBeadingItems = beadingExpanded ? myProgressing : myProgressing.slice(0, 3);
+  const hasMoreGalleryItems = activeFilter !== '我的' && nextGalleryPage !== null;
+  const loadedGalleryCountText = galleryTotal == null
+    ? `${visibleGalleryItems.length} 项`
+    : `${visibleGalleryItems.length}/${galleryTotal} 项`;
+
+  const handleLoadMoreGalleryItems = async () => {
+    if (!nextGalleryPage || isLoadingMore) return;
+
+    setIsLoadingMore(true);
+    setLoadMoreError('');
+    try {
+      const response = await fetchGalleryList({
+        page: nextGalleryPage,
+        pageSize: GALLERY_PAGE_SIZE,
+        sort: gallerySort,
+      });
+      setItems((current) => appendUniqueGalleryItems(current, response.items));
+      setNextGalleryPage(response.nextPage ?? null);
+      setGalleryTotal(response.total ?? galleryTotal);
+    } catch (err) {
+      setLoadMoreError(err instanceof Error ? err.message : '加载更多失败');
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   const toggleFavorite = async (item: GalleryItemCard) => {
     const itemId = item.id;
@@ -678,7 +726,19 @@ export function CollectionPage() {
           {error ? <div className="collection-empty">{error}</div> : null}
           {!loading && !error ? (
             visibleGalleryItems.length > 0 ? (
-              visibleGalleryItems.map((item, index) => renderGalleryCard(item, index))
+              <>
+                {visibleGalleryItems.map((item, index) => renderGalleryCard(item, index))}
+                <div className="collection-pagination" aria-live="polite">
+                  {loadMoreError ? <span className="collection-pagination__error">{loadMoreError}</span> : null}
+                  {hasMoreGalleryItems ? (
+                    <button type="button" onClick={handleLoadMoreGalleryItems} disabled={isLoadingMore}>
+                      {isLoadingMore ? '加载中...' : '加载更多'}
+                    </button>
+                  ) : (
+                    <span>{`已加载 ${loadedGalleryCountText}`}</span>
+                  )}
+                </div>
+              </>
             ) : (
               <div className="collection-empty">暂时没有符合条件的作品</div>
             )

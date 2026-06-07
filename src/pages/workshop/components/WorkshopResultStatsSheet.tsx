@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   listInventoryItems,
   mergeInventoryWithRequirements,
@@ -9,9 +9,10 @@ import { getBeadBrandLabel } from '../../../lib/pattern/brand';
 import { buildPatternColorRequirements } from '../../../lib/pattern/color-requirements';
 import { getBrandPalette, type BrandColor } from '../../../lib/pattern/color-system';
 import { ALL_PALETTE_GROUP, buildPaletteGroups, getPaletteGroupForCode } from '../../../lib/pattern/palette-groups';
-import { cleanupSelectedPatternColors } from '../../../lib/pattern/single-cell-color-cleanup';
-
-const CLEANUP_TOAST_DURATION_MS = 1600;
+import {
+  cleanupPatternColorsByMaxCount,
+  cleanupSelectedPatternColors,
+} from '../../../lib/pattern/single-cell-color-cleanup';
 
 type WorkshopResultStatsSheetProps = {
   patternResult: PatternResult;
@@ -48,6 +49,12 @@ function getUsedPaletteColorKey(entry: { code: string; hex: string }) {
 
 function isPureWhite(hex: string) {
   return hex.trim().toUpperCase() === '#FFFFFF';
+}
+
+function normalizeCleanupMaxCount(value: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 1;
+  return Math.max(1, Math.floor(parsed));
 }
 
 function getCellCoordinateKey(cell: Pick<PatternCell, 'x' | 'y'>) {
@@ -165,10 +172,9 @@ export function WorkshopResultStatsSheet({
   const [activeReplaceKey, setActiveReplaceKey] = useState<string | null>(null);
   const [activeReplacementGroup, setActiveReplacementGroup] = useState(ALL_PALETTE_GROUP);
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
-  const [cleanupToast, setCleanupToast] = useState('');
+  const [cleanupMaxCountInput, setCleanupMaxCountInput] = useState('1');
   const [selectedCleanupColorKeys, setSelectedCleanupColorKeys] = useState<Set<string>>(() => new Set());
   const [removedCleanupColors, setRemovedCleanupColors] = useState<RemovedCleanupColor[]>([]);
-  const cleanupToastTimerRef = useRef<number | null>(null);
   const gridSize = `${patternResult.width}x${patternResult.height}网格`;
   const totalBeads = patternResult.stats.totalCells.toLocaleString();
   const totalColors = patternResult.stats.colorCount;
@@ -212,10 +218,28 @@ export function WorkshopResultStatsSheet({
   const enoughCount = requirements.filter((entry) => entry.status === 'enough').length;
   const missingCount = requirements.filter((entry) => entry.status === 'missing').length;
   const hasInventory = inventoryItems.length > 0;
+  const cleanupMaxCount = useMemo(() => normalizeCleanupMaxCount(cleanupMaxCountInput), [cleanupMaxCountInput]);
+  const cleanupEligibleColors = useMemo(
+    () => requirements.filter((entry) => entry.requiredQuantity <= cleanupMaxCount),
+    [cleanupMaxCount, requirements],
+  );
+  const cleanupEligibleBeadCount = useMemo(
+    () => cleanupEligibleColors.reduce((sum, entry) => sum + entry.requiredQuantity, 0),
+    [cleanupEligibleColors],
+  );
   const selectedCleanupColors = useMemo(
     () => requirements.filter((entry) => selectedCleanupColorKeys.has(getRequirementKey(entry))),
     [requirements, selectedCleanupColorKeys],
   );
+  const selectedCleanupBeadCount = useMemo(
+    () => selectedCleanupColors.reduce((sum, entry) => sum + entry.requiredQuantity, 0),
+    [selectedCleanupColors],
+  );
+  const cleanupHint = selectedCleanupColors.length > 0
+    ? `已选择 ${selectedCleanupColors.length.toLocaleString()} 个色号，将优先合并约 ${selectedCleanupBeadCount.toLocaleString()} 颗`
+    : cleanupEligibleColors.length > 0
+      ? `将合并 ${cleanupEligibleColors.length.toLocaleString()} 个色号，约 ${cleanupEligibleBeadCount.toLocaleString()} 颗`
+      : `没有数量小于等于 ${cleanupMaxCount} 的色号`;
 
   useEffect(() => {
     let alive = true;
@@ -236,12 +260,6 @@ export function WorkshopResultStatsSheet({
     return () => {
       alive = false;
     };
-  }, []);
-
-  useEffect(() => () => {
-    if (cleanupToastTimerRef.current) {
-      window.clearTimeout(cleanupToastTimerRef.current);
-    }
   }, []);
 
   useEffect(() => {
@@ -269,19 +287,6 @@ export function WorkshopResultStatsSheet({
       return changed ? next : current;
     });
   }, [requirements]);
-
-  const showCleanupToast = (message: string) => {
-    setCleanupToast(message);
-
-    if (cleanupToastTimerRef.current) {
-      window.clearTimeout(cleanupToastTimerRef.current);
-    }
-
-    cleanupToastTimerRef.current = window.setTimeout(() => {
-      setCleanupToast('');
-      cleanupToastTimerRef.current = null;
-    }, CLEANUP_TOAST_DURATION_MS);
-  };
 
   const handleToggleCleanupColor = (requirementKey: string) => {
     setCleanupMessage(null);
@@ -314,22 +319,24 @@ export function WorkshopResultStatsSheet({
     setCleanupMessage(`已复原 ${removedColor.code || '未匹配'}`);
   };
 
-  const handleCleanupSingleCellColors = () => {
+  const handleCleanupRareColors = () => {
     if (!onPatternResultChange) return;
 
-    if (selectedCleanupColors.length === 0) {
-      showCleanupToast('请选择需要去除的杂色');
-      return;
-    }
+    const shouldCleanupSelectedColors = selectedCleanupColors.length > 0;
+    const removedColors = collectRemovedCleanupColors(
+      patternResult,
+      shouldCleanupSelectedColors ? selectedCleanupColors : cleanupEligibleColors,
+    );
+    const result = shouldCleanupSelectedColors
+      ? cleanupSelectedPatternColors(patternResult, selectedCleanupColors)
+      : cleanupPatternColorsByMaxCount(patternResult, cleanupMaxCount);
 
-    const removedColors = collectRemovedCleanupColors(patternResult, selectedCleanupColors);
-    const result = cleanupSelectedPatternColors(patternResult, selectedCleanupColors);
-    if (result.skippedReason === 'pattern-too-small') {
-      setCleanupMessage('图纸尺寸大于 50 时才会去除杂色');
+    if (result.skippedReason === 'no-selected-colors') {
+      setCleanupMessage('请选择需要去除的杂色');
       return;
     }
-    if (result.skippedReason === 'no-selected-colors') {
-      showCleanupToast('请选择需要去除的杂色');
+    if (result.skippedReason === 'no-rare-colors') {
+      setCleanupMessage(`没有数量小于等于 ${cleanupMaxCount} 的色号`);
       return;
     }
     if (result.skippedReason === 'no-target-colors') {
@@ -341,7 +348,11 @@ export function WorkshopResultStatsSheet({
     setActiveReplaceKey(null);
     setSelectedCleanupColorKeys(new Set());
     setRemovedCleanupColors((current) => mergeRemovedCleanupColors(current, removedColors));
-    setCleanupMessage(`已合并 ${result.replacedCellCount.toLocaleString()} 颗，减少 ${result.removedColorCount.toLocaleString()} 个色号`);
+    setCleanupMessage(
+      shouldCleanupSelectedColors
+        ? `已合并所选 ${result.replacedCellCount.toLocaleString()} 颗，减少 ${result.removedColorCount.toLocaleString()} 个色号`
+        : `已按 ≤ ${cleanupMaxCount} 颗合并 ${result.replacedCellCount.toLocaleString()} 颗，减少 ${result.removedColorCount.toLocaleString()} 个色号`,
+    );
   };
 
   return (
@@ -385,6 +396,31 @@ export function WorkshopResultStatsSheet({
             </>
           )}
         </div>
+
+        <section className="workshop-stats-sheet__cleanup-controls" aria-label="去除杂色设置">
+          <label className="workshop-stats-sheet__cleanup-threshold">
+            <span>去除用量小于等于</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={Math.max(1, patternResult.stats.totalCells)}
+              step={1}
+              value={cleanupMaxCountInput}
+              aria-label="去除杂色色号数量阈值"
+              onChange={(event) => {
+                const { value } = event.target;
+                if (/^\d*$/.test(value)) {
+                  setCleanupMaxCountInput(value);
+                  setCleanupMessage(null);
+                }
+              }}
+              onBlur={() => setCleanupMaxCountInput(String(cleanupMaxCount))}
+            />
+            <span>颗的色号</span>
+          </label>
+          <p>{cleanupHint}</p>
+        </section>
 
         <div className="workshop-stats-sheet__list">
           {requirements.map((entry) => {
@@ -524,17 +560,12 @@ export function WorkshopResultStatsSheet({
           <button
             type="button"
             className="workshop-stats-sheet__action"
-            onClick={handleCleanupSingleCellColors}
+            onClick={handleCleanupRareColors}
             disabled={!onPatternResultChange}
           >
             去除杂色
           </button>
         </div>
-        {cleanupToast ? (
-          <div className="workshop-stats-sheet__toast" role="status" aria-live="polite">
-            {cleanupToast}
-          </div>
-        ) : null}
       </section>
     </div>
   );

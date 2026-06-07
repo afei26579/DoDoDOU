@@ -94,7 +94,7 @@ type WakeLockSentinelLike = {
 
 const PATTERN_MODES: PatternMode[] = ['smart', 'color-block', 'edge-first', 'region-first', 'row-by-row'];
 const CONNECTIVITY_OPTIONS: BeadingConnectivity[] = ['4', '8', 'smart'];
-const MAX_BOARD_SIDE = 200;
+const MAX_BOARD_SIDE = 300;
 const VIEWPORT_ANIMATION_MS = 520;
 const COMPLETION_CELEBRATION_MS = 1200;
 const COMPLETION_PARTICLE_COUNT = 30;

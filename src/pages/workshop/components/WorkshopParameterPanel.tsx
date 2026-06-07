@@ -5,8 +5,8 @@ import type { ParameterTagId } from './WorkshopParameterTabs';
 
 const styleOptions = ['写实', '动漫', '极简'] as const;
 const SIZE_MIN = 24;
-const SIZE_MAX = 200;
-const SIZE_PRESETS = [52, 104, 156] as const;
+const SIZE_MAX = 300;
+const SIZE_PRESETS = [52, 104, 156, 208, 260] as const;
 const COLOR_MERGE_MIN = 0;
 const COLOR_MERGE_MAX = 50;
 
@@ -88,7 +88,7 @@ export function WorkshopParameterPanel({ activeTag, config, onConfigChange }: Wo
         displayValue={`${sizeValue} x ${sizeValue}`}
         presets={SIZE_PRESETS}
         onChange={(value) => onConfigChange({ canvasSize: value })}
-        ariaLabel="尺寸范围，最低 24，最高 200"
+        ariaLabel="尺寸范围，最低 24，最高 300"
       />
     );
   }

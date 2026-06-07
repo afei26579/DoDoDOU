@@ -2,6 +2,7 @@ export type AppRoute =
   | 'login'
   | 'account'
   | 'discovery'
+  | 'my'
   | 'crop'
   | 'workshop-settings'
   | 'workshop-preview'
@@ -18,6 +19,7 @@ export const routePathMap: Record<AppRoute, string> = {
   login: '/login',
   account: '/account',
   discovery: '/discovery',
+  my: '/my',
   crop: '/crop',
   'workshop-settings': '/workshop/settings',
   'workshop-preview': '/workshop/preview',

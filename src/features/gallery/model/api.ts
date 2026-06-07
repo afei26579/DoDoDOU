@@ -51,13 +51,24 @@ function shouldUseMockFallback(error: unknown) {
 
 function getPagedMockGalleryList(query: GalleryListQuery = {}): GalleryListResponse {
   const list = getMockGalleryList();
+  const items = [...list.items].sort((a, b) => {
+    if (query.sort === 'hot') {
+      const hotDiff = (b.stats.hotScore ?? 0) - (a.stats.hotScore ?? 0);
+      if (hotDiff !== 0) return hotDiff;
+    }
+    if (query.sort === 'most_favorite') {
+      const favoriteDiff = (b.stats.favoriteCount ?? 0) - (a.stats.favoriteCount ?? 0);
+      if (favoriteDiff !== 0) return favoriteDiff;
+    }
+    return (b.publishedAt ?? b.createdAt).localeCompare(a.publishedAt ?? a.createdAt);
+  });
   const pageSize = query.pageSize ?? 12;
   const page = query.page ?? 1;
   const start = Math.max(0, (page - 1) * pageSize);
   return {
-    items: list.items.slice(start, start + pageSize),
-    nextPage: start + pageSize < list.items.length ? page + 1 : null,
-    total: list.items.length,
+    items: items.slice(start, start + pageSize),
+    nextPage: start + pageSize < items.length ? page + 1 : null,
+    total: items.length,
   };
 }
 

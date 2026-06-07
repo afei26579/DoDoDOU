@@ -3,8 +3,6 @@ import { rgbToLab } from './color-convert';
 import { hexToRgb } from './color-system';
 import { deltaE2000 } from './delta-e';
 
-export const SINGLE_CELL_CLEANUP_MIN_SIZE = 50;
-
 export type PatternColorCleanupSelection = {
   code: string;
   hex: string;
@@ -15,7 +13,12 @@ export type SingleCellColorCleanupResult = {
   replacedCellCount: number;
   removedColorCount: number;
   eligibleColorCount: number;
-  skippedReason: 'pattern-too-small' | 'no-single-cell-colors' | 'no-selected-colors' | 'no-target-colors' | null;
+  skippedReason:
+    | 'no-single-cell-colors'
+    | 'no-rare-colors'
+    | 'no-selected-colors'
+    | 'no-target-colors'
+    | null;
 };
 
 type ColorSummary = {
@@ -107,7 +110,7 @@ function cleanupPatternColors(
   patternResult: PatternResult,
   sourceColors: ColorSummary[],
   targetColors: ColorSummary[],
-  noSourceReason: 'no-single-cell-colors' | 'no-selected-colors',
+  noSourceReason: 'no-single-cell-colors' | 'no-rare-colors' | 'no-selected-colors',
 ): SingleCellColorCleanupResult {
   const baseResult: SingleCellColorCleanupResult = {
     newPatternResult: patternResult,
@@ -116,13 +119,6 @@ function cleanupPatternColors(
     eligibleColorCount: 0,
     skippedReason: null,
   };
-
-  if (Math.max(patternResult.width, patternResult.height) <= SINGLE_CELL_CLEANUP_MIN_SIZE) {
-    return {
-      ...baseResult,
-      skippedReason: 'pattern-too-small',
-    };
-  }
 
   if (sourceColors.length === 0) {
     return {
@@ -184,6 +180,18 @@ export function cleanupSingleCellPatternColors(patternResult: PatternResult): Si
   const targetColors = summaries.filter((summary) => summary.count >= 2);
 
   return cleanupPatternColors(patternResult, singleCellColors, targetColors, 'no-single-cell-colors');
+}
+
+export function cleanupPatternColorsByMaxCount(
+  patternResult: PatternResult,
+  maxCount: number,
+): SingleCellColorCleanupResult {
+  const normalizedMaxCount = Number.isFinite(maxCount) ? Math.max(1, Math.floor(maxCount)) : 1;
+  const summaries = summarizeCells(patternResult.cells);
+  const rareColors = summaries.filter((summary) => summary.count <= normalizedMaxCount);
+  const targetColors = summaries.filter((summary) => summary.count > normalizedMaxCount);
+
+  return cleanupPatternColors(patternResult, rareColors, targetColors, 'no-rare-colors');
 }
 
 export function cleanupSelectedPatternColors(

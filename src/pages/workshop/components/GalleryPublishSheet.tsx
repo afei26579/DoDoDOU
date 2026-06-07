@@ -8,6 +8,7 @@ import { generatePatternCover } from '../../../lib/pattern/cover';
 import { drawPatternPreview } from '../../../lib/pattern/preview';
 
 const OFFICIAL_DEFAULT_TAGS = '官方, 免费, 拼豆';
+const PREVIEW_MAX_SIDE = 960;
 
 export type GalleryPublishSheetProps = {
   open: boolean;
@@ -35,8 +36,10 @@ function normalizeOfficialTags(input: string) {
 
 function buildPreviewDataUrl(patternResult: PatternResult) {
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(240, patternResult.width * 24);
-  canvas.height = Math.max(240, patternResult.height * 24);
+  const longestSide = Math.max(patternResult.width, patternResult.height, 1);
+  const cellSize = Math.max(1, Math.floor(PREVIEW_MAX_SIDE / longestSide));
+  canvas.width = Math.max(240, patternResult.width * cellSize);
+  canvas.height = Math.max(240, patternResult.height * cellSize);
   drawPatternPreview({
     canvas,
     pattern: patternResult,

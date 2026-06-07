@@ -182,8 +182,8 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
           type="button"
           className={`account-entry ${user ? 'account-entry--signed-in' : ''}`}
           style={accountEntryStyle}
-          onClick={() => navigate(user ? '/account' : '/login')}
-          aria-label={user ? '打开账号' : '登录账号'}
+          onClick={() => navigate(user ? '/my' : '/login')}
+          aria-label={user ? '打开我的' : '登录账号'}
         >
           {user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : <span>{status === 'loading' ? '...' : accountEntryLabel}</span>}
         </button>
