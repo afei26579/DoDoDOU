@@ -54,8 +54,13 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const noticeTimerRef = useRef<number | null>(null);
   const { state, actions, isHydrating } = useWorkshopFlow(projectId ?? null);
+  const latestPatternResultRef = useRef<PatternResult | null>(state.patternResult);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [navigationLoading, setNavigationLoading] = useState<null | 'editor' | 'focus'>(null);
+
+  useEffect(() => {
+    latestPatternResultRef.current = state.patternResult;
+  }, [state.patternResult]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -85,6 +90,32 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     }, 2400);
   };
 
+  const persistResultPattern = async (patternResult: PatternResult) => {
+    if (!projectId) return;
+
+    await deleteWorkshopDraft(projectId);
+    removeLocalEditorDraft(projectId);
+    await saveWorkshopProject(projectId, {
+      uploadedImage: state.uploadedImage,
+      cropTransform: state.cropTransform,
+      config: state.config,
+      patternResult,
+      viewMode: 'pattern',
+      kind: 'pattern',
+      status: 'ready',
+      beadingState: 'idle',
+      beadingProgress: null,
+      editorState: null,
+      lastOpenedAt: new Date().toISOString(),
+    });
+  };
+
+  const handlePatternResultChange = (patternResult: PatternResult) => {
+    latestPatternResultRef.current = patternResult;
+    actions.setPatternResult(patternResult);
+    void persistResultPattern(patternResult);
+  };
+
   const handleGeneratePattern = async () => {
     if (!state.uploadedImage || !projectId) return;
 
@@ -96,15 +127,9 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         cropTransform: state.cropTransform,
         cropFrameSize: 1200,
       });
+      latestPatternResultRef.current = result;
       actions.setPatternResult(result);
-      await saveWorkshopProject(projectId, {
-        uploadedImage: state.uploadedImage,
-        cropTransform: state.cropTransform,
-        config: state.config,
-        patternResult: result,
-        viewMode: 'pattern',
-        beadingState: 'idle',
-      });
+      await persistResultPattern(result);
       navigate(`/workshop/result/${projectId}`);
     } finally {
       actions.setGenerating(false);
@@ -140,6 +165,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       editorState: null,
       lastOpenedAt: new Date().toISOString(),
     });
+    latestPatternResultRef.current = result.newPatternResult;
     actions.setPatternResult(result.newPatternResult);
     showBackgroundRemovalNotice(`已裁剪为 ${result.newPatternResult.width}×${result.newPatternResult.height}`);
   };
@@ -168,6 +194,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       editorState: null,
       lastOpenedAt: new Date().toISOString(),
     });
+    latestPatternResultRef.current = result.newPatternResult;
     actions.setPatternResult(result.newPatternResult);
     showBackgroundRemovalNotice(`完成，共去除${result.removedCount.toLocaleString()}颗`);
   };
@@ -192,6 +219,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       editorState: null,
       lastOpenedAt: new Date().toISOString(),
     });
+    latestPatternResultRef.current = mirroredPattern;
     actions.setPatternResult(mirroredPattern);
     showBackgroundRemovalNotice('已水平镜像');
   };
@@ -235,6 +263,9 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
     const nextProjectId = projectId ?? createProjectId();
     setNavigationLoading('editor');
     await waitForLoadingPaint();
+    if (projectId && latestPatternResultRef.current) {
+      await persistResultPattern(latestPatternResultRef.current);
+    }
     navigate(`/workshop/editor/${nextProjectId}`);
   };
 
@@ -295,7 +326,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         onOpenEditor={handleOpenEditor}
         onOpenFocusMode={handleOpenFocusMode}
         onOpenInventory={() => navigate('/workshop/inventory')}
-        onPatternResultChange={actions.setPatternResult}
+        onPatternResultChange={handlePatternResultChange}
         onUploadToGallery={ENABLE_GALLERY_PUBLISH ? () => setIsPublishOpen(true) : undefined}
         backgroundRemovalNotice={backgroundRemovalNotice}
       />

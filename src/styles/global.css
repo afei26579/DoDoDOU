@@ -417,6 +417,11 @@ p { margin: 0; }
   to { opacity: 1; transform: scale(1); }
 }
 
+@keyframes workshop-notice-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 .section-block { display: grid; gap: 14px; }
 .section-heading-row { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
 .section-heading-row h2, .section-heading-row h3 { margin: 0; line-height: 1.2; font-family: var(--font-title); }
@@ -1642,7 +1647,7 @@ p { margin: 0; }
   white-space: nowrap;
   letter-spacing: 0.02em;
   pointer-events: none;
-  animation: workshop-fade-in 180ms ease-out;
+  animation: workshop-notice-fade-in 180ms ease-out;
 }
 .workshop-canvas__crop-frame {
   --crop-frame-line: rgba(255, 255, 255, 0.92);
@@ -4734,6 +4739,117 @@ p { margin: 0; }
   .workshop-settings {
     min-height: 42px;
     height: 42px;
+  }
+}
+
+@media (min-width: 700px) and (max-width: 1199px) and (orientation: landscape) and (min-height: 521px) {
+  .layered-shell:has(.workshop-page) {
+    height: auto;
+    min-height: calc(100dvh - 96px);
+    overflow: visible;
+  }
+
+  .workshop-page {
+    --workshop-gap: clamp(10px, 1.8vw, 18px);
+    --canvas-side: min(52vw, calc(100dvh - 126px), 560px);
+    height: auto;
+    min-height: calc(100dvh - 126px);
+    grid-template-columns: var(--canvas-side) minmax(250px, 360px);
+    grid-template-rows: auto auto auto auto;
+    align-items: start;
+    justify-content: center;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .workshop-hero {
+    grid-column: 1 / -1;
+  }
+
+  .workshop-canvas {
+    grid-column: 1;
+    grid-row: 2 / 5;
+    margin: 0;
+    align-self: start;
+    justify-self: center;
+  }
+
+  .workshop-page--home .workshop-canvas {
+    grid-row: 2;
+  }
+
+  .workshop-toolbar-surface,
+  .workshop-panel,
+  .workshop-bottom-action--standalone,
+  .workshop-home-entry {
+    grid-column: 2;
+  }
+
+  .workshop-page--create .workshop-bottom-action--standalone,
+  .workshop-page--result .workshop-bottom-action--standalone {
+    position: relative;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    width: auto;
+    max-width: none;
+    transform: none;
+    padding-inline: 0;
+  }
+
+  .workshop-page--home .workshop-home-entry {
+    grid-row: 2;
+    align-self: stretch;
+    height: 100%;
+    grid-template-rows: minmax(0, 1fr) auto auto;
+  }
+
+  .workshop-page--home .workshop-home-entry__cards {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(2, minmax(0, 1fr));
+    height: 100%;
+    padding-inline: 0;
+  }
+
+  .workshop-page--home .workshop-home-entry-card {
+    min-height: 0;
+    height: 100%;
+    padding: 20px 16px 18px;
+  }
+
+  .workshop-toolbar-surface--create,
+  .workshop-toolbar-surface--result {
+    --workshop-tool-icon-height: clamp(66px, 12dvh, 86px);
+    --workshop-tool-min-width: 76px;
+  }
+
+  .workshop-toolbar-surface .workshop-canvas__toolbar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  }
+
+  .workshop-toolbar-surface--create .workshop-canvas__toolbar,
+  .workshop-toolbar-surface--result .workshop-canvas__toolbar {
+    grid-template-columns: repeat(auto-fit, minmax(var(--workshop-tool-min-width), 1fr));
+    gap: 8px;
+  }
+
+  .workshop-toolbar-surface--create .workshop-canvas__tool-icon,
+  .workshop-toolbar-surface--result .workshop-canvas__tool-icon {
+    width: min(100%, 82px);
+  }
+
+  .workshop-panel {
+    grid-template-rows: auto auto minmax(96px, auto) auto;
+  }
+
+  .workshop-settings {
+    height: 46px;
+    min-height: 46px;
+  }
+
+  .workshop-result-actions__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 

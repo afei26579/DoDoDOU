@@ -198,6 +198,11 @@ export function CollectionPage() {
 
   useEffect(() => {
     if (authStatus === 'loading') return;
+    if (activeFilter !== '我的') {
+      setMyLoading(false);
+      return;
+    }
+
     let alive = true;
     setMyLoading(true);
     listWorkshopProjects()
@@ -216,10 +221,15 @@ export function CollectionPage() {
     return () => {
       alive = false;
     };
-  }, [authStatus, isAuthenticated, user?.id]);
+  }, [activeFilter, authStatus, isAuthenticated, user?.id]);
 
   useEffect(() => {
     if (authStatus === 'loading') return;
+    if (activeFilter !== '我的') {
+      setPublishedLoading(false);
+      return;
+    }
+
     if (!isAuthenticated) {
       setMyPublishedItems([]);
       setPublishedLoading(false);
@@ -245,7 +255,7 @@ export function CollectionPage() {
     return () => {
       alive = false;
     };
-  }, [authStatus, isAuthenticated, user?.id]);
+  }, [activeFilter, authStatus, isAuthenticated, user?.id]);
 
   useEffect(() => {
     if (authStatus === 'loading') return;
@@ -282,6 +292,11 @@ export function CollectionPage() {
   }, [authStatus, isAuthenticated, user?.id]);
 
   useEffect(() => {
+    if (activeFilter !== '我的') {
+      setLocalProjectCount(0);
+      return;
+    }
+
     if (!isAuthenticated || !migrationStorageKey) {
       setLocalProjectCount(0);
       return;
@@ -306,7 +321,7 @@ export function CollectionPage() {
     return () => {
       alive = false;
     };
-  }, [isAuthenticated, migrationStorageKey]);
+  }, [activeFilter, isAuthenticated, migrationStorageKey]);
 
   const handleSyncLocalProjects = async () => {
     if (!migrationStorageKey || isSyncingProjects) return;
@@ -468,6 +483,8 @@ export function CollectionPage() {
               alt=""
               width={item.coverWidth}
               height={item.coverHeight}
+              loading="lazy"
+              decoding="async"
             />
           ) : null}
           <button
@@ -574,7 +591,7 @@ export function CollectionPage() {
                       onClick={() => navigate(`/collection/${encodeURIComponent(item.id)}`)}
                     >
                       <div className="collection-my-card__media" style={{ background: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }} aria-hidden="true">
-                        {item.coverUrl ? <img src={item.coverUrl} alt="" /> : null}
+                        {item.coverUrl ? <img src={item.coverUrl} alt="" loading="lazy" decoding="async" /> : null}
                         <span className="collection-my-card__badge is-mine">{getGalleryStatusLabel(item.status)}</span>
                       </div>
                       <div className="collection-my-card__body">
@@ -624,7 +641,7 @@ export function CollectionPage() {
                         )}
                       >
                         <div className="collection-recent-card__media" aria-hidden="true">
-                          {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
+                          {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" loading="lazy" decoding="async" /> : null}
                           <span className={`collection-recent-card__badge ${isBeading ? 'is-beading' : 'is-pattern'}`}>{isBeading ? '拼豆' : '图纸'}</span>
                         </div>
                         <div className="collection-recent-card__body">
@@ -663,7 +680,7 @@ export function CollectionPage() {
                       onClick={() => navigate(item.href)}
                     >
                       <div className="collection-my-card__media" style={{ background: item.background }} aria-hidden="true">
-                        {item.imageUrl ? <img src={item.imageUrl} alt="" /> : null}
+                        {item.imageUrl ? <img src={item.imageUrl} alt="" loading="lazy" decoding="async" /> : null}
                         <span className={`collection-my-card__badge ${item.badge === '收藏' ? 'is-saved' : 'is-mine'}`}>{item.badge}</span>
                       </div>
                       <div className="collection-my-card__body">
@@ -700,7 +717,7 @@ export function CollectionPage() {
                       onClick={() => navigate(`/workshop/focus/${encodeURIComponent(item.id)}`, { state: { returnTo: '/collection' } })}
                     >
                       <div className="collection-progress-item__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }} aria-hidden="true">
-                        {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
+                        {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" loading="lazy" decoding="async" /> : null}
                       </div>
                       <div className="collection-progress-item__body">
                         <strong>{item.title}</strong>

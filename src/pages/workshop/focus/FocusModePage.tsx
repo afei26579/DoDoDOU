@@ -607,6 +607,7 @@ export function FocusModePage() {
     () => new Set((currentBlock?.cells ?? []).map(getCellCoordKey)),
     [currentBlock],
   );
+  const selectedBlockNumberingAxis = getTraversalAxis(horizontalDirection, verticalDirection);
   const currentBlockCompleted = currentBlock ? isBlockCompleted(currentBlock, completedCellKeySet) : false;
   const effectiveActiveColorKey = currentBlock?.colorKey ?? activeColorKey;
   const currentColor = useMemo(
@@ -1032,6 +1033,7 @@ export function FocusModePage() {
       currentCellKey: activeCellKey,
       completedCellKeys: completedCellKeySet,
       selectedBlockCellKeys: currentBlockCellKeys,
+      selectedBlockNumberingAxis,
       completionProgress: totalCompletionProgress,
       completionGlowProgress,
       progressFlowOffset,
@@ -1042,7 +1044,7 @@ export function FocusModePage() {
       height: boardSize.height,
       clip: getCanvasClipArea(boardSize.height),
     });
-  }, [activeCellKey, boardSize, cells, completedCellKeySet, completionGlowProgress, currentBlockCellKeys, effectiveActiveColorKey, effectiveBoardLayout, patternResult, placementMode, progressFlowOffset, showGuide, totalCompletionProgress, viewport]);
+  }, [activeCellKey, boardSize, cells, completedCellKeySet, completionGlowProgress, currentBlockCellKeys, effectiveActiveColorKey, effectiveBoardLayout, patternResult, placementMode, progressFlowOffset, selectedBlockNumberingAxis, showGuide, totalCompletionProgress, viewport]);
 
   useEffect(() => {
     const canvas = completionPreviewCanvasRef.current;
@@ -1107,9 +1109,14 @@ export function FocusModePage() {
     return planBlocks.find((block) => block.colorKey === cell.colorKey && block.cells.some((blockCell) => getCellCoordKey(blockCell) === cell.coordKey)) ?? null;
   }, [planBlocks]);
 
+  const getFirstAvailableBlockForColor = useCallback((colorKey: string) => {
+    const blocks = getOrderedBlocksForColor(colorKey);
+    return blocks.find((block) => !isBlockCompleted(block, completedCellKeySet)) ?? blocks[0] ?? null;
+  }, [completedCellKeySet, getOrderedBlocksForColor]);
+
   const selectColorFromPalette = useCallback((colorKey: string) => {
     clearColorAutoAdvance();
-    const nextBlock = getOrderedBlocksForColor(colorKey)[0] ?? null;
+    const nextBlock = getFirstAvailableBlockForColor(colorKey);
     if (nextBlock) {
       selectBlock(nextBlock, { center: true, animated: true });
     } else {
@@ -1119,7 +1126,7 @@ export function FocusModePage() {
     setPaletteOpen(false);
     const item = palette.find((paletteItem) => getColorKey(paletteItem) === colorKey);
     if (item) showToast(`已切换到色号 ${item.vendorCode}`);
-  }, [clearColorAutoAdvance, getOrderedBlocksForColor, palette, selectBlock, showToast]);
+  }, [clearColorAutoAdvance, getFirstAvailableBlockForColor, palette, selectBlock, showToast]);
 
   const scheduleNextColorAutoAdvance = useCallback((finishedColorKey: string | null) => {
     clearColorAutoAdvance();
@@ -1390,20 +1397,31 @@ export function FocusModePage() {
         }
       }
 
-      const findFirstIncompleteBlock = (colorKey: string, startIndex = 0) => {
+      const findFirstIncompleteBlock = (colorKey: string, startIndex = 0, endIndex?: number) => {
         const blocks = getOrderedBlocksForColor(colorKey);
-        for (let index = Math.max(0, startIndex); index < blocks.length; index += 1) {
+        const limit = endIndex === undefined ? blocks.length : Math.min(endIndex, blocks.length);
+        for (let index = Math.max(0, startIndex); index < limit; index += 1) {
           const block = blocks[index];
           if (!isBlockCompleted(block, completedAfterNext)) return block;
         }
         return null;
       };
 
+      const findNextIncompleteBlockInCurrentColor = (colorKey: string) => {
+        const blocks = getOrderedBlocksForColor(colorKey);
+        if (blocks.length === 0) return null;
+        const startIndex = currentBlockIndex >= 0 ? currentBlockIndex + 1 : 0;
+        return (
+          findFirstIncompleteBlock(colorKey, startIndex) ??
+          findFirstIncompleteBlock(colorKey, 0, startIndex)
+        );
+      };
+
       const currentColorKey = effectiveActiveColorKey;
       const currentPaletteIndex = palette.findIndex((item) => getColorKey(item) === currentColorKey);
       nextBlock =
-        currentColorKey && currentBlockIndex >= 0
-          ? findFirstIncompleteBlock(currentColorKey, currentBlockIndex + 1)
+        currentColorKey
+          ? findNextIncompleteBlockInCurrentColor(currentColorKey)
           : null;
 
       if (!nextBlock && palette.length > 0 && currentPaletteIndex >= 0) {

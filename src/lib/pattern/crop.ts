@@ -19,6 +19,7 @@ export function getCropOffsetForFrame(cropTransform: CropTransform, frameSize: n
 export function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
+    if (/^https?:\/\//i.test(src)) image.crossOrigin = 'anonymous';
     image.onload = () => resolve(image);
     image.onerror = () => reject(new Error('图片加载失败'));
     image.src = src;

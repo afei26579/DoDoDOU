@@ -14,6 +14,7 @@ import { generatePatternCover } from '../../../lib/pattern/cover';
 import { fetchMyEntitlements } from '../../subscription/model/subscriptionApi';
 import {
   deleteRemoteWorkshopProject,
+  hasLoadedRemoteProjectPayload,
   getRemoteWorkshopProject,
   isProjectCloudLimitError,
   listRemoteWorkshopProjects,
@@ -21,10 +22,12 @@ import {
 } from './projectApi';
 
 const DB_NAME = 'dodoudou-workshop';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const STORE_NAME = 'projects';
 const DRAFT_STORE_NAME = 'editor-drafts';
+const ASSET_STORE_NAME = 'workshop-assets';
 const MEMORY_CACHE = new Map<string, WorkshopProjectRecord>();
+const ASSET_OBJECT_URL_CACHE = new Map<string, { updatedAt: string; url: string }>();
 const REMOTE_SAVE_BLOCKED_PROJECT_IDS = new Set<string>();
 const REMOTE_SAVE_IN_FLIGHT_PROJECT_IDS = new Set<string>();
 const REMOTE_SAVE_QUEUED_RECORDS = new Map<string, WorkshopProjectRecord>();
@@ -71,6 +74,30 @@ export type WorkshopProjectProgress = {
   updatedAt?: string;
 };
 
+type WorkshopAssetSlot = 'uploadedImage' | 'cover' | 'preview';
+
+type WorkshopProjectAssetRecord = {
+  assetId: string;
+  projectId: string;
+  slot: WorkshopAssetSlot;
+  blob: Blob;
+  mimeType: string;
+  name?: string;
+  size?: number;
+  width?: number;
+  height?: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type StoredUploadedImage = Omit<UploadedImage, 'dataUrl'> & {
+  dataUrl?: string;
+};
+
+type StoredWorkshopProjectRecord = Omit<WorkshopProjectRecord, 'uploadedImage'> & {
+  uploadedImage: StoredUploadedImage | null;
+};
+
 export type WorkshopProjectRecord = {
   projectId: string;
   title: string;
@@ -87,6 +114,9 @@ export type WorkshopProjectRecord = {
   editorState: WorkshopEditorState | null;
   progress: WorkshopProjectProgress | null;
   beadingProgress: WorkshopBeadingProgress | null;
+  uploadedImageAssetId?: string | null;
+  coverAssetId?: string | null;
+  previewAssetId?: string | null;
   coverUrl?: string | null;
   previewUrl?: string | null;
   lastOpenedAt: string | null;
@@ -149,6 +179,9 @@ function createDefaultRecord(projectId: string): WorkshopProjectRecord {
     editorState: null,
     progress: null,
     beadingProgress: null,
+    uploadedImageAssetId: null,
+    coverAssetId: null,
+    previewAssetId: null,
     coverUrl: null,
     previewUrl: null,
     lastOpenedAt: now,
@@ -204,6 +237,90 @@ function normalizeNullableTimestamp(value: unknown, fallback: string | null): st
   return fallback;
 }
 
+function createProjectAssetId(projectId: string, slot: WorkshopAssetSlot) {
+  return `project:${projectId}:${slot}`;
+}
+
+function isEmbeddedImageUrl(value: string | null | undefined) {
+  return Boolean(value?.startsWith('data:image/') || value?.startsWith('blob:'));
+}
+
+function dataUrlToBlob(dataUrl: string) {
+  const [header, base64 = ''] = dataUrl.split(',');
+  const mimeMatch = /^data:([^;]+);base64$/i.exec(header);
+  const mimeType = mimeMatch?.[1] || 'application/octet-stream';
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mimeType });
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function imageSourceToBlob(src: string, fallbackType: string) {
+  if (src.startsWith('data:')) return dataUrlToBlob(src);
+  const response = await fetch(src);
+  return response.blob().then((blob) => blob.type ? blob : blob.slice(0, blob.size, fallbackType || 'image/png'));
+}
+
+function createAssetObjectUrl(asset: WorkshopProjectAssetRecord) {
+  const cached = ASSET_OBJECT_URL_CACHE.get(asset.assetId);
+  if (cached?.updatedAt === asset.updatedAt) return cached.url;
+
+  if (cached && typeof URL !== 'undefined') {
+    URL.revokeObjectURL(cached.url);
+  }
+
+  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return '';
+  const url = URL.createObjectURL(asset.blob);
+  ASSET_OBJECT_URL_CACHE.set(asset.assetId, { updatedAt: asset.updatedAt, url });
+  return url;
+}
+
+function omitUploadedImageDataUrl(image: UploadedImage, assetId: string): StoredUploadedImage {
+  const { dataUrl: _dataUrl, ...metadata } = image;
+  return {
+    ...metadata,
+    assetId,
+  };
+}
+
+async function createAssetRecord(params: {
+  assetId: string;
+  projectId: string;
+  slot: WorkshopAssetSlot;
+  src: string;
+  name?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+}) {
+  const now = new Date().toISOString();
+  const blob = await imageSourceToBlob(params.src, params.mimeType || 'image/png');
+  return {
+    assetId: params.assetId,
+    projectId: params.projectId,
+    slot: params.slot,
+    blob,
+    mimeType: blob.type || params.mimeType || 'image/png',
+    name: params.name,
+    size: blob.size,
+    width: params.width,
+    height: params.height,
+    createdAt: now,
+    updatedAt: now,
+  } satisfies WorkshopProjectAssetRecord;
+}
+
 function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
   const defaultRecord = createDefaultRecord(record.projectId);
   const createdAt = normalizeTimestamp(record.createdAt, defaultRecord.createdAt);
@@ -240,6 +357,9 @@ function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
     editorState: record.editorState ?? null,
     progress: record.progress ?? null,
     beadingProgress: record.beadingProgress ?? null,
+    uploadedImageAssetId: record.uploadedImageAssetId ?? record.uploadedImage?.assetId ?? null,
+    coverAssetId: record.coverAssetId ?? null,
+    previewAssetId: record.previewAssetId ?? null,
     coverUrl: record.coverUrl ?? fallbackPatternCoverUrl ?? null,
     previewUrl: record.previewUrl ?? null,
     lastOpenedAt: normalizeNullableTimestamp(record.lastOpenedAt, null),
@@ -348,10 +468,167 @@ function getDb() {
       if (!db.objectStoreNames.contains(DRAFT_STORE_NAME)) {
         db.createObjectStore(DRAFT_STORE_NAME, { keyPath: 'draftId' });
       }
+      if (!db.objectStoreNames.contains(ASSET_STORE_NAME)) {
+        db.createObjectStore(ASSET_STORE_NAME, { keyPath: 'assetId' });
+      }
     };
     request.onerror = () => reject(request.error);
     request.onsuccess = () => resolve(request.result);
   });
+}
+
+async function readAssetRecord(assetId: string) {
+  const db = await getDb();
+  return new Promise<WorkshopProjectAssetRecord | null>((resolve, reject) => {
+    const tx = db.transaction(ASSET_STORE_NAME, 'readonly');
+    const store = tx.objectStore(ASSET_STORE_NAME);
+    const request = store.get(assetId);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      resolve((request.result as WorkshopProjectAssetRecord | undefined) ?? null);
+    };
+  });
+}
+
+async function readAssetDataUrl(assetId: string | null | undefined) {
+  if (!assetId) return null;
+  const asset = await readAssetRecord(assetId).catch(() => null);
+  return asset ? blobToDataUrl(asset.blob) : null;
+}
+
+async function getRemoteSaveImageUrl(url: string | null | undefined, assetId: string | null | undefined) {
+  if (assetId) {
+    const assetDataUrl = await readAssetDataUrl(assetId);
+    if (assetDataUrl) return assetDataUrl;
+  }
+  return url ?? null;
+}
+
+async function prepareRecordForRemoteSave(record: WorkshopProjectRecord) {
+  const uploadedImageAssetId = record.uploadedImageAssetId ?? record.uploadedImage?.assetId ?? null;
+  const uploadedImageUrl = await getRemoteSaveImageUrl(record.uploadedImage?.dataUrl, uploadedImageAssetId);
+  const coverUrl = await getRemoteSaveImageUrl(record.coverUrl, record.coverAssetId);
+  const previewUrl = await getRemoteSaveImageUrl(record.previewUrl, record.previewAssetId);
+
+  return {
+    ...record,
+    uploadedImage: record.uploadedImage && uploadedImageUrl
+      ? {
+          ...record.uploadedImage,
+          dataUrl: uploadedImageUrl,
+        }
+      : record.uploadedImage,
+    coverUrl,
+    previewUrl,
+  };
+}
+
+async function hydrateImageUrl(url: string | null | undefined, assetId: string | null | undefined) {
+  if (url) return url;
+  if (!assetId) return url ?? null;
+  const cached = ASSET_OBJECT_URL_CACHE.get(assetId);
+  if (cached) return cached.url;
+  const asset = await readAssetRecord(assetId).catch(() => null);
+  return asset ? createAssetObjectUrl(asset) : null;
+}
+
+async function hydrateStoredRecord(storedRecord: StoredWorkshopProjectRecord) {
+  const uploadedImageAssetId = storedRecord.uploadedImageAssetId ?? storedRecord.uploadedImage?.assetId ?? null;
+  const uploadedImageUrl = storedRecord.uploadedImage
+    ? await hydrateImageUrl(storedRecord.uploadedImage.dataUrl, uploadedImageAssetId)
+    : null;
+  const coverUrl = await hydrateImageUrl(storedRecord.coverUrl, storedRecord.coverAssetId);
+  const previewUrl = await hydrateImageUrl(storedRecord.previewUrl, storedRecord.previewAssetId);
+
+  const record = {
+    ...storedRecord,
+    uploadedImage: storedRecord.uploadedImage && uploadedImageUrl
+      ? {
+          ...storedRecord.uploadedImage,
+          assetId: uploadedImageAssetId ?? storedRecord.uploadedImage.assetId,
+          dataUrl: uploadedImageUrl,
+        }
+      : storedRecord.uploadedImage,
+    coverUrl,
+    previewUrl,
+  } as WorkshopProjectRecord;
+
+  return normalizeRecord(record);
+}
+
+async function createStoredRecord(record: WorkshopProjectRecord) {
+  const assets: WorkshopProjectAssetRecord[] = [];
+  const storedRecord: StoredWorkshopProjectRecord = {
+    ...record,
+    uploadedImage: record.uploadedImage,
+  };
+
+  const uploadedImage = record.uploadedImage;
+  const existingUploadedImageAssetId = record.uploadedImageAssetId ?? uploadedImage?.assetId ?? null;
+  let uploadedImageAssetId = existingUploadedImageAssetId;
+
+  if (uploadedImage?.dataUrl && isEmbeddedImageUrl(uploadedImage.dataUrl)) {
+    uploadedImageAssetId = uploadedImageAssetId || createProjectAssetId(record.projectId, 'uploadedImage');
+    if (!(uploadedImage.dataUrl.startsWith('blob:') && existingUploadedImageAssetId)) {
+      assets.push(await createAssetRecord({
+        assetId: uploadedImageAssetId,
+        projectId: record.projectId,
+        slot: 'uploadedImage',
+        src: uploadedImage.dataUrl,
+        name: uploadedImage.name,
+        mimeType: uploadedImage.type,
+        width: uploadedImage.width,
+        height: uploadedImage.height,
+      }));
+    }
+    storedRecord.uploadedImage = omitUploadedImageDataUrl(uploadedImage, uploadedImageAssetId);
+    storedRecord.uploadedImageAssetId = uploadedImageAssetId;
+  } else if (uploadedImage) {
+    storedRecord.uploadedImage = uploadedImage;
+    storedRecord.uploadedImageAssetId = uploadedImageAssetId;
+  } else {
+    storedRecord.uploadedImage = null;
+    storedRecord.uploadedImageAssetId = null;
+  }
+
+  const resolveAssetBackedUrl = async (
+    value: string | null | undefined,
+    slot: WorkshopAssetSlot,
+    existingAssetId: string | null | undefined,
+  ) => {
+    if (!value) return { url: value ?? null, assetId: existingAssetId ?? null };
+    if (!isEmbeddedImageUrl(value)) return { url: value, assetId: null };
+
+    if (uploadedImage?.dataUrl === value && uploadedImageAssetId) {
+      return { url: null, assetId: uploadedImageAssetId };
+    }
+
+    const assetId = existingAssetId && existingAssetId !== uploadedImageAssetId
+      ? existingAssetId
+      : createProjectAssetId(record.projectId, slot);
+    const canReuseExistingBlobAsset = value.startsWith('blob:') && existingAssetId === assetId;
+    if (!canReuseExistingBlobAsset) {
+      assets.push(await createAssetRecord({
+        assetId,
+        projectId: record.projectId,
+        slot,
+        src: value,
+        name: `${record.title}-${slot}.png`,
+        mimeType: 'image/png',
+      }));
+    }
+    return { url: null, assetId };
+  };
+
+  const cover = await resolveAssetBackedUrl(record.coverUrl, 'cover', record.coverAssetId);
+  storedRecord.coverUrl = cover.url;
+  storedRecord.coverAssetId = cover.assetId;
+
+  const preview = await resolveAssetBackedUrl(record.previewUrl, 'preview', record.previewAssetId);
+  storedRecord.previewUrl = preview.url;
+  storedRecord.previewAssetId = preview.assetId;
+
+  return { storedRecord, assets };
 }
 
 async function readRecord(projectId: string) {
@@ -362,29 +639,58 @@ async function readRecord(projectId: string) {
     const request = store.get(projectId);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
-      const result = request.result as WorkshopProjectRecord | undefined;
-      resolve(result ? normalizeRecord(result) : null);
+      const result = request.result as StoredWorkshopProjectRecord | undefined;
+      if (!result) {
+        resolve(null);
+        return;
+      }
+      hydrateStoredRecord(result).then(resolve, reject);
     };
   });
 }
 
 async function writeRecord(record: WorkshopProjectRecord) {
+  const { storedRecord, assets } = await createStoredRecord(record);
   const db = await getDb();
-  return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction([STORE_NAME, ASSET_STORE_NAME], 'readwrite');
     tx.onerror = () => reject(tx.error);
     tx.oncomplete = () => resolve();
-    tx.objectStore(STORE_NAME).put(record);
+    const assetStore = tx.objectStore(ASSET_STORE_NAME);
+    assets.forEach((asset) => assetStore.put(asset));
+    tx.objectStore(STORE_NAME).put(storedRecord);
   });
+  assets.forEach(createAssetObjectUrl);
+  return storedRecord;
 }
 
 async function deleteRecord(projectId: string) {
   const db = await getDb();
   return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, 'readwrite');
+    const tx = db.transaction([STORE_NAME, ASSET_STORE_NAME], 'readwrite');
+    const projectStore = tx.objectStore(STORE_NAME);
+    const assetStore = tx.objectStore(ASSET_STORE_NAME);
+    const request = projectStore.get(projectId);
     tx.onerror = () => reject(tx.error);
     tx.oncomplete = () => resolve();
-    tx.objectStore(STORE_NAME).delete(projectId);
+    request.onsuccess = () => {
+      const record = request.result as StoredWorkshopProjectRecord | undefined;
+      const assetIds = new Set([
+        record?.uploadedImageAssetId ?? record?.uploadedImage?.assetId,
+        record?.coverAssetId,
+        record?.previewAssetId,
+        createProjectAssetId(projectId, 'uploadedImage'),
+        createProjectAssetId(projectId, 'cover'),
+        createProjectAssetId(projectId, 'preview'),
+      ].filter(Boolean) as string[]);
+      assetIds.forEach((assetId) => {
+        const cached = ASSET_OBJECT_URL_CACHE.get(assetId);
+        if (cached && typeof URL !== 'undefined') URL.revokeObjectURL(cached.url);
+        ASSET_OBJECT_URL_CACHE.delete(assetId);
+        assetStore.delete(assetId);
+      });
+      projectStore.delete(projectId);
+    };
   });
 }
 
@@ -396,8 +702,9 @@ export async function listLocalWorkshopProjects() {
     const request = store.getAll();
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
-      const records = (request.result as WorkshopProjectRecord[]).map(normalizeRecord);
-      resolve(sortWorkshopProjectRecords(records));
+      Promise
+        .all((request.result as StoredWorkshopProjectRecord[]).map(hydrateStoredRecord))
+        .then((records) => resolve(sortWorkshopProjectRecords(records)), reject);
     };
   });
 }
@@ -410,9 +717,14 @@ export async function listWorkshopProjects() {
       const localRecords = await listLocalWorkshopProjects().catch(() => []);
       const records = mergeWorkshopProjectRecords(remoteRecords, localRecords);
       MEMORY_CACHE.clear();
-      records.forEach((record) => MEMORY_CACHE.set(record.projectId, record));
+      records.forEach((record) => {
+        if (hasLoadedRemoteProjectPayload(record) || localRecords.some((localRecord) => localRecord.projectId === record.projectId)) {
+          MEMORY_CACHE.set(record.projectId, record);
+        }
+      });
       const localRecordMap = new Map(localRecords.map((record) => [record.projectId, record]));
       void Promise.all(remoteRecords.map((record) => {
+        if (!hasLoadedRemoteProjectPayload(record)) return undefined;
         const localRecord = localRecordMap.get(record.projectId);
         if (localRecord && getProjectTimestamp(localRecord).localeCompare(getProjectTimestamp(record)) > 0) {
           return undefined;
@@ -442,7 +754,11 @@ export async function findWorkshopProjectBySource(sourceType: WorkshopProjectSou
 }
 
 export async function getWorkshopProject(projectId: string) {
-  if (MEMORY_CACHE.has(projectId)) return MEMORY_CACHE.get(projectId) ?? null;
+  const cachedRecord = MEMORY_CACHE.get(projectId);
+  if (cachedRecord && (!shouldUseRemoteProjects() || hasLoadedRemoteProjectPayload(cachedRecord))) {
+    return cachedRecord;
+  }
+
   const localRecord = await readRecord(projectId).catch(() => null);
   if (localRecord) {
     MEMORY_CACHE.set(projectId, localRecord);
@@ -470,12 +786,6 @@ async function loadRemoteProjectLimit() {
   remoteProjectLimitLoaded = true;
 }
 
-async function loadRemoteProjectIds() {
-  if (remoteProjectCount !== null) return;
-  const records = (await listRemoteWorkshopProjects()).map(normalizeRecord);
-  rememberRemoteProjectRecords(records);
-}
-
 async function canSaveNewRemoteProject(projectId: string) {
   if (REMOTE_PROJECT_IDS.has(projectId)) return true;
 
@@ -487,13 +797,9 @@ async function canSaveNewRemoteProject(projectId: string) {
 
   if (remoteProjectLimit === null) return true;
 
-  try {
-    await loadRemoteProjectIds();
-  } catch {
-    return true;
-  }
-
   if (REMOTE_PROJECT_IDS.has(projectId)) return true;
+
+  if (remoteProjectCount === null) return true;
 
   if (remoteProjectCount !== null && remoteProjectCount >= remoteProjectLimit) {
     REMOTE_SAVE_BLOCKED_PROJECT_IDS.add(projectId);
@@ -509,7 +815,8 @@ async function runRemoteProjectSave(record: WorkshopProjectRecord) {
   try {
     if (!(await canSaveNewRemoteProject(projectId))) return;
 
-    const remoteRecord = await saveRemoteWorkshopProject(record);
+    const remoteSaveRecord = await prepareRecordForRemoteSave(record);
+    const remoteRecord = await saveRemoteWorkshopProject(remoteSaveRecord);
     const normalizedRemoteRecord = normalizeRecord(remoteRecord);
     const currentRecord = MEMORY_CACHE.get(normalizedRemoteRecord.projectId);
     if (currentRecord && getProjectTimestamp(currentRecord).localeCompare(getProjectTimestamp(normalizedRemoteRecord)) > 0) {
@@ -551,12 +858,13 @@ function scheduleRemoteProjectSave(record: WorkshopProjectRecord) {
 }
 
 async function persistWorkshopProject(record: WorkshopProjectRecord) {
-  MEMORY_CACHE.set(record.projectId, record);
-  await writeRecord(record);
+  const storedRecord = await writeRecord(record);
+  const hydratedRecord = await hydrateStoredRecord(storedRecord);
+  MEMORY_CACHE.set(record.projectId, hydratedRecord);
 
-  scheduleRemoteProjectSave(record);
+  scheduleRemoteProjectSave(hydratedRecord);
 
-  return record;
+  return hydratedRecord;
 }
 
 function getDefinedProjectPatch(patch: WorkshopProjectPatch) {

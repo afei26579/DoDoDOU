@@ -2480,11 +2480,15 @@ export function WorkshopEditorPage() {
     showToast('已删除这片区域');
   };
 
-  const startOutlineColorPick = () => {
+  const toggleOutlineColorPick = () => {
+    if (isPickingOutlineColor) {
+      setIsPickingOutlineColor(false);
+      return;
+    }
+
     clearActiveSelection();
     setPaletteOpen(false);
     setIsPickingOutlineColor(true);
-    showToast('选择描边色开始描边');
   };
 
   const applyOutlineColor = (outlineColor: PatternPaletteColor) => {
@@ -2839,11 +2843,12 @@ export function WorkshopEditorPage() {
           </button>
           <button
             type="button"
-            className={styles.canvasActionBtn}
-            onClick={startOutlineColorPick}
+            className={`${styles.canvasActionBtn} ${isPickingOutlineColor ? styles.isActive : ''}`}
+            onClick={toggleOutlineColorPick}
             disabled={!grid.length}
-            title="描边"
-            aria-label="描边"
+            title={isPickingOutlineColor ? '退出描边' : '描边'}
+            aria-label={isPickingOutlineColor ? '退出描边' : '描边'}
+            aria-pressed={isPickingOutlineColor}
           >
             <img src={ICONS.stroke} alt="" />
           </button>
@@ -2852,7 +2857,7 @@ export function WorkshopEditorPage() {
         {isPickingOutlineColor ? (
           <div className={styles.outlineNotice} role="status" aria-live="polite">
             <strong>选择描边色开始描边</strong>
-            <span>点击图纸上的任意豆豆，外轮廓会直接使用该颜色。</span>
+            <span>点击图纸上的任意豆豆取色。再次点击描边可退出。</span>
           </div>
         ) : null}
 

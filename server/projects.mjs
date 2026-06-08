@@ -167,6 +167,50 @@ function mapProject(project) {
   };
 }
 
+function getProjectCardImageUrl(value) {
+  if (typeof value !== 'string' || !value) return null;
+  return value.startsWith('data:image/') || value.startsWith('blob:') ? null : value;
+}
+
+function mapProjectSummary(project) {
+  return {
+    id: project.id,
+    clientProjectId: project.clientProjectId,
+    title: project.title,
+    status: project.status,
+    sourceType: project.sourceType,
+    sourceItemId: project.sourceItemId,
+    coverUrl: getProjectCardImageUrl(project.coverUrl),
+    previewUrl: getProjectCardImageUrl(project.previewUrl),
+    width: project.width,
+    height: project.height,
+    beadCount: project.beadCount,
+    paletteCount: project.paletteCount,
+    payloadJson: null,
+    lastOpenedAt: project.lastOpenedAt?.toISOString() ?? null,
+    createdAt: project.createdAt.toISOString(),
+    updatedAt: project.updatedAt.toISOString(),
+  };
+}
+
+const projectSummarySelect = {
+  id: true,
+  clientProjectId: true,
+  title: true,
+  status: true,
+  sourceType: true,
+  sourceItemId: true,
+  coverUrl: true,
+  previewUrl: true,
+  width: true,
+  height: true,
+  beadCount: true,
+  paletteCount: true,
+  lastOpenedAt: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
 async function findProjectByLookup(prisma, userId, lookupId) {
   if (!normalizeProjectLookupId(lookupId)) return null;
   return prisma.workshopProject.findFirst({
@@ -285,6 +329,16 @@ export function createProjectsRouter(prisma) {
 
   router.get('/', async (req, res, next) => {
     try {
+      if (req.query.summary === '1' || req.query.summary === 'true') {
+        const projects = await prisma.workshopProject.findMany({
+          where: { userId: req.user.id },
+          select: projectSummarySelect,
+          orderBy: [{ updatedAt: 'desc' }],
+        });
+        res.json({ items: projects.map(mapProjectSummary) });
+        return;
+      }
+
       const projects = await prisma.workshopProject.findMany({
         where: { userId: req.user.id },
         orderBy: [{ updatedAt: 'desc' }],
@@ -411,10 +465,11 @@ export function createProjectsRouter(prisma) {
 
       const projects = await prisma.workshopProject.findMany({
         where: { userId: req.user.id },
+        select: projectSummarySelect,
         orderBy: [{ updatedAt: 'desc' }],
       });
 
-      res.json({ items: projects.map(mapProject), stats, conflicts });
+      res.json({ items: projects.map(mapProjectSummary), stats, conflicts });
     } catch (error) {
       next(error);
     }

@@ -16,6 +16,19 @@ function resolveApiBaseUrl() {
 const API_BASE_URL = resolveApiBaseUrl();
 const PROJECT_SYNC_MAX_ITEMS_PER_BATCH = 100;
 const PROJECT_SYNC_MAX_BATCH_BYTES = 8 * 1024 * 1024;
+const REMOTE_ASSET_URL_CACHE = new Map<string, string>();
+
+type UploadedAsset = {
+  id: string;
+  url: string;
+  thumbUrl?: string | null;
+  mimeType: string;
+  width?: number | null;
+  height?: number | null;
+  size?: number | null;
+  checksum?: string | null;
+  createdAt: string;
+};
 
 type RemoteProjectItem = {
   id: string;
@@ -30,7 +43,7 @@ type RemoteProjectItem = {
   height: number | null;
   beadCount: number | null;
   paletteCount: number | null;
-  payloadJson: unknown;
+  payloadJson?: unknown;
   lastOpenedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -120,6 +133,32 @@ async function requestProject<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+async function requestAssetUpload(src: string, fileName: string, mimeType?: string) {
+  if (src.startsWith('blob:')) return null;
+  const response = src.startsWith('data:') || src.startsWith('blob:')
+    ? await fetch(src)
+    : null;
+  if (!response && /^https?:\/\//i.test(src)) return null;
+
+  const blob = response ? await response.blob() : null;
+  if (!blob) return null;
+
+  const formData = new FormData();
+  formData.append('file', new File([blob], fileName, { type: blob.type || mimeType || 'image/png' }));
+
+  const uploadResponse = await fetch(`${API_BASE_URL}/api/assets/upload`, {
+    method: 'POST',
+    credentials: 'include',
+    body: formData,
+  });
+  const payload = await uploadResponse.json().catch(() => null) as { asset?: UploadedAsset } | null;
+  if (!uploadResponse.ok || !payload?.asset?.url) {
+    const errorPayload = isProjectErrorPayload(payload) ? payload : null;
+    throw new ProjectApiError(getApiErrorMessage(errorPayload, uploadResponse.status), uploadResponse.status);
+  }
+  return payload.asset;
+}
+
 export function isProjectCloudLimitError(error: unknown) {
   return error instanceof ProjectApiError
     && error.status === 402
@@ -146,25 +185,61 @@ function getPatternSummary(record: WorkshopProjectRecord) {
   };
 }
 
-function createRemotePayloadJson(record: WorkshopProjectRecord, coverUrl: string | null) {
+function isEmbeddedImageReference(value: string | null | undefined) {
+  return Boolean(value?.startsWith('data:image/') || value?.startsWith('blob:'));
+}
+
+async function resolveRemoteImageReference(src: string | null | undefined, fileName: string, mimeType?: string, cacheKey?: string | null) {
+  if (!src) return null;
+  if (!isEmbeddedImageReference(src)) return src;
+  if (src.startsWith('blob:')) return null;
+  if (cacheKey && REMOTE_ASSET_URL_CACHE.has(cacheKey)) return REMOTE_ASSET_URL_CACHE.get(cacheKey) ?? null;
+  const asset = await requestAssetUpload(src, fileName, mimeType);
+  if (asset?.url && cacheKey) REMOTE_ASSET_URL_CACHE.set(cacheKey, asset.url);
+  return asset?.url ?? null;
+}
+
+function createRemotePayloadJson(record: WorkshopProjectRecord, sourceUrl: string | null) {
   const payloadJson: Record<string, unknown> = {
     ...record,
     coverUrl: undefined,
     previewUrl: undefined,
+    coverAssetId: undefined,
+    previewAssetId: undefined,
+    uploadedImageAssetId: undefined,
   };
 
-  if (record.uploadedImage?.dataUrl && record.uploadedImage.dataUrl === coverUrl) {
-    const { dataUrl: _dataUrl, ...uploadedImageMetadata } = record.uploadedImage;
-    payloadJson.uploadedImage = uploadedImageMetadata;
+  if (record.uploadedImage) {
+    const { dataUrl: _dataUrl, assetId: _assetId, ...uploadedImageMetadata } = record.uploadedImage;
+    payloadJson.uploadedImage = sourceUrl
+      ? {
+          ...uploadedImageMetadata,
+          dataUrl: sourceUrl,
+        }
+      : uploadedImageMetadata;
   }
 
   return payloadJson;
 }
 
-function toRemotePayload(record: WorkshopProjectRecord) {
+async function toRemotePayload(record: WorkshopProjectRecord) {
   const summary = getPatternSummary(record);
-  const coverUrl = record.coverUrl ?? record.uploadedImage?.dataUrl ?? null;
-  const previewUrl = record.previewUrl ?? null;
+  const uploadedImageCacheKey = record.uploadedImageAssetId ?? record.uploadedImage?.assetId ?? null;
+  const uploadedImageUrl = await resolveRemoteImageReference(
+    record.uploadedImage?.dataUrl,
+    record.uploadedImage?.name || `${record.projectId}-source.png`,
+    record.uploadedImage?.type,
+    uploadedImageCacheKey,
+  );
+  const coverInput = record.coverUrl ?? uploadedImageUrl ?? record.uploadedImage?.dataUrl ?? null;
+  const coverCacheKey = record.coverAssetId ?? (coverInput === record.uploadedImage?.dataUrl ? uploadedImageCacheKey : null);
+  const coverUrl = coverInput === record.uploadedImage?.dataUrl && uploadedImageUrl
+    ? uploadedImageUrl
+    : await resolveRemoteImageReference(coverInput, `${record.projectId}-cover.png`, 'image/png', coverCacheKey);
+  const previewCacheKey = record.previewAssetId ?? (record.previewUrl === record.uploadedImage?.dataUrl ? uploadedImageCacheKey : null);
+  const previewUrl = record.previewUrl === record.uploadedImage?.dataUrl && uploadedImageUrl
+    ? uploadedImageUrl
+    : await resolveRemoteImageReference(record.previewUrl ?? null, `${record.projectId}-preview.png`, 'image/png', previewCacheKey);
   return {
     clientProjectId: record.projectId,
     title: record.title,
@@ -174,14 +249,14 @@ function toRemotePayload(record: WorkshopProjectRecord) {
     coverUrl,
     previewUrl,
     ...summary,
-    payloadJson: createRemotePayloadJson(record, coverUrl),
+    payloadJson: createRemotePayloadJson(record, uploadedImageUrl),
     lastOpenedAt: record.lastOpenedAt ?? null,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   };
 }
 
-type RemoteProjectPayload = ReturnType<typeof toRemotePayload>;
+type RemoteProjectPayload = Awaited<ReturnType<typeof toRemotePayload>>;
 
 function getUtf8ByteLength(value: string) {
   if (typeof TextEncoder === 'undefined') return value.length;
@@ -220,35 +295,59 @@ function restoreRemoteUploadedImage(payload: Record<string, unknown>, coverUrl: 
   const uploadedImage = payload.uploadedImage;
   if (!isPlainObject(uploadedImage)) return null;
   if (typeof uploadedImage.dataUrl === 'string' && uploadedImage.dataUrl) return uploadedImage;
-  if (!coverUrl?.startsWith('data:image/')) return uploadedImage;
+  if (!coverUrl) return uploadedImage;
   return {
     ...uploadedImage,
     dataUrl: coverUrl,
   };
 }
 
+function createSummaryPatternResult(item: RemoteProjectItem): WorkshopProjectRecord['patternResult'] {
+  if (!item.width || !item.height || item.beadCount === null || item.paletteCount === null) return null;
+  return {
+    width: item.width,
+    height: item.height,
+    cells: [],
+    palette: [],
+    stats: {
+      totalCells: item.beadCount,
+      colorCount: item.paletteCount,
+    },
+  };
+}
+
 function fromRemoteItem(item: RemoteProjectItem): WorkshopProjectRecord {
   const payload = isPlainObject(item.payloadJson) ? item.payloadJson : {};
+  const hasPayload = isPlainObject(item.payloadJson);
   const coverUrl = item.coverUrl ?? (payload.coverUrl as string | null | undefined) ?? null;
   const previewUrl = item.previewUrl ?? (payload.previewUrl as string | null | undefined) ?? null;
+  const patternResult = (payload.patternResult as WorkshopProjectRecord['patternResult'] | undefined) ?? createSummaryPatternResult(item);
   return {
     ...payload,
     uploadedImage: restoreRemoteUploadedImage(payload, coverUrl),
     projectId: item.clientProjectId || String(payload.projectId ?? item.id),
     title: item.title || String(payload.title ?? '未命名作品'),
+    kind: (payload.kind as WorkshopProjectRecord['kind'] | undefined) ?? (patternResult ? 'pattern' : 'upload'),
     status: item.status || (payload.status as WorkshopProjectRecord['status']) || 'editing',
+    beadingState: (payload.beadingState as WorkshopProjectRecord['beadingState'] | undefined) ?? 'idle',
     sourceType: item.sourceType || (payload.sourceType as WorkshopProjectRecord['sourceType']) || 'blank',
     sourceItemId: item.sourceItemId ?? (payload.sourceItemId as string | null | undefined) ?? null,
     coverUrl,
     previewUrl,
+    patternResult,
     lastOpenedAt: toNullableDate(item.lastOpenedAt) ?? (payload.lastOpenedAt as string | null | undefined) ?? null,
     createdAt: item.createdAt || String(payload.createdAt ?? new Date().toISOString()),
     updatedAt: item.updatedAt || String(payload.updatedAt ?? new Date().toISOString()),
-  } as WorkshopProjectRecord;
+    remotePayloadLoaded: hasPayload,
+  } as unknown as WorkshopProjectRecord;
+}
+
+export function hasLoadedRemoteProjectPayload(record: WorkshopProjectRecord) {
+  return (record as WorkshopProjectRecord & { remotePayloadLoaded?: boolean }).remotePayloadLoaded !== false;
 }
 
 export async function listRemoteWorkshopProjects() {
-  const response = await requestProject<ProjectListResponse>('/api/projects');
+  const response = await requestProject<ProjectListResponse>('/api/projects?summary=1');
   return response.items.map(fromRemoteItem);
 }
 
@@ -258,9 +357,10 @@ export async function getRemoteWorkshopProject(projectId: string) {
 }
 
 export async function saveRemoteWorkshopProject(record: WorkshopProjectRecord) {
+  const payload = await toRemotePayload(record);
   const response = await requestProject<ProjectItemResponse>('/api/projects', {
     method: 'POST',
-    body: JSON.stringify(toRemotePayload(record)),
+    body: JSON.stringify(payload),
   });
   return fromRemoteItem(response.item);
 }
@@ -280,7 +380,7 @@ async function syncRemoteProjectPayloads(payloads: RemoteProjectPayload[]) {
 }
 
 export async function syncRemoteWorkshopProjects(records: WorkshopProjectRecord[], options: ProjectSyncOptions = {}) {
-  const payloads = records.map(toRemotePayload);
+  const payloads = await Promise.all(records.map(toRemotePayload));
   const batches = payloads.length ? createProjectSyncBatches(payloads) : [[]];
   const stats = { created: 0, updated: 0, conflicted: 0 };
   const conflicts: ProjectSyncResponse['conflicts'] = [];

@@ -17,6 +17,7 @@ export type UploadedImage = {
   type: string;
   size: number;
   dataUrl: string;
+  assetId?: string;
   width?: number;
   height?: number;
 };

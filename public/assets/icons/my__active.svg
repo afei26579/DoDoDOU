@@ -1,0 +1,75 @@
+<svg width="100%" viewBox="0 0 380 380" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>我的图标方案A - 激活状态</title>
+  <desc>圆形头像徽章与拼豆花环，适合作为我的页面导航图标</desc>
+
+  <defs>
+    <filter id="myA-glow-purple" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur"/>
+      <feColorMatrix in="blur" type="matrix"
+        values="0.7 0 0.5 0 0.2
+                0   0 0.7 0 0.1
+                0.9 0 1.2 0 0.3
+                0   0 0   1 0" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <radialGradient id="myA-aura" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#EED8F8" stop-opacity="0.10"/>
+      <stop offset="55%" stop-color="#D8B4E2" stop-opacity="0.28"/>
+      <stop offset="80%" stop-color="#C090D8" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#D8B4E2" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="myA-stroke-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EED8F8"/>
+      <stop offset="52%" stop-color="#D8B4E2"/>
+      <stop offset="100%" stop-color="#A860C8"/>
+    </linearGradient>
+    <linearGradient id="myA-purple-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D8B4F0"/>
+      <stop offset="100%" stop-color="#8E48B8"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="380" height="380" fill="url(#myA-aura)"/>
+
+  <!-- 徽章底阴影 -->
+  <circle cx="196" cy="196" r="128" fill="#C8B09A" opacity="0.28" filter="url(#myA-glow-purple)"/>
+
+  <!-- 圆形个人徽章 -->
+  <circle cx="190" cy="188" r="126" fill="#F0E8F8" stroke="url(#myA-stroke-grad)" stroke-width="12" filter="url(#myA-glow-purple)"/>
+  <circle cx="190" cy="188" r="98" fill="#FBF7FF" stroke="#D8B4E2" stroke-width="5" opacity="0.65"/>
+  <path d="M102 126 Q130 82 190 82 Q250 82 278 126" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" opacity="0.45"/>
+
+  <!-- 头像：头发、脸、身体 -->
+  <path d="M152 150 Q154 105 190 102 Q226 105 228 150 Q210 134 190 138 Q170 134 152 150 Z" fill="url(#myA-purple-grad)" stroke="#A870C0" stroke-width="5" filter="url(#myA-glow-purple)"/>
+  <circle cx="190" cy="148" r="38" fill="#FFDAC1" stroke="#E0A080" stroke-width="5" filter="url(#myA-glow-purple)"/>
+  <circle cx="176" cy="140" r="5" fill="#FFFFFF" opacity="0.42"/>
+  <path d="M144 259 Q154 216 190 216 Q226 216 238 259 L250 286 Q224 302 190 302 Q156 302 130 286 Z" fill="url(#myA-purple-grad)" stroke="#A870C0" stroke-width="7" stroke-linejoin="round" filter="url(#myA-glow-purple)"/>
+  <path d="M160 252 Q190 232 220 252" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" opacity="0.45"/>
+
+  <!-- 拼豆花环 -->
+  <circle cx="112" cy="256" r="14" fill="#7ED9B0" stroke="#4DBF8A" stroke-width="2.8" opacity="1" filter="url(#myA-glow-purple)"/>
+  <circle cx="107.0" cy="251.0" r="4.5" fill="#FFFFFF" opacity="0.45"/>
+  <circle cx="138" cy="284" r="12" fill="#F9D77E" stroke="#E0B040" stroke-width="2.5" opacity="1" filter="url(#myA-glow-purple)"/>
+  <circle cx="133.7" cy="279.7" r="3.8" fill="#FFFFFF" opacity="0.45"/>
+  <circle cx="242" cy="284" r="12" fill="#A0C8F0" stroke="#6090D0" stroke-width="2.5" opacity="1" filter="url(#myA-glow-purple)"/>
+  <circle cx="237.7" cy="279.7" r="3.8" fill="#FFFFFF" opacity="0.45"/>
+  <circle cx="268" cy="256" r="14" fill="#F0907A" stroke="#D06050" stroke-width="2.8" opacity="1" filter="url(#myA-glow-purple)"/>
+  <circle cx="263.0" cy="251.0" r="4.5" fill="#FFFFFF" opacity="0.45"/>
+  <circle cx="190" cy="300" r="11" fill="#C89EDA" stroke="#A870C0" stroke-width="2.5" opacity="1" filter="url(#myA-glow-purple)"/>
+  <circle cx="186.0" cy="296.0" r="3.5" fill="#FFFFFF" opacity="0.45"/>
+
+  <!-- 我的标识小爱心 -->
+  <path d="M190 232 C177 218 154 224 156 244 C158 264 190 278 190 278 C190 278 222 264 224 244 C226 224 203 218 190 232 Z" fill="#F0907A" stroke="#D06050" stroke-width="4" filter="url(#myA-glow-purple)"/>
+  <circle cx="178" cy="239" r="5" fill="#FFFFFF" opacity="0.4"/>
+
+
+  <!-- 装饰星星与散点 -->
+  <path d="M 332.0 66.1 L 335.4 74.6 L 343.9 78.0 L 335.4 81.4 L 332.0 89.9 L 328.6 81.4 L 320.1 78.0 L 328.6 74.6 Z" fill="#D8B4E2" opacity="1" filter="url(#myA-glow-purple)"/>
+  <path d="M 42.0 204.2 L 44.8 211.2 L 51.8 214.0 L 44.8 216.8 L 42.0 223.8 L 39.2 216.8 L 32.2 214.0 L 39.2 211.2 Z" fill="#C890E0" opacity="1" filter="url(#myA-glow-purple)"/>
+  <circle cx="46" cy="116" r="5" fill="#D8B4E2" opacity="1" filter="url(#myA-glow-purple)"/>
+  <circle cx="338" cy="182" r="6" fill="#D8B4E2" opacity="0.9" filter="url(#myA-glow-purple)"/>
+  <circle cx="58" cy="316" r="7" fill="#D8B4E2" opacity="0.9" filter="url(#myA-glow-purple)"/>
+
+</svg>

@@ -14,7 +14,12 @@
   --focus-shadow-button: 0 2px 12px rgba(216, 180, 226, 0.35);
   --focus-ruler-height: 30px;
   --focus-side-ruler-width: 34px;
-  --focus-toolbar-height: 78px;
+  --focus-top-action-size: clamp(38px, 9.8vw, 48px);
+  --focus-toolbar-button-width: clamp(48px, 12vw, 58px);
+  --focus-toolbar-button-height: clamp(56px, 13vw, 62px);
+  --focus-toolbar-height: clamp(70px, 16vw, 76px);
+  --focus-toolbar-swatch-size: clamp(50px, 14vw, 66px);
+  --focus-color-focus-height: clamp(100px, 25vw, 112px);
   --focus-safe-top: var(--safe-top, env(safe-area-inset-top, 0px));
   --focus-safe-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px));
   position: fixed;
@@ -119,17 +124,17 @@
 }
 
 .iconButton {
-  min-width: 42px;
-  width: 42px;
-  height: 42px;
+  min-width: var(--focus-top-action-size);
+  width: var(--focus-top-action-size);
+  height: var(--focus-top-action-size);
   border: 1px solid var(--focus-border);
-  border-radius: 16px;
+  border-radius: clamp(14px, 3.2vw, 17px);
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.86);
   box-shadow: var(--focus-shadow-card);
   backdrop-filter: blur(16px);
-  font-size: 17px;
+  font-size: clamp(15px, 3.7vw, 18px);
   font-weight: 800;
   transition: transform 0.12s ease, background 0.18s ease, border-color 0.18s ease;
 }
@@ -289,14 +294,14 @@
 }
 
 .toolbar {
-  --toolbar-side-width: 54px;
-  --toolbar-complete-width: 54px;
-  --toolbar-gap: 10px;
-  --toolbar-padding: 7px;
+  --toolbar-side-width: var(--focus-toolbar-button-width);
+  --toolbar-complete-width: var(--focus-toolbar-button-width);
+  --toolbar-gap: clamp(6px, 2vw, 10px);
+  --toolbar-padding: clamp(7px, 1.8vw, 9px);
   width: min(420px, 100%);
   box-sizing: border-box;
-  height: 68px;
-  min-height: 68px;
+  height: var(--focus-toolbar-height);
+  min-height: var(--focus-toolbar-height);
   padding: var(--toolbar-padding);
   position: relative;
   display: grid;
@@ -316,7 +321,7 @@
 .colorFocus {
   min-width: 0;
   box-sizing: border-box;
-  min-height: 54px;
+  min-height: var(--focus-toolbar-button-height);
   border: 1px solid var(--focus-border);
   border-radius: 19px;
   background: var(--focus-surface);
@@ -327,8 +332,8 @@
 
 .toolButton,
 .primaryButton {
-  width: 54px;
-  height: 54px;
+  width: var(--focus-toolbar-button-width);
+  height: var(--focus-toolbar-button-height);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -343,7 +348,7 @@
 }
 
 .toolIcon {
-  font-size: 24px;
+  font-size: clamp(22px, 5.5vw, 26px);
   line-height: 1;
 }
 
@@ -372,11 +377,11 @@
   top: 50%;
   min-width: 0;
   overflow: hidden;
-  height: 106px;
-  min-height: 106px;
+  height: var(--focus-color-focus-height);
+  min-height: var(--focus-color-focus-height);
   padding: 9px 10px;
   display: grid;
-  grid-template-columns: 66px minmax(0, 1fr);
+  grid-template-columns: var(--focus-toolbar-swatch-size) minmax(0, 1fr);
   align-items: stretch;
   gap: 10px;
   background: rgba(255, 255, 255, 0.96);
@@ -485,8 +490,8 @@
 }
 
 .toolbarSwatch {
-  width: 62px;
-  height: 62px;
+  width: var(--focus-toolbar-swatch-size);
+  height: var(--focus-toolbar-swatch-size);
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.94);
   background: conic-gradient(#7bc56e var(--swatch-progress, 0deg), #d8d6d2 0deg);
@@ -618,8 +623,8 @@
 
 .completeIconButton {
   grid-column: 3;
-  width: 54px;
-  height: 54px;
+  width: var(--focus-toolbar-button-width);
+  height: var(--focus-toolbar-button-height);
   min-height: 0;
   display: grid;
   place-items: center;
@@ -628,7 +633,7 @@
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.78);
   color: #9a6a35;
-  font-size: 22px;
+  font-size: clamp(19px, 5vw, 23px);
   line-height: 1;
   font-weight: 1000;
   box-shadow: 0 1px 6px rgba(93, 83, 74, 0.08);
@@ -1331,27 +1336,33 @@
 }
 
 .toast {
-  position: absolute;
+  position: fixed;
   left: 50%;
-  bottom: calc(var(--focus-safe-bottom) + 190px);
-  z-index: 140;
-  transform: translateX(-50%) translateY(12px);
+  top: 50%;
+  z-index: 1200;
+  transform: translate(-50%, -50%);
   opacity: 0;
   pointer-events: none;
-  padding: 10px 14px;
-  border-radius: 999px;
-  background: rgba(93, 83, 74, 0.9);
-  color: #fff;
-  font-size: 12px;
+  max-width: calc(100vw - 48px);
+  padding: 14px 18px;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(253, 251, 247, 0.94) 100%),
+    radial-gradient(circle at 18% 12%, rgba(216, 180, 226, 0.26), transparent 46%);
+  color: #5d534a;
+  border: 1px solid rgba(216, 180, 226, 0.38);
+  box-shadow: 0 18px 42px rgba(93, 83, 74, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.74);
+  font-family: var(--font-title);
+  font-size: 15px;
   font-weight: 800;
-  box-shadow: var(--focus-shadow-card);
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  text-align: center;
   white-space: nowrap;
+  letter-spacing: 0.02em;
+  transition: opacity 0.18s ease;
 }
 
 .toast.show {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
 }
 
 .emptyState {
@@ -1388,6 +1399,15 @@
 }
 
 @media (max-width: 380px) {
+  .page {
+    --focus-top-action-size: 38px;
+    --focus-toolbar-button-width: 48px;
+    --focus-toolbar-button-height: 56px;
+    --focus-toolbar-height: 70px;
+    --focus-toolbar-swatch-size: 50px;
+    --focus-color-focus-height: 100px;
+  }
+
   .projectPill {
     max-width: calc(100vw - 180px);
     padding: 0 10px;
@@ -1398,35 +1418,35 @@
   }
 
   .iconButton {
-    width: 38px;
-    min-width: 38px;
-    height: 38px;
+    width: var(--focus-top-action-size);
+    min-width: var(--focus-top-action-size);
+    height: var(--focus-top-action-size);
     border-radius: 14px;
     font-size: 15px;
   }
 
   .toolbar {
-    --toolbar-side-width: 48px;
-    --toolbar-complete-width: 48px;
+    --toolbar-side-width: var(--focus-toolbar-button-width);
+    --toolbar-complete-width: var(--focus-toolbar-button-width);
     --toolbar-gap: 6px;
     --toolbar-padding: 7px;
     grid-template-columns: var(--toolbar-side-width) minmax(0, 1fr) var(--toolbar-complete-width) var(--toolbar-side-width);
-    height: 70px;
-    min-height: 70px;
+    height: var(--focus-toolbar-height);
+    min-height: var(--focus-toolbar-height);
     padding: var(--toolbar-padding);
   }
 
   .toolButton,
   .primaryButton,
   .colorFocus {
-    min-height: 56px;
+    min-height: var(--focus-toolbar-button-height);
     border-radius: 16px;
   }
 
   .toolButton,
   .primaryButton {
-    width: 48px;
-    height: 56px;
+    width: var(--focus-toolbar-button-width);
+    height: var(--focus-toolbar-button-height);
   }
 
   .toolText {
@@ -1434,9 +1454,9 @@
   }
 
   .colorFocus {
-    height: 100px;
-    min-height: 100px;
-    grid-template-columns: 52px minmax(0, 1fr);
+    height: var(--focus-color-focus-height);
+    min-height: var(--focus-color-focus-height);
+    grid-template-columns: calc(var(--focus-toolbar-swatch-size) + 2px) minmax(0, 1fr);
     gap: 5px;
     padding: 6px 7px;
     transform: translateY(-50%);
@@ -1447,8 +1467,8 @@
   }
 
   .toolbarSwatch {
-    width: 50px;
-    height: 50px;
+    width: var(--focus-toolbar-swatch-size);
+    height: var(--focus-toolbar-swatch-size);
     border-width: 2px;
   }
 
@@ -1475,8 +1495,8 @@
   }
 
   .completeIconButton {
-    width: 48px;
-    height: 56px;
+    width: var(--focus-toolbar-button-width);
+    height: var(--focus-toolbar-button-height);
     border-radius: 14px;
     font-size: 19px;
   }

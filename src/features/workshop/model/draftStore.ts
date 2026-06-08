@@ -1,9 +1,10 @@
 import type { WorkshopEditorState } from './types';
 
 const DB_NAME = 'dodoudou-workshop';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const PROJECT_STORE_NAME = 'projects';
 const STORE_NAME = 'editor-drafts';
+const ASSET_STORE_NAME = 'workshop-assets';
 const MEMORY_CACHE = new Map<string, WorkshopDraftRecord>();
 
 export type WorkshopDraftRecord = {
@@ -29,6 +30,9 @@ function getDb() {
       }
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'draftId' });
+      }
+      if (!db.objectStoreNames.contains(ASSET_STORE_NAME)) {
+        db.createObjectStore(ASSET_STORE_NAME, { keyPath: 'assetId' });
       }
     };
     request.onerror = () => reject(request.error);

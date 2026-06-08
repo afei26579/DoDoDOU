@@ -48,6 +48,8 @@ export type RulerData = {
   rows: RulerLabel[];
 };
 
+type SelectedBlockNumberingAxis = 'horizontal' | 'vertical';
+
 export function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -399,6 +401,100 @@ function drawCompletedCellMark(ctx: CanvasRenderingContext2D, x: number, y: numb
   ctx.restore();
 }
 
+function buildSelectedBlockNumberLabels(
+  cells: FocusBoardCell[],
+  selectedBlockCellKeys: Set<string>,
+  completedCellKeys: Set<string>,
+  axis: SelectedBlockNumberingAxis,
+  handedness: 'left' | 'right',
+) {
+  const selectedCells = cells.filter((cell) => (
+    selectedBlockCellKeys.has(cell.coordKey) &&
+    !completedCellKeys.has(cell.coordKey) &&
+    isDrawableCell(cell)
+  ));
+  const labels = new Map<string, string>();
+
+  if (axis === 'horizontal') {
+    const cellsByRow = new Map<number, FocusBoardCell[]>();
+    for (const cell of selectedCells) {
+      const rowCells = cellsByRow.get(cell.y) ?? [];
+      rowCells.push(cell);
+      cellsByRow.set(cell.y, rowCells);
+    }
+
+    for (const rowCells of cellsByRow.values()) {
+      rowCells
+        .sort((a, b) => (handedness === 'left' ? b.x - a.x : a.x - b.x))
+        .forEach((cell, index) => labels.set(cell.coordKey, String(index + 1)));
+    }
+
+    return labels;
+  }
+
+  const cellsByColumn = new Map<number, FocusBoardCell[]>();
+  for (const cell of selectedCells) {
+    const columnCells = cellsByColumn.get(cell.x) ?? [];
+    columnCells.push(cell);
+    cellsByColumn.set(cell.x, columnCells);
+  }
+
+  for (const columnCells of cellsByColumn.values()) {
+    columnCells
+      .sort((a, b) => a.y - b.y)
+      .forEach((cell, index) => labels.set(cell.coordKey, String(index + 1)));
+  }
+
+  return labels;
+}
+
+function drawSelectedBlockNumberLabels(params: {
+  ctx: CanvasRenderingContext2D;
+  cells: FocusBoardCell[];
+  visibleCells: FocusBoardCell[];
+  selectedBlockCellKeys: Set<string>;
+  completedCellKeys: Set<string>;
+  axis: SelectedBlockNumberingAxis;
+  handedness: 'left' | 'right';
+  viewport: FocusViewport;
+  boardLayout: WorkshopBoardLayout;
+}) {
+  const { ctx, cells, visibleCells, selectedBlockCellKeys, completedCellKeys, axis, handedness, viewport, boardLayout } = params;
+  if (selectedBlockCellKeys.size === 0 || viewport.cellPx < 14) return;
+
+  const labels = buildSelectedBlockNumberLabels(cells, selectedBlockCellKeys, completedCellKeys, axis, handedness);
+  if (labels.size === 0) return;
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+
+  for (const cell of visibleCells) {
+    const label = labels.get(cell.coordKey);
+    if (!label) continue;
+
+    const boardX = boardLayout.patternOffsetX + cell.x;
+    const boardY = boardLayout.patternOffsetY + cell.y;
+    const x = viewport.tx + (boardX + 0.5) * viewport.cellPx;
+    const y = viewport.ty + (boardY + 0.5) * viewport.cellPx;
+    const digitScale = label.length >= 3 ? 0.34 : label.length === 2 ? 0.42 : 0.5;
+    const fontSize = clamp(viewport.cellPx * digitScale, 8, 18);
+    const isDarkCell = getHexLuminance(cell.hex) < 0.36;
+
+    ctx.font = `800 ${fontSize}px Nunito, "Segoe UI", sans-serif`;
+    ctx.strokeStyle = isDarkCell ? 'rgba(42,31,45,.62)' : 'rgba(255,255,255,.82)';
+    ctx.lineWidth = Math.max(2, fontSize * 0.22);
+    ctx.fillStyle = isDarkCell ? '#FFF8E8' : '#2F2437';
+    ctx.shadowColor = isDarkCell ? 'rgba(0,0,0,.24)' : 'rgba(255,255,255,.5)';
+    ctx.shadowBlur = Math.max(1, viewport.cellPx * 0.08);
+    ctx.strokeText(label, x, y);
+    ctx.fillText(label, x, y);
+  }
+
+  ctx.restore();
+}
+
 export function drawFocusCanvas(params: {
   canvas: HTMLCanvasElement;
   pattern: PatternResult;
@@ -409,6 +505,7 @@ export function drawFocusCanvas(params: {
   currentCellKey: string | null;
   completedCellKeys: Set<string>;
   selectedBlockCellKeys: Set<string>;
+  selectedBlockNumberingAxis: SelectedBlockNumberingAxis;
   completionProgress: number;
   completionGlowProgress?: number;
   progressFlowOffset: number;
@@ -429,11 +526,13 @@ export function drawFocusCanvas(params: {
     currentCellKey,
     completedCellKeys,
     selectedBlockCellKeys,
+    selectedBlockNumberingAxis,
     completionProgress,
     completionGlowProgress = 0,
     progressFlowOffset,
     showGuide,
     placementMode,
+    handedness,
     width,
     height,
     clip,
@@ -593,6 +692,17 @@ export function drawFocusCanvas(params: {
       0.18,
       'rgba(255,255,255,.72)',
     );
+    drawSelectedBlockNumberLabels({
+      ctx,
+      cells,
+      visibleCells,
+      selectedBlockCellKeys,
+      completedCellKeys,
+      axis: selectedBlockNumberingAxis,
+      handedness,
+      viewport,
+      boardLayout,
+    });
   }
 
   if (placementMode) {

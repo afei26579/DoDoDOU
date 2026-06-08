@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 import { createAdminRouter } from './admin.mjs';
 import { createAuthRouter, optionalAuth, requireAuth } from './auth.mjs';
 import { createAssetsRouter } from './assets.mjs';
@@ -20,6 +21,7 @@ const rootDir = path.resolve(__dirname, '..');
 const publicDir = path.join(rootDir, 'public');
 const distDir = path.join(rootDir, 'dist');
 const galleryItemDataDir = path.join(rootDir, 'public', 'data', 'gallery', 'items');
+const galleryUploadDir = path.join(rootDir, 'public', 'uploads', 'gallery');
 const initialEnvKeys = new Set(Object.keys(process.env));
 
 function loadEnvFile(filePath, { override = false } = {}) {
@@ -117,7 +119,10 @@ function appendOrigin(origins, origin) {
 }
 
 async function ensureDirs() {
-  await mkdir(galleryItemDataDir, { recursive: true });
+  await Promise.all([
+    mkdir(galleryItemDataDir, { recursive: true }),
+    mkdir(galleryUploadDir, { recursive: true }),
+  ]);
 }
 
 function resolveGalleryItemFilePath(itemId) {
@@ -160,6 +165,7 @@ const config = {
   adminApiPrefix: normalizeMountPath(process.env.ADMIN_API_PREFIX, '/api/_ops_dodoudou_9c41f7'),
   maxPatternCells: parseInteger(process.env.GALLERY_MAX_PATTERN_CELLS, 90_000, { min: 1, max: 200_000 }),
   maxDataUrlChars: parseInteger(process.env.GALLERY_MAX_DATA_URL_CHARS, 5_000_000, { min: 1_000, max: 20_000_000 }),
+  thumbnailSize: parseInteger(process.env.GALLERY_THUMBNAIL_SIZE, 360, { min: 80, max: 1024 }),
   trustProxy: parseBoolean(process.env.GALLERY_TRUST_PROXY, false),
   productionClosedHosts: parseHostList(process.env.PRODUCTION_CLOSED_HOSTS, ['dodoudou.com', 'www.dodoudou.com']),
   productionClosedPagePath: resolveExistingFile([
@@ -409,7 +415,7 @@ function normalizeImageUrl(value, field, required, errors) {
     return '';
   }
 
-  if (normalized.startsWith('data:image/png;base64,')) return normalized;
+  if (/^data:image\/(?:png|jpeg|jpg|webp);base64,/i.test(normalized)) return normalized;
   if (normalized.startsWith('/assets/') || normalized.startsWith('/data/')) return normalized;
 
   try {
@@ -421,6 +427,65 @@ function normalizeImageUrl(value, field, required, errors) {
 
   addValidationError(errors, `${field} must be a png data URL, http(s) URL, or local asset path`);
   return '';
+}
+
+function parseDataImage(value) {
+  const match = /^data:(image\/(?:png|jpeg|jpg|webp));base64,([\s\S]+)$/i.exec(value);
+  if (!match) return null;
+  return {
+    mimeType: match[1].toLowerCase() === 'image/jpg' ? 'image/jpeg' : match[1].toLowerCase(),
+    buffer: Buffer.from(match[2], 'base64'),
+  };
+}
+
+function safeAssetFileBase(assetId) {
+  return assetId
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120) || `asset-${Date.now()}-${randomUUID().slice(0, 8)}`;
+}
+
+async function materializeGalleryAssetUrl(url, assetId) {
+  const dataImage = parseDataImage(url);
+  if (!dataImage) {
+    return {
+      url,
+      thumbUrl: null,
+      mimeType: dataImage?.mimeType ?? 'image/png',
+      width: null,
+      height: null,
+      size: null,
+    };
+  }
+
+  await mkdir(galleryUploadDir, { recursive: true });
+  const fileBase = safeAssetFileBase(assetId);
+  const sourceFileName = `${fileBase}.png`;
+  const thumbFileName = `${fileBase}-thumb.webp`;
+  const sourcePath = path.join(galleryUploadDir, sourceFileName);
+  const thumbPath = path.join(galleryUploadDir, thumbFileName);
+  const sourceImage = sharp(dataImage.buffer, { limitInputPixels: 40_000_000 }).rotate();
+  const metadata = await sourceImage.metadata();
+  const sourceBuffer = await sourceImage.clone().png().toBuffer();
+  const thumbBuffer = await sourceImage
+    .clone()
+    .resize({ width: config.thumbnailSize, height: config.thumbnailSize, fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: 82 })
+    .toBuffer();
+
+  await Promise.all([
+    writeFile(sourcePath, sourceBuffer),
+    writeFile(thumbPath, thumbBuffer),
+  ]);
+
+  return {
+    url: `/uploads/gallery/${sourceFileName}`,
+    thumbUrl: `/uploads/gallery/${thumbFileName}`,
+    mimeType: 'image/png',
+    width: metadata.width ?? null,
+    height: metadata.height ?? null,
+    size: sourceBuffer.length,
+  };
 }
 
 function normalizeTags(value, errors) {
@@ -616,7 +681,12 @@ async function findFavoriteItemIds(userId, itemIds) {
   return new Set(favorites.map((favorite) => favorite.itemId));
 }
 
-function mapItem(item, { favoriteItemIds = new Set() } = {}) {
+function getGalleryAssetUrl(asset, { preferThumb = true } = {}) {
+  if (!asset) return '';
+  return preferThumb ? asset.thumbUrl ?? asset.url ?? '' : asset.url ?? asset.thumbUrl ?? '';
+}
+
+function mapItem(item, { favoriteItemIds = new Set(), preferThumb = true } = {}) {
   const patternSummary = item.patternDetail
     ? {
         width: item.patternDetail.width,
@@ -629,7 +699,7 @@ function mapItem(item, { favoriteItemIds = new Set() } = {}) {
   return {
     id: item.id,
     title: item.title,
-    coverUrl: item.coverAsset?.url ?? '',
+    coverUrl: getGalleryAssetUrl(item.coverAsset, { preferThumb }),
     coverWidth: item.coverWidth,
     coverHeight: item.coverHeight,
     author: {
@@ -841,7 +911,7 @@ app.get('/api/gallery/items/:id', optionalAuth(prisma), async (req, res) => {
 
   const favoriteItemIds = await findFavoriteItemIds(req.user?.id, [item.id]);
   const detail = {
-    ...mapItem(item, { favoriteItemIds }),
+    ...mapItem(item, { favoriteItemIds, preferThumb: false }),
     description: item.description,
     visibility: item.visibility,
     status: item.status,
@@ -985,6 +1055,10 @@ app.post('/api/gallery/publish', requireAuth(prisma), requireCapability(prisma, 
   const id = `${toSlug(payload.title)}-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const coverAssetId = `cover-${id}`;
   const previewAssetId = `preview-${id}`;
+  const [coverAsset, previewAsset] = await Promise.all([
+    materializeGalleryAssetUrl(payload.coverUrl, coverAssetId),
+    materializeGalleryAssetUrl(payload.previewUrl, previewAssetId),
+  ]);
   const now = new Date();
   const isPrivilegedPublisher = req.user.role === 'admin';
   const sourceType = isPrivilegedPublisher && payload.sourceType === 'official' ? 'official' : 'community';
@@ -1008,14 +1082,48 @@ app.post('/api/gallery/publish', requireAuth(prisma), requireCapability(prisma, 
 
     await tx.galleryAsset.upsert({
       where: { id: coverAssetId },
-      update: { url: payload.coverUrl, mimeType: 'image/png', type: 'cover' },
-      create: { id: coverAssetId, type: 'cover', url: payload.coverUrl, mimeType: 'image/png' },
+      update: {
+        type: 'cover',
+        url: coverAsset.url,
+        thumbUrl: coverAsset.thumbUrl,
+        mimeType: coverAsset.mimeType,
+        width: coverAsset.width,
+        height: coverAsset.height,
+        size: coverAsset.size,
+      },
+      create: {
+        id: coverAssetId,
+        type: 'cover',
+        url: coverAsset.url,
+        thumbUrl: coverAsset.thumbUrl,
+        mimeType: coverAsset.mimeType,
+        width: coverAsset.width,
+        height: coverAsset.height,
+        size: coverAsset.size,
+      },
     });
 
     await tx.galleryAsset.upsert({
       where: { id: previewAssetId },
-      update: { url: payload.previewUrl, mimeType: 'image/png', type: 'preview' },
-      create: { id: previewAssetId, type: 'preview', url: payload.previewUrl, mimeType: 'image/png' },
+      update: {
+        type: 'preview',
+        url: previewAsset.url,
+        thumbUrl: previewAsset.thumbUrl,
+        mimeType: previewAsset.mimeType,
+        width: previewAsset.width,
+        height: previewAsset.height,
+        size: previewAsset.size,
+      },
+      create: {
+        id: previewAssetId,
+        type: 'preview',
+        url: previewAsset.url,
+        thumbUrl: previewAsset.thumbUrl,
+        mimeType: previewAsset.mimeType,
+        width: previewAsset.width,
+        height: previewAsset.height,
+        size: previewAsset.size,
+      },
     });
 
     await tx.galleryItem.create({

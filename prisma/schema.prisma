@@ -204,6 +204,7 @@ model WorkshopProject {
 
   @@unique([userId, clientProjectId])
   @@index([userId, updatedAt])
+  @@index([userId, updatedAt, id, clientProjectId, title, status, sourceType, sourceItemId, coverUrl, previewUrl, width, height, beadCount, paletteCount, lastOpenedAt, createdAt], map: "WorkshopProject_summary_idx")
 }
 
 model GalleryAuthor {
@@ -290,6 +291,9 @@ model GalleryItem {
   @@index([publishedAt])
   @@index([sortWeight])
   @@index([hotScore])
+  @@index([visibility, status, sortWeight, publishedAt])
+  @@index([visibility, status, publishedAt])
+  @@index([visibility, status, hotScore, favoriteCount, publishedAt])
 }
 
 model GalleryFavorite {

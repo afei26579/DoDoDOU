@@ -1,0 +1,46 @@
+<svg width="100%" viewBox="0 0 380 380" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>我的图标方案A - 未激活状态</title>
+  <desc>圆形头像徽章与拼豆花环，适合作为我的页面导航图标</desc>
+
+  
+
+  <!-- 徽章底阴影 -->
+  <circle cx="196" cy="196" r="128" fill="#C8B09A" opacity="0.35" />
+
+  <!-- 圆形个人徽章 -->
+  <circle cx="190" cy="188" r="126" fill="#EDE0D0" stroke="#8B6F55" stroke-width="12" />
+  <circle cx="190" cy="188" r="98" fill="#F5EEE6" stroke="#C8B09A" stroke-width="5" opacity="0.55"/>
+  <path d="M102 126 Q130 82 190 82 Q250 82 278 126" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" opacity="0.28"/>
+
+  <!-- 头像：头发、脸、身体 -->
+  <path d="M152 150 Q154 105 190 102 Q226 105 228 150 Q210 134 190 138 Q170 134 152 150 Z" fill="#C89EDA" stroke="#7A5A8A" stroke-width="5" />
+  <circle cx="190" cy="148" r="38" fill="#FFDAC1" stroke="#E0A080" stroke-width="5" />
+  <circle cx="176" cy="140" r="5" fill="#FFFFFF" opacity="0.42"/>
+  <path d="M144 259 Q154 216 190 216 Q226 216 238 259 L250 286 Q224 302 190 302 Q156 302 130 286 Z" fill="#C89EDA" stroke="#7A5A8A" stroke-width="7" stroke-linejoin="round" />
+  <path d="M160 252 Q190 232 220 252" fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" opacity="0.35"/>
+
+  <!-- 拼豆花环 -->
+  <circle cx="112" cy="256" r="14" fill="#7ED9B0" stroke="#4DBF8A" stroke-width="2.8" opacity="1"/>
+  <circle cx="107.0" cy="251.0" r="4.5" fill="#FFFFFF" opacity="0.38"/>
+  <circle cx="138" cy="284" r="12" fill="#F9D77E" stroke="#E0B040" stroke-width="2.5" opacity="1"/>
+  <circle cx="133.7" cy="279.7" r="3.8" fill="#FFFFFF" opacity="0.38"/>
+  <circle cx="242" cy="284" r="12" fill="#A0C8F0" stroke="#6090D0" stroke-width="2.5" opacity="1"/>
+  <circle cx="237.7" cy="279.7" r="3.8" fill="#FFFFFF" opacity="0.38"/>
+  <circle cx="268" cy="256" r="14" fill="#F0907A" stroke="#D06050" stroke-width="2.8" opacity="1"/>
+  <circle cx="263.0" cy="251.0" r="4.5" fill="#FFFFFF" opacity="0.38"/>
+  <circle cx="190" cy="300" r="11" fill="#C89EDA" stroke="#A870C0" stroke-width="2.5" opacity="1"/>
+  <circle cx="186.0" cy="296.0" r="3.5" fill="#FFFFFF" opacity="0.38"/>
+
+  <!-- 我的标识小爱心 -->
+  <path d="M190 232 C177 218 154 224 156 244 C158 264 190 278 190 278 C190 278 222 264 224 244 C226 224 203 218 190 232 Z" fill="#F0907A" stroke="#D06050" stroke-width="4" />
+  <circle cx="178" cy="239" r="5" fill="#FFFFFF" opacity="0.4"/>
+
+
+  <!-- 装饰星星与散点 -->
+  <path d="M 332.0 66.8 L 335.2 74.8 L 343.2 78.0 L 335.2 81.2 L 332.0 89.2 L 328.8 81.2 L 320.8 78.0 L 328.8 74.8 Z" fill="#FFDAC1" opacity="0.9" />
+  <path d="M 42.0 204.9 L 44.6 211.4 L 51.1 214.0 L 44.6 216.6 L 42.0 223.1 L 39.4 216.6 L 32.9 214.0 L 39.4 211.4 Z" fill="#D8B4E2" opacity="0.8" />
+  <circle cx="46" cy="116" r="5" fill="#FFDAC1" opacity="0.8"/>
+  <circle cx="338" cy="182" r="5" fill="#B5EAD7" opacity="0.9"/>
+  <circle cx="58" cy="316" r="6" fill="#D8B4E2" opacity="0.65"/>
+
+</svg>
