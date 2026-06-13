@@ -1,0 +1,23 @@
+{
+  "width": 3,
+  "height": 3,
+  "cells": [
+    { "x": 0, "y": 0, "colorId": "#111111", "vendorCode": "BLACK", "hex": "#111111" },
+    { "x": 1, "y": 0, "colorId": "#FFFFFF", "vendorCode": "WHITE", "hex": "#FFFFFF" },
+    { "x": 2, "y": 0, "colorId": "#111111", "vendorCode": "BLACK", "hex": "#111111" },
+    { "x": 0, "y": 1, "colorId": "#FFFFFF", "vendorCode": "WHITE", "hex": "#FFFFFF" },
+    { "x": 1, "y": 1, "colorId": "#111111", "vendorCode": "BLACK", "hex": "#111111" },
+    { "x": 2, "y": 1, "colorId": "#FFFFFF", "vendorCode": "WHITE", "hex": "#FFFFFF" },
+    { "x": 0, "y": 2, "colorId": "#111111", "vendorCode": "BLACK", "hex": "#111111" },
+    { "x": 1, "y": 2, "colorId": "#FFFFFF", "vendorCode": "WHITE", "hex": "#FFFFFF" },
+    { "x": 2, "y": 2, "colorId": "#111111", "vendorCode": "BLACK", "hex": "#111111" }
+  ],
+  "palette": [
+    { "colorId": "#111111", "vendorCode": "BLACK", "hex": "#111111", "count": 5 },
+    { "colorId": "#FFFFFF", "vendorCode": "WHITE", "hex": "#FFFFFF", "count": 4 }
+  ],
+  "stats": {
+    "totalCells": 9,
+    "colorCount": 2
+  }
+}

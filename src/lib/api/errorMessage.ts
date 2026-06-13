@@ -93,9 +93,11 @@ function translateEnglishMessage(message: string, status: number, payload: ApiEr
   if (normalized.includes('gallery publish token is not configured') || normalized.includes('invalid publish token')) return '作品发布配置异常，请联系管理员。';
   if (normalized.includes('gallery item not found')) return '没有找到这张作品，可能已被删除或下架。';
   if (normalized.includes('project not found')) return '没有找到这个作品，可能已被删除。';
+  if (normalized.includes('inventory set not found')) return '没有找到这个库存，可能已被删除。';
   if (normalized.includes('inventory item not found')) return '没有找到这条库存记录，可能已被删除。';
   if (normalized.includes('source asset not found')) return '没有找到原始图片资源，请重新上传后再试。';
   if (normalized.includes('invalid gallery item id')) return '作品链接无效，请返回列表重新打开。';
+  if (normalized.includes('invalid inventory set id')) return '库存无效，请刷新后再试。';
   if (normalized.includes('invalid inventory item id')) return '库存记录无效，请刷新后再试。';
   if (normalized.includes('invalid user id')) return '用户信息无效，请刷新后再试。';
   if (normalized.includes('user not found')) return '没有找到该用户，可能已被删除。';

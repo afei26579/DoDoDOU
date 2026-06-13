@@ -608,6 +608,8 @@ export function FocusModePage() {
     [currentBlock],
   );
   const selectedBlockNumberingAxis = getTraversalAxis(horizontalDirection, verticalDirection);
+  const selectedBlockHorizontalDirection = resolveHorizontalDirection(handedness, horizontalDirection);
+  const selectedBlockVerticalDirection = resolveVerticalDirection(verticalDirection);
   const currentBlockCompleted = currentBlock ? isBlockCompleted(currentBlock, completedCellKeySet) : false;
   const effectiveActiveColorKey = currentBlock?.colorKey ?? activeColorKey;
   const currentColor = useMemo(
@@ -1034,6 +1036,8 @@ export function FocusModePage() {
       completedCellKeys: completedCellKeySet,
       selectedBlockCellKeys: currentBlockCellKeys,
       selectedBlockNumberingAxis,
+      selectedBlockHorizontalDirection,
+      selectedBlockVerticalDirection,
       completionProgress: totalCompletionProgress,
       completionGlowProgress,
       progressFlowOffset,
@@ -1044,7 +1048,7 @@ export function FocusModePage() {
       height: boardSize.height,
       clip: getCanvasClipArea(boardSize.height),
     });
-  }, [activeCellKey, boardSize, cells, completedCellKeySet, completionGlowProgress, currentBlockCellKeys, effectiveActiveColorKey, effectiveBoardLayout, patternResult, placementMode, progressFlowOffset, selectedBlockNumberingAxis, showGuide, totalCompletionProgress, viewport]);
+  }, [activeCellKey, boardSize, cells, completedCellKeySet, completionGlowProgress, currentBlockCellKeys, effectiveActiveColorKey, effectiveBoardLayout, patternResult, placementMode, progressFlowOffset, selectedBlockHorizontalDirection, selectedBlockNumberingAxis, selectedBlockVerticalDirection, showGuide, totalCompletionProgress, viewport]);
 
   useEffect(() => {
     const canvas = completionPreviewCanvasRef.current;

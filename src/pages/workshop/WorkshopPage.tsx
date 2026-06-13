@@ -124,9 +124,10 @@ export function WorkshopPage({
   const tagLabel = useMemo(() => {
     if (activeTag === 'size') return `${config.canvasSize} × ${config.canvasSize}`;
     if (activeTag === 'brand') return getBeadBrandLabel(config.brand);
+    if (activeTag === 'colorCard') return config.colorPalette?.name ?? '全部色号';
     if (activeTag === 'style') return config.style;
     return `${config.colorMergeThreshold}`;
-  }, [activeTag, config.brand, config.canvasSize, config.colorMergeThreshold, config.style]);
+  }, [activeTag, config.brand, config.canvasSize, config.colorMergeThreshold, config.colorPalette?.name, config.style]);
 
   useEffect(() => {
     if (!uploadedImage?.dataUrl) return;
@@ -402,7 +403,7 @@ export function WorkshopPage({
                     mode={mode}
                     resultLayout="actionsOnly"
                     isGenerating={isPreviewGenerating}
-                    disabled={!uploadedImage || isPreviewGenerating}
+                    disabled={!patternResult || isPreviewGenerating}
                     onClick={onGeneratePattern}
                     onRemoveBackground={onRemoveBackground}
                     onViewPattern={onViewPattern}
@@ -420,7 +421,7 @@ export function WorkshopPage({
                   mode={mode}
                   resultLayout="primaryOnly"
                   isGenerating={isPreviewGenerating}
-                  disabled={!uploadedImage || isPreviewGenerating}
+                  disabled={!patternResult || isPreviewGenerating}
                   onClick={onGeneratePattern}
                   onRegenerate={onGeneratePattern}
                   onOpenFocusMode={onOpenFocusMode}
@@ -437,7 +438,7 @@ export function WorkshopPage({
 
                 <WorkshopParameterTabs activeTag={activeTag} onChange={setActiveTag} />
 
-                <div className="workshop-settings" aria-label="参数内容">
+                <div className={`workshop-settings ${activeTag === 'colorCard' ? 'workshop-settings--expanded' : ''}`} aria-label="参数内容">
                   <WorkshopParameterPanel activeTag={activeTag} config={config} onConfigChange={onConfigChange} />
                 </div>
               </section>
@@ -513,6 +514,7 @@ export function WorkshopPage({
         onClose={() => setIsDownloadModalOpen(false)}
         brand={config.brand}
         patternResult={patternResult}
+        config={config}
       />
 
       <WorkshopCreateSettingsSheet

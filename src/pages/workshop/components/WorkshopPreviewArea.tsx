@@ -269,6 +269,10 @@ export function WorkshopPreviewArea({
       <div className="workshop-canvas__frame">
         {isHydrating ? (
           <WorkshopLoadingState />
+        ) : mode === 'result' && patternResult ? (
+          <div className="workshop-canvas__switcher workshop-canvas__switcher--fade" data-mode={mode}>
+            <WorkshopPatternView patternResult={patternResult} />
+          </div>
         ) : uploadedImage ? (
           <div className="workshop-canvas__switcher workshop-canvas__switcher--fade" data-mode={mode}>
             {mode === 'result' && patternResult ? (

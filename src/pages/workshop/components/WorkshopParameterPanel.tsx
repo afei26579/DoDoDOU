@@ -1,5 +1,9 @@
-import type { CSSProperties } from 'react';
-import type { WorkshopFlowState } from '../../../features/workshop/model/types';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import type { WorkshopColorPaletteSelection, WorkshopFlowState } from '../../../features/workshop/model/types';
+import { useAuth } from '../../../features/auth/model/AuthProvider';
+import { getColorPaletteOwnerKey, listColorPaletteSeries } from '../../../features/palettes/model/paletteStore';
+import { loadOfficialColorPalettePresets } from '../../../features/palettes/model/officialPresets';
+import type { ColorPaletteSeries, OfficialColorPalettePreset } from '../../../features/palettes/model/types';
 import { beadBrandKeys, getBeadBrandLabel } from '../../../lib/pattern/brand';
 import type { ParameterTagId } from './WorkshopParameterTabs';
 
@@ -10,11 +14,34 @@ const SIZE_PRESETS = [52, 104, 156, 208, 260] as const;
 const COLOR_MERGE_MIN = 0;
 const COLOR_MERGE_MAX = 50;
 
+type ColorPaletteOption = WorkshopColorPaletteSelection & {
+  key: string;
+};
+
 type WorkshopParameterPanelProps = {
   activeTag: ParameterTagId;
   config: WorkshopFlowState['config'];
   onConfigChange: (patch: Partial<WorkshopFlowState['config']>) => void;
 };
+
+function normalizePaletteOption(palette: OfficialColorPalettePreset | ColorPaletteSeries): ColorPaletteOption {
+  return {
+    key: `${palette.source}:${palette.id}`,
+    id: palette.id,
+    name: palette.name,
+    source: palette.source === 'official' ? 'official' : 'custom',
+    baseBrand: palette.baseBrand,
+    colorIds: palette.colorIds,
+  };
+}
+
+function getSelectedPaletteKey(colorPalette: WorkshopFlowState['config']['colorPalette']) {
+  return colorPalette ? `${colorPalette.source}:${colorPalette.id}` : 'all';
+}
+
+function getPaletteSourceLabel(source: ColorPaletteOption['source']) {
+  return source === 'official' ? '官方' : '我的';
+}
 
 type ParameterRangeControlProps = {
   min: number;
@@ -77,6 +104,40 @@ function ParameterRangeControl({ min, max, value, displayValue, ariaLabel, prese
 }
 
 export function WorkshopParameterPanel({ activeTag, config, onConfigChange }: WorkshopParameterPanelProps) {
+  const { user, isAuthenticated } = useAuth();
+  const [colorPaletteOptions, setColorPaletteOptions] = useState<ColorPaletteOption[]>([]);
+  const [colorPalettesLoading, setColorPalettesLoading] = useState(false);
+  const ownerKey = getColorPaletteOwnerKey(isAuthenticated ? user?.id : null);
+
+  useEffect(() => {
+    let alive = true;
+    setColorPalettesLoading(true);
+
+    Promise.all([
+      loadOfficialColorPalettePresets().catch(() => []),
+      listColorPaletteSeries(ownerKey).catch(() => []),
+    ])
+      .then(([officialPresets, customPalettes]) => {
+        if (!alive) return;
+        setColorPaletteOptions([
+          ...officialPresets.map(normalizePaletteOption),
+          ...customPalettes.map(normalizePaletteOption),
+        ]);
+      })
+      .finally(() => {
+        if (alive) setColorPalettesLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [ownerKey]);
+
+  const visibleColorPaletteOptions = useMemo(
+    () => colorPaletteOptions.filter((palette) => palette.baseBrand === config.brand),
+    [colorPaletteOptions, config.brand],
+  );
+
   if (activeTag === 'size') {
     const sizeValue = Math.max(SIZE_MIN, Math.min(SIZE_MAX, config.canvasSize));
 
@@ -98,10 +159,69 @@ export function WorkshopParameterPanel({ activeTag, config, onConfigChange }: Wo
       <div className="workshop-control">
         <div className="workshop-pill-row">
           {beadBrandKeys.map((brand) => (
-            <button key={brand} className={`workshop-pill ${config.brand === brand ? 'is-active' : ''}`} type="button" onClick={() => onConfigChange({ brand })}>
+            <button
+              key={brand}
+              className={`workshop-pill ${config.brand === brand ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => onConfigChange({
+                brand,
+                colorPalette: config.colorPalette?.baseBrand === brand ? config.colorPalette : null,
+              })}
+            >
               {getBeadBrandLabel(brand)}
             </button>
           ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (activeTag === 'colorCard') {
+    const selectedPaletteKey = getSelectedPaletteKey(config.colorPalette);
+
+    return (
+      <div className="workshop-control workshop-control--color-card">
+        <div className="workshop-color-card-row">
+          <button
+            type="button"
+            className={`workshop-color-card ${selectedPaletteKey === 'all' ? 'is-active' : ''}`}
+            onClick={() => onConfigChange({ colorPalette: null })}
+          >
+            <span>
+              <strong>全部色号</strong>
+              <em>{getBeadBrandLabel(config.brand)} 全色库</em>
+            </span>
+            <b>ALL</b>
+          </button>
+
+          {visibleColorPaletteOptions.map((palette) => (
+            <button
+              key={palette.key}
+              type="button"
+              className={`workshop-color-card ${selectedPaletteKey === palette.key ? 'is-active' : ''}`}
+              onClick={() => onConfigChange({
+                brand: palette.baseBrand,
+                colorPalette: {
+                  id: palette.id,
+                  name: palette.name,
+                  source: palette.source,
+                  baseBrand: palette.baseBrand,
+                  colorIds: [...palette.colorIds],
+                },
+              })}
+            >
+              <span>
+                <strong>{palette.name}</strong>
+                <em>{getPaletteSourceLabel(palette.source)} · {getBeadBrandLabel(palette.baseBrand)}</em>
+              </span>
+              <b>{palette.colorIds.length}色</b>
+            </button>
+          ))}
+
+          {colorPalettesLoading ? <span className="workshop-color-card__state">读取色卡中...</span> : null}
+          {!colorPalettesLoading && visibleColorPaletteOptions.length === 0 ? (
+            <span className="workshop-color-card__state">当前品牌还没有可用色卡</span>
+          ) : null}
         </div>
       </div>
     );

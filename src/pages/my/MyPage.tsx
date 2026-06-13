@@ -8,14 +8,20 @@ import {
 } from '../../features/beads/model/inventoryApi';
 import {
   listInventoryItems,
+  listInventoryRecords,
   type BeadInventoryItem,
 } from '../../features/beads/model/inventoryStore';
 import {
-  fetchGalleryList,
   fetchMyGalleryItems,
-  syncFavoriteGalleryItems,
 } from '../../features/gallery/model/api';
 import type { GalleryItemCard } from '../../features/gallery/model/types';
+import { loadOfficialColorPalettePresets } from '../../features/palettes/model/officialPresets';
+import {
+  deleteColorPaletteSeries,
+  getColorPaletteOwnerKey,
+  listColorPaletteSeries,
+} from '../../features/palettes/model/paletteStore';
+import type { ColorPaletteCreateDraft, ColorPaletteSeries, OfficialColorPalettePreset } from '../../features/palettes/model/types';
 import { useEntitlements } from '../../features/subscription/model/EntitlementProvider';
 import {
   groupWorkshopProjects,
@@ -25,28 +31,19 @@ import {
   type WorkshopProjectRecord,
 } from '../../features/workshop/model/projectStore';
 import { syncRemoteWorkshopProjects } from '../../features/workshop/model/projectApi';
+import { getDisplayAssetUrl } from '../../lib/assetUrl';
+import { ColorPaletteCreateSheet } from './components/ColorPaletteCreateSheet';
+import { ColorPaletteLibrarySheet } from './components/ColorPaletteLibrarySheet';
 
-type LibraryTab = 'patterns' | 'beading' | 'published' | 'favorites';
+type LibraryTab = 'patterns' | 'beading' | 'published';
 
-const FAVORITE_GALLERY_ITEM_IDS_KEY = 'dodoudou.favoriteGalleryItemIds';
 const collectionCardBackgrounds = ['#F9F0FF', '#F0FBF6', '#FFF8F0', '#FFF0F6', '#EDF2FF'];
 
 const libraryTabs: Array<{ id: LibraryTab; label: string }> = [
   { id: 'patterns', label: '图纸' },
   { id: 'beading', label: '拼豆' },
   { id: 'published', label: '发布' },
-  { id: 'favorites', label: '收藏' },
 ];
-
-function readFavoriteGalleryItemIds() {
-  if (typeof window === 'undefined') return [];
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(FAVORITE_GALLERY_ITEM_IDS_KEY) ?? '[]');
-    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
-  } catch {
-    return [];
-  }
-}
 
 function formatNumber(value: number) {
   return value.toLocaleString();
@@ -60,7 +57,7 @@ function formatDate(value: string | null | undefined) {
 }
 
 function getAccountLabel(user: { email: string | null; username: string | null; name: string | null } | null) {
-  if (!user) return '登录后同步图纸、库存与收藏';
+  if (!user) return '登录后同步图纸、库存，并按账号保存色卡';
   return user.email ?? (user.username ? `@${user.username}` : user.name ?? '当前账号');
 }
 
@@ -119,15 +116,19 @@ export function MyPage() {
   const [isSyncingInventory, setIsSyncingInventory] = useState(false);
   const [publishedItems, setPublishedItems] = useState<GalleryItemCard[]>([]);
   const [publishedLoading, setPublishedLoading] = useState(false);
-  const [favoriteItemIds, setFavoriteItemIds] = useState<string[]>(() => readFavoriteGalleryItemIds());
-  const [favoriteItems, setFavoriteItems] = useState<GalleryItemCard[]>([]);
-  const [favoriteSyncMessage, setFavoriteSyncMessage] = useState('');
-  const [favoritesLoading, setFavoritesLoading] = useState(false);
+  const [colorPalettes, setColorPalettes] = useState<Awaited<ReturnType<typeof listColorPaletteSeries>>>([]);
+  const [colorPalettesLoading, setColorPalettesLoading] = useState(true);
+  const [officialPalettePresets, setOfficialPalettePresets] = useState<OfficialColorPalettePreset[]>([]);
+  const [officialPresetsLoading, setOfficialPresetsLoading] = useState(true);
+  const [paletteMessage, setPaletteMessage] = useState('');
+  const [paletteLibrarySheetOpen, setPaletteLibrarySheetOpen] = useState(false);
+  const [paletteCreateSheetOpen, setPaletteCreateSheetOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<LibraryTab>('patterns');
   const [notice, setNotice] = useState('');
 
   const projectMigrationStorageKey = user ? `dodoudou.projects.migration.completed.${user.id}` : '';
   const inventoryMigrationStorageKey = user ? `dodoudou.inventory.migration.completed.${user.id}` : '';
+  const colorPaletteOwnerKey = getColorPaletteOwnerKey(isAuthenticated ? user?.id : null);
 
   const loadProjects = useCallback(async () => {
     if (authStatus === 'loading') return;
@@ -152,6 +153,16 @@ export function MyPage() {
     }
   }, [authStatus, isAuthenticated, user?.id]);
 
+  const loadColorPalettes = useCallback(async () => {
+    if (authStatus === 'loading') return;
+    setColorPalettesLoading(true);
+    try {
+      setColorPalettes(await listColorPaletteSeries(colorPaletteOwnerKey));
+    } finally {
+      setColorPalettesLoading(false);
+    }
+  }, [authStatus, colorPaletteOwnerKey]);
+
   useEffect(() => {
     void loadProjects();
   }, [loadProjects]);
@@ -159,6 +170,29 @@ export function MyPage() {
   useEffect(() => {
     void loadInventory();
   }, [loadInventory]);
+
+  useEffect(() => {
+    void loadColorPalettes();
+  }, [loadColorPalettes]);
+
+  useEffect(() => {
+    let alive = true;
+    setOfficialPresetsLoading(true);
+    loadOfficialColorPalettePresets()
+      .then((presets) => {
+        if (alive) setOfficialPalettePresets(presets);
+      })
+      .catch(() => {
+        if (alive) setOfficialPalettePresets([]);
+      })
+      .finally(() => {
+        if (alive) setOfficialPresetsLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated || !projectMigrationStorageKey) {
@@ -236,55 +270,6 @@ export function MyPage() {
     };
   }, [authStatus, isAuthenticated, user?.id]);
 
-  useEffect(() => {
-    if (authStatus === 'loading') return;
-
-    let alive = true;
-    const localFavoriteIds = readFavoriteGalleryItemIds();
-    setFavoriteItemIds(localFavoriteIds);
-    setFavoritesLoading(true);
-    setFavoriteSyncMessage('');
-
-    if (isAuthenticated) {
-      syncFavoriteGalleryItems(localFavoriteIds)
-        .then((response) => {
-          if (!alive) return;
-          window.localStorage.setItem(FAVORITE_GALLERY_ITEM_IDS_KEY, JSON.stringify(response.itemIds));
-          setFavoriteItemIds(response.itemIds);
-          setFavoriteItems(response.items);
-          setFavoriteSyncMessage(response.itemIds.length ? `已同步 ${response.itemIds.length} 个收藏` : '收藏已与账号同步');
-        })
-        .catch((error) => {
-          if (!alive) return;
-          setFavoriteItems([]);
-          setFavoriteSyncMessage(error instanceof Error ? error.message : '收藏同步失败');
-        })
-        .finally(() => {
-          if (alive) setFavoritesLoading(false);
-        });
-    } else if (localFavoriteIds.length) {
-      fetchGalleryList({ pageSize: 48, sort: 'latest' })
-        .then((response) => {
-          if (!alive) return;
-          const favoriteSet = new Set(localFavoriteIds);
-          setFavoriteItems(response.items.filter((item) => favoriteSet.has(item.id)));
-        })
-        .catch(() => {
-          if (alive) setFavoriteItems([]);
-        })
-        .finally(() => {
-          if (alive) setFavoritesLoading(false);
-        });
-    } else {
-      setFavoriteItems([]);
-      setFavoritesLoading(false);
-    }
-
-    return () => {
-      alive = false;
-    };
-  }, [authStatus, isAuthenticated, user?.id]);
-
   const projectGroups = useMemo(() => groupWorkshopProjects(projects), [projects]);
   const continueItems = useMemo(
     () => (projectGroups.progressing.length ? projectGroups.progressing : projectGroups.recent).slice(0, 2),
@@ -308,7 +293,7 @@ export function MyPage() {
     : isAuthenticated
       ? localProjectCount + localInventoryCount > 0
         ? `有 ${localProjectCount + localInventoryCount} 项本地数据待同步`
-        : projectSyncMessage || inventorySyncMessage || favoriteSyncMessage || '云端同步已准备好'
+        : projectSyncMessage || inventorySyncMessage || paletteMessage || '云端同步已准备好'
       : '本地保存，登录后可同步';
 
   const handleOpenProject = (item: WorkshopProjectCard) => {
@@ -351,15 +336,15 @@ export function MyPage() {
     setInventorySyncMessage('');
 
     try {
-      const localItems = await listInventoryItems();
-      if (!localItems.length) {
+      const localRecords = await listInventoryRecords();
+      if (!localRecords.items.length) {
         window.localStorage.setItem(inventoryMigrationStorageKey, 'true');
         setLocalInventoryCount(0);
         setInventorySyncMessage('本地库存已同步');
         return;
       }
 
-      const response = await syncRemoteInventoryItems(localItems);
+      const response = await syncRemoteInventoryItems(localRecords.items, localRecords.inventories);
       window.localStorage.setItem(inventoryMigrationStorageKey, 'true');
       setLocalInventoryCount(0);
       setInventoryItems(response.items);
@@ -380,38 +365,70 @@ export function MyPage() {
     setNotice(message);
   };
 
-  const renderProjectCard = (item: WorkshopProjectCard, index: number) => (
-    <button key={item.id} type="button" className="my-pattern-card" onClick={() => handleOpenProject(item)}>
-      <span className="my-pattern-card__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }}>
-        {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : <span className="my-card-placeholder">图纸</span>}
-        <span className={`my-status-badge ${item.beadingState === 'progressing' ? 'is-beading' : item.pattern ? 'is-pattern' : 'is-draft'}`}>
-          {item.beadingState === 'progressing' ? '拼豆' : item.pattern ? '图纸' : '草稿'}
-        </span>
-      </span>
-      <span className="my-pattern-card__body">
-        <strong>{item.title}</strong>
-        <span>{getPatternSummary(item)}</span>
-      </span>
-    </button>
-  );
+  const openPaletteLibrarySheet = () => {
+    setPaletteLibrarySheetOpen(true);
+  };
 
-  const renderGalleryCard = (item: GalleryItemCard, index: number, badge: string) => (
-    <button
-      key={item.id}
-      type="button"
-      className="my-pattern-card"
-      onClick={() => navigate(`/collection/${encodeURIComponent(item.id)}`)}
-    >
-      <span className="my-pattern-card__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }}>
-        {item.coverUrl ? <img src={item.coverUrl} alt="" /> : <span className="my-card-placeholder">画册</span>}
-        <span className={`my-status-badge ${badge === '收藏' ? 'is-saved' : 'is-published'}`}>{badge}</span>
-      </span>
-      <span className="my-pattern-card__body">
-        <strong>{item.title}</strong>
-        <span>{getGallerySummary(item)}</span>
-      </span>
-    </button>
-  );
+  const openPaletteCreateSheet = () => {
+    setPaletteLibrarySheetOpen(false);
+    setPaletteCreateSheetOpen(true);
+  };
+
+  const handleOpenPaletteDraft = (draft: ColorPaletteCreateDraft) => {
+    setPaletteCreateSheetOpen(false);
+    setPaletteLibrarySheetOpen(false);
+    navigate('/my/palettes/new', {
+      state: { paletteDraft: draft },
+    });
+  };
+
+  const handleDeletePalette = async (palette: ColorPaletteSeries) => {
+    const confirmed = window.confirm(`删除色卡「${palette.name}」？`);
+    if (!confirmed) return;
+
+    await deleteColorPaletteSeries(colorPaletteOwnerKey, palette.id);
+    setColorPalettes((current) => current.filter((item) => item.id !== palette.id));
+    setPaletteMessage(`已删除 ${palette.name}`);
+  };
+
+  const renderProjectCard = (item: WorkshopProjectCard, index: number) => {
+    const imageUrl = getDisplayAssetUrl(item.previewUrl ?? item.coverUrl);
+    return (
+      <button key={item.id} type="button" className="my-pattern-card" onClick={() => handleOpenProject(item)}>
+        <span className="my-pattern-card__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }}>
+          {imageUrl ? <img src={imageUrl} alt="" /> : <span className="my-card-placeholder">图纸</span>}
+          <span className={`my-status-badge ${item.beadingState === 'progressing' ? 'is-beading' : item.pattern ? 'is-pattern' : 'is-draft'}`}>
+            {item.beadingState === 'progressing' ? '拼豆' : item.pattern ? '图纸' : '草稿'}
+          </span>
+        </span>
+        <span className="my-pattern-card__body">
+          <strong>{item.title}</strong>
+          <span>{getPatternSummary(item)}</span>
+        </span>
+      </button>
+    );
+  };
+
+  const renderGalleryCard = (item: GalleryItemCard, index: number, badge: string) => {
+    const imageUrl = getDisplayAssetUrl(item.coverUrl);
+    return (
+      <button
+        key={item.id}
+        type="button"
+        className="my-pattern-card"
+        onClick={() => navigate(`/collection/${encodeURIComponent(item.id)}`)}
+      >
+        <span className="my-pattern-card__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }}>
+          {imageUrl ? <img src={imageUrl} alt="" /> : <span className="my-card-placeholder">画册</span>}
+          <span className={`my-status-badge ${badge === '收藏' ? 'is-saved' : 'is-published'}`}>{badge}</span>
+        </span>
+        <span className="my-pattern-card__body">
+          <strong>{item.title}</strong>
+          <span>{getGallerySummary(item)}</span>
+        </span>
+      </button>
+    );
+  };
 
   const renderLibraryContent = () => {
     if (activeTab === 'patterns') {
@@ -443,10 +460,11 @@ export function MyPage() {
         <div className="my-progress-list">
           {projectGroups.progressing.map((item, index) => {
             const progress = item.progress?.percent ?? 0;
+            const imageUrl = getDisplayAssetUrl(item.previewUrl ?? item.coverUrl);
             return (
               <button key={item.id} type="button" className="my-progress-card" onClick={() => handleOpenProject(item)}>
                 <span className="my-progress-card__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }}>
-                  {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
+                  {imageUrl ? <img src={imageUrl} alt="" /> : null}
                 </span>
                 <span className="my-progress-card__body">
                   <strong>{item.title}</strong>
@@ -490,166 +508,61 @@ export function MyPage() {
       );
     }
 
-    if (favoritesLoading) return <div className="my-empty my-empty--inline">正在读取收藏...</div>;
-    if (!favoriteItemIds.length) {
-      return (
-        <div className="my-empty">
-          <strong>还没有收藏图纸</strong>
-          <span>在画册里点亮喜欢的图纸，它们会显示在这里。</span>
-          <button type="button" onClick={() => navigate('/collection')}>逛画册</button>
-        </div>
-      );
-    }
-    if (!favoriteItems.length) {
-      return <div className="my-empty my-empty--inline">已收藏 {favoriteItemIds.length} 张图纸，打开画册可继续查看。</div>;
-    }
-    return <div className="my-pattern-grid">{favoriteItems.map((item, index) => renderGalleryCard(item, index, '收藏'))}</div>;
+    return null;
   };
 
   return (
     <main className="my-page">
-      <section className="page-hero my-page__hero" aria-label="我的">
-        <div>
-          <p className="my-page__eyebrow">MY STUDIO</p>
-          <h2>我的</h2>
+      <section className="my-hero-panel" aria-label="我的工作台">
+        <div className="my-hero-panel__profile">
+          <div className="my-profile-card__avatar" aria-hidden="true">
+            {user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : getProfileInitial(profileName)}
+          </div>
+          <div className="my-profile-card__body">
+            <p className="my-page__eyebrow">MY STUDIO</p>
+            <span>{isAuthenticated ? '当前账号' : '游客模式'}</span>
+            <h1>{profileName}</h1>
+            <p>{accountLabel}</p>
+          </div>
         </div>
-        <span className={`my-sync-chip ${isAuthenticated ? 'is-remote' : ''}`}>{syncMessage}</span>
+
+        <div className="my-hero-panel__actions">
+          <span className={`my-sync-chip ${isAuthenticated ? 'is-remote' : ''}`}>{syncMessage}</span>
+          {isAuthenticated ? (
+            <button type="button" className="my-primary-action" onClick={() => showDevelopmentNotice('编辑资料会在后续版本开放')}>
+              编辑资料
+            </button>
+          ) : (
+            <button type="button" className="my-primary-action" onClick={() => navigate('/login?redirect=/my')}>
+              登录并同步
+            </button>
+          )}
+        </div>
+
+        <div className="my-hero-stats" aria-label="账号摘要">
+          <div>
+            <span>当前方案</span>
+            <strong>{entitlementStatus === 'loading' ? '读取中' : entitlements.planLabel}</strong>
+          </div>
+          <div>
+            <span>云端作品</span>
+            <strong>{getLimitText(isAuthenticated ? projects.length : 0, entitlements.limits.cloudProjects)}</strong>
+          </div>
+          <div>
+            <span>云端库存</span>
+            <strong>{getLimitText(isAuthenticated ? inventoryItems.length : 0, entitlements.limits.cloudInventoryItems)}</strong>
+          </div>
+        </div>
       </section>
 
-      <section className="my-layout">
-        <aside className="my-sidebar">
-          <section className="my-profile-card" aria-label="账号信息">
-            <div className="my-profile-card__avatar" aria-hidden="true">
-              {user?.avatarUrl ? <img src={user.avatarUrl} alt="" /> : getProfileInitial(profileName)}
-            </div>
-            <div className="my-profile-card__body">
-              <span>{isAuthenticated ? '当前账号' : '游客模式'}</span>
-              <h1>{profileName}</h1>
-              <p>{accountLabel}</p>
-            </div>
-            <div className="my-profile-card__actions">
-              {isAuthenticated ? (
-                <button type="button" onClick={() => showDevelopmentNotice('编辑资料会在后续版本开放')}>
-                  编辑资料
-                </button>
-              ) : (
-                <button type="button" onClick={() => navigate('/login?redirect=/my')}>
-                  登录并同步
-                </button>
-              )}
-            </div>
-          </section>
-
-          <section className="my-quota-card" aria-label="权益额度">
-            <div className="my-section-heading">
-              <h3>权益与额度</h3>
-              <span>{entitlementStatus === 'loading' ? '读取中' : entitlements.planLabel}</span>
-            </div>
-            <div className="my-quota-list">
-              <div>
-                <span>云端作品</span>
-                <strong>{getLimitText(isAuthenticated ? projects.length : 0, entitlements.limits.cloudProjects)}</strong>
-              </div>
-              <div>
-                <span>云端库存</span>
-                <strong>{getLimitText(isAuthenticated ? inventoryItems.length : 0, entitlements.limits.cloudInventoryItems)}</strong>
-              </div>
-              <div>
-                <span>当前身份</span>
-                <strong>{entitlements.identity === 'anonymous' ? 'Guest' : entitlements.identity === 'admin' ? 'Admin' : 'User'}</strong>
-              </div>
-            </div>
-          </section>
-
-          <section className="my-settings-card" aria-label="设置与支持">
-            <div className="my-section-heading">
-              <h3>设置与支持</h3>
-            </div>
-            <div className="my-settings-list">
-              <button type="button" onClick={() => showDevelopmentNotice('账号安全会在后续版本开放')}>
-                <span>账号安全</span>
-                <em>›</em>
-              </button>
-              <button type="button" onClick={() => showDevelopmentNotice('创作偏好会在后续版本开放')}>
-                <span>创作偏好</span>
-                <em>›</em>
-              </button>
-              <button type="button" onClick={() => navigate('/workshop/inventory')}>
-                <span>我的库存</span>
-                <em>›</em>
-              </button>
-              {canShowAdmin ? (
-                <button type="button" onClick={() => navigate(ADMIN_ENTRY_PATH)}>
-                  <span>后台管理</span>
-                  <em>›</em>
-                </button>
-              ) : null}
-              {isAuthenticated ? (
-                <button type="button" className="is-danger" onClick={handleLogout}>
-                  <span>退出登录</span>
-                </button>
-              ) : null}
-            </div>
-            {notice ? <p className="my-notice">{notice}</p> : null}
-          </section>
-        </aside>
-
-        <section className="my-main">
-          <section className="my-asset-grid" aria-label="快捷资产">
-            <button type="button" className="my-asset-card is-pattern" onClick={() => setActiveTab('patterns')}>
-              <span>我的图纸</span>
-              <strong>{projectsLoading ? '...' : formatNumber(projectGroups.patterns.length)}</strong>
-              <em>{formatDate(latestProjectDate)}</em>
-            </button>
-            <button type="button" className="my-asset-card is-beading" onClick={() => setActiveTab('beading')}>
-              <span>我的拼豆</span>
-              <strong>{projectsLoading ? '...' : formatNumber(projectGroups.progressing.length)}</strong>
-              <em>{latestProgress == null ? '暂无进度' : `${latestProgress}% 进行中`}</em>
-            </button>
-            <button type="button" className="my-asset-card is-inventory" onClick={() => navigate('/workshop/inventory')}>
-              <span>我的库存</span>
-              <strong>{inventoryLoading ? '...' : `${formatNumber(inventoryItems.length)} 色`}</strong>
-              <em>{lowStockCount ? `${lowStockCount} 个低库存` : `${formatNumber(totalInventoryQuantity)} 颗`}</em>
-            </button>
-            <button type="button" className="my-asset-card is-favorite" onClick={() => setActiveTab('favorites')}>
-              <span>我的收藏</span>
-              <strong>{favoritesLoading ? '...' : formatNumber(favoriteItemIds.length)}</strong>
-              <em>{favoriteSyncMessage || (isAuthenticated ? '云端收藏' : '本地收藏')}</em>
-            </button>
-          </section>
-
-          <section className="my-sync-panel" aria-label="同步状态">
-            <div>
-              <strong>{isAuthenticated ? '云端同步' : '本地创作'}</strong>
-              <span>
-                {isAuthenticated
-                  ? localProjectCount + localInventoryCount > 0
-                    ? `发现本地作品 ${localProjectCount} 个、库存 ${localInventoryCount} 条`
-                    : projectSyncMessage || inventorySyncMessage || favoriteSyncMessage || '登录数据会自动与账号关联'
-                  : '登录后可把本地作品、库存和收藏同步到账号'}
-              </span>
-            </div>
-            {isAuthenticated && (localProjectCount > 0 || localInventoryCount > 0) ? (
-              <div className="my-sync-panel__actions">
-                {localProjectCount > 0 ? (
-                  <button type="button" onClick={handleSyncProjects} disabled={isSyncingProjects}>
-                    {isSyncingProjects ? '作品同步中...' : `同步作品 ${localProjectCount}`}
-                  </button>
-                ) : null}
-                {localInventoryCount > 0 ? (
-                  <button type="button" onClick={handleSyncInventory} disabled={isSyncingInventory}>
-                    {isSyncingInventory ? '库存同步中...' : `同步库存 ${localInventoryCount}`}
-                  </button>
-                ) : null}
-              </div>
-            ) : !isAuthenticated && authStatus !== 'loading' ? (
-              <button type="button" onClick={() => navigate('/login?redirect=/my')}>登录</button>
-            ) : null}
-          </section>
-
+      <section className="my-dashboard">
+        <section className="my-dashboard__main" aria-label="个人资产">
           <section className="my-continue-section" aria-label="继续创作">
             <div className="my-section-heading">
-              <h3>继续创作</h3>
+              <div>
+                <p>CONTINUE</p>
+                <h3>继续创作</h3>
+              </div>
               <span>{continueItems.length ? `${continueItems.length} 项` : '空闲中'}</span>
             </div>
             {projectsLoading ? <div className="my-empty my-empty--inline">正在读取最近作品...</div> : null}
@@ -657,10 +570,11 @@ export function MyPage() {
               <div className="my-continue-list">
                 {continueItems.map((item, index) => {
                   const progress = item.progress?.percent ?? 0;
+                  const imageUrl = getDisplayAssetUrl(item.previewUrl ?? item.coverUrl);
                   return (
                     <button key={item.id} type="button" className="my-continue-card" onClick={() => handleOpenProject(item)}>
                       <span className="my-continue-card__media" style={{ backgroundColor: collectionCardBackgrounds[index % collectionCardBackgrounds.length] }}>
-                        {item.previewUrl || item.coverUrl ? <img src={item.previewUrl ?? item.coverUrl ?? ''} alt="" /> : null}
+                        {imageUrl ? <img src={imageUrl} alt="" /> : <span className="my-card-placeholder">图纸</span>}
                       </span>
                       <span className="my-continue-card__body">
                         <strong>{item.title}</strong>
@@ -691,7 +605,60 @@ export function MyPage() {
             ) : null}
           </section>
 
+          <section className="my-asset-section" aria-label="快捷资产">
+            <div className="my-section-heading">
+              <div>
+                <p>LIBRARY</p>
+                <h3>个人资产</h3>
+              </div>
+              <span>常用入口</span>
+            </div>
+            <div className="my-asset-grid">
+            <button type="button" className="my-asset-card is-pattern" onClick={() => setActiveTab('patterns')}>
+              <span className="my-asset-card__top">
+                <span className="my-asset-card__icon" aria-hidden="true">图</span>
+                <span>我的图纸</span>
+              </span>
+              <strong>{projectsLoading ? '...' : formatNumber(projectGroups.patterns.length)}</strong>
+              <em>{formatDate(latestProjectDate)}</em>
+            </button>
+            <button type="button" className="my-asset-card is-beading" onClick={() => setActiveTab('beading')}>
+              <span className="my-asset-card__top">
+                <span className="my-asset-card__icon" aria-hidden="true">拼</span>
+                <span>我的拼豆</span>
+              </span>
+              <strong>{projectsLoading ? '...' : formatNumber(projectGroups.progressing.length)}</strong>
+              <em>{latestProgress == null ? '暂无进度' : `${latestProgress}% 进行中`}</em>
+            </button>
+            <button type="button" className="my-asset-card is-inventory" onClick={() => navigate('/workshop/inventory')}>
+              <span className="my-asset-card__top">
+                <span className="my-asset-card__icon" aria-hidden="true">库</span>
+                <span>我的库存</span>
+              </span>
+              <strong>{inventoryLoading ? '...' : `${formatNumber(inventoryItems.length)} 色`}</strong>
+              <em>{lowStockCount ? `${lowStockCount} 个低库存` : `${formatNumber(totalInventoryQuantity)} 颗`}</em>
+            </button>
+            <button type="button" className="my-asset-card is-palette" onClick={openPaletteLibrarySheet}>
+              <span className="my-asset-card__top">
+                <span className="my-asset-card__icon" aria-hidden="true">色</span>
+                <span>我的色卡</span>
+              </span>
+              <strong>{colorPalettesLoading ? '...' : `${formatNumber(colorPalettes.length)} 套`}</strong>
+              <em>{paletteMessage || (officialPresetsLoading ? '读取模板中' : `${officialPalettePresets.length} 套官方预设`)}</em>
+            </button>
+            </div>
+          </section>
+
           <section className="my-library-section" aria-label="个人内容">
+            <div className="my-section-heading">
+              <div>
+                <p>CONTENT</p>
+                <h3>个人内容</h3>
+              </div>
+              <button type="button" className="my-section-action" onClick={() => navigate('/collection?tab=my')}>
+                全部内容
+              </button>
+            </div>
             <div className="my-library-tabs" role="tablist" aria-label="个人内容分类">
               {libraryTabs.map((tab) => (
                 <button
@@ -709,7 +676,116 @@ export function MyPage() {
             {renderLibraryContent()}
           </section>
         </section>
+
+        <aside className="my-dashboard__side" aria-label="账号与设置">
+          <section className="my-sync-panel" aria-label="同步状态">
+            <div>
+              <strong>{isAuthenticated ? '云端同步' : '本地创作'}</strong>
+              <span>
+                {isAuthenticated
+                  ? localProjectCount + localInventoryCount > 0
+                    ? `发现本地作品 ${localProjectCount} 个、库存 ${localInventoryCount} 条`
+                    : projectSyncMessage || inventorySyncMessage || paletteMessage || '登录数据会自动与账号关联'
+                  : '登录后可把本地作品、库存同步到账号，色卡会按账号保存'}
+              </span>
+            </div>
+            {isAuthenticated && (localProjectCount > 0 || localInventoryCount > 0) ? (
+              <div className="my-sync-panel__actions">
+                {localProjectCount > 0 ? (
+                  <button type="button" onClick={handleSyncProjects} disabled={isSyncingProjects}>
+                    {isSyncingProjects ? '作品同步中...' : `同步作品 ${localProjectCount}`}
+                  </button>
+                ) : null}
+                {localInventoryCount > 0 ? (
+                  <button type="button" onClick={handleSyncInventory} disabled={isSyncingInventory}>
+                    {isSyncingInventory ? '库存同步中...' : `同步库存 ${localInventoryCount}`}
+                  </button>
+                ) : null}
+              </div>
+            ) : !isAuthenticated && authStatus !== 'loading' ? (
+              <button type="button" onClick={() => navigate('/login?redirect=/my')}>登录</button>
+            ) : null}
+          </section>
+
+          <section className="my-quota-card" aria-label="权益额度">
+            <div className="my-section-heading">
+              <div>
+                <p>PLAN</p>
+                <h3>权益与额度</h3>
+              </div>
+              <span>{entitlements.identity === 'anonymous' ? 'Guest' : entitlements.identity === 'admin' ? 'Admin' : 'User'}</span>
+            </div>
+            <div className="my-quota-list">
+              <div>
+                <span>云端作品</span>
+                <strong>{getLimitText(isAuthenticated ? projects.length : 0, entitlements.limits.cloudProjects)}</strong>
+              </div>
+              <div>
+                <span>云端库存</span>
+                <strong>{getLimitText(isAuthenticated ? inventoryItems.length : 0, entitlements.limits.cloudInventoryItems)}</strong>
+              </div>
+              <div>
+                <span>当前方案</span>
+                <strong>{entitlementStatus === 'loading' ? '读取中' : entitlements.planLabel}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="my-settings-card" aria-label="设置与支持">
+            <div className="my-section-heading">
+              <div>
+                <p>TOOLS</p>
+                <h3>工具与设置</h3>
+              </div>
+            </div>
+            <div className="my-settings-list">
+              <button type="button" onClick={() => showDevelopmentNotice('账号安全会在后续版本开放')}>
+                <span>账号安全</span>
+                <em>›</em>
+              </button>
+              <button type="button" onClick={() => showDevelopmentNotice('创作偏好会在后续版本开放')}>
+                <span>创作偏好</span>
+                <em>›</em>
+              </button>
+              <button type="button" onClick={() => navigate('/workshop/inventory')}>
+                <span>我的库存</span>
+                <em>›</em>
+              </button>
+              {canShowAdmin ? (
+                <button type="button" onClick={() => navigate(ADMIN_ENTRY_PATH)}>
+                  <span>后台管理</span>
+                  <em>›</em>
+                </button>
+              ) : null}
+              {isAuthenticated ? (
+                <button type="button" className="is-danger" onClick={handleLogout}>
+                  <span>退出登录</span>
+                </button>
+              ) : null}
+            </div>
+            {notice ? <p className="my-notice">{notice}</p> : null}
+          </section>
+        </aside>
       </section>
+      <ColorPaletteLibrarySheet
+        open={paletteLibrarySheetOpen}
+        palettes={colorPalettes}
+        loading={colorPalettesLoading}
+        onClose={() => setPaletteLibrarySheetOpen(false)}
+        onCreate={openPaletteCreateSheet}
+        onEdit={(palette) => {
+          setPaletteLibrarySheetOpen(false);
+          navigate(`/my/palettes/${encodeURIComponent(palette.id)}`);
+        }}
+        onDelete={(palette) => void handleDeletePalette(palette)}
+      />
+      <ColorPaletteCreateSheet
+        open={paletteCreateSheetOpen}
+        presets={officialPalettePresets}
+        presetsLoading={officialPresetsLoading}
+        onClose={() => setPaletteCreateSheetOpen(false)}
+        onOpenDraft={handleOpenPaletteDraft}
+      />
     </main>
   );
 }

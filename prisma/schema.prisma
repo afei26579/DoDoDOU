@@ -62,6 +62,7 @@ model User {
   status           UserStatus          @default(active)
   sessions         Session[]
   oauthAccounts    OAuthAccount[]
+  inventories      BeadInventory[]
   inventory        BeadInventoryItem[]
   projects         WorkshopProject[]
   galleryAuthors   GalleryAuthor[]
@@ -163,9 +164,28 @@ model OAuthAccount {
   @@index([userId])
 }
 
+model BeadInventory {
+  id                String              @id @default(cuid())
+  userId            String
+  name              String
+  mode              String              @default("custom")
+  baseBrand         String              @default("MARD")
+  sourcePaletteId   String?
+  sourcePaletteName String?
+  sourcePaletteType String?
+  colorCount        Int                 @default(0)
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items             BeadInventoryItem[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([userId, updatedAt])
+}
+
 model BeadInventoryItem {
   id                String   @id @default(cuid())
   userId            String
+  inventoryId       String
   brandKey          String
   code              String
   hex               String
@@ -175,11 +195,13 @@ model BeadInventoryItem {
   favorite          Boolean  @default(false)
   note              String?
   user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inventory         BeadInventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  @@unique([userId, brandKey, code])
+  @@unique([inventoryId, brandKey, code])
   @@index([userId])
+  @@index([inventoryId])
 }
 
 model WorkshopProject {

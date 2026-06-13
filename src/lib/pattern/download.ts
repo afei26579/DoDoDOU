@@ -1,4 +1,6 @@
-import type { ColorSystem, PatternResult } from '../../features/workshop/model/types';
+import type { ColorSystem, PatternResult, WorkshopConfig } from '../../features/workshop/model/types';
+import { defaultWorkshopConfig } from '../../features/workshop/model/defaults';
+import { createDodoudouPatternExportDocument } from '../pattern-import/dodoudou-json';
 import { getVendorCode } from './color-system';
 
 export const DEFAULT_DOWNLOAD_AUTHOR_NAME = '嘟豆豆(Dodoudou)';
@@ -15,6 +17,8 @@ export type DownloadPatternOptions = {
   highDefinition?: boolean;
   brand: ColorSystem;
   patternResult: PatternResult;
+  config?: WorkshopConfig;
+  exportImportData?: boolean;
 };
 
 type CanvasLike = HTMLCanvasElement | OffscreenCanvas;
@@ -472,7 +476,7 @@ async function canvasToBlob(canvas: CanvasLike) {
   });
 }
 
-function formatDownloadFileName(options: DownloadPatternOptions, scale: number) {
+function formatDownloadBaseName(options: DownloadPatternOptions, scale: number) {
   const patternName = options.patternName.trim() || 'Dodoudou';
   const authorName = options.authorName.trim();
   const date = new Date();
@@ -484,7 +488,15 @@ function formatDownloadFileName(options: DownloadPatternOptions, scale: number) 
   const safeDate = `${yyyy}${mm}${dd}`;
   const authorSuffix = safeAuthor ? `_${safeAuthor}` : '';
   const scaleSuffix = scale > 1 ? `_${scale}x` : '';
-  return `${safePattern}${authorSuffix}${scaleSuffix}_${safeDate}.png`;
+  return `${safePattern}${authorSuffix}${scaleSuffix}_${safeDate}`;
+}
+
+function formatDownloadFileName(options: DownloadPatternOptions, scale: number) {
+  return `${formatDownloadBaseName(options, scale)}.png`;
+}
+
+function formatImportDataFileName(options: DownloadPatternOptions, scale: number) {
+  return `${formatDownloadBaseName(options, scale)}.dodoudou.json`;
 }
 
 function isMobileSafari() {
@@ -529,6 +541,27 @@ function triggerBlobDownload(blob: Blob, fileName: string) {
   cleanup();
 }
 
+function getExportConfig(options: DownloadPatternOptions): WorkshopConfig {
+  return {
+    ...defaultWorkshopConfig,
+    ...options.config,
+    brand: options.config?.brand ?? options.brand,
+    canvasSize: options.config?.canvasSize ?? Math.max(options.patternResult.width, options.patternResult.height),
+  };
+}
+
+export function downloadPatternImportData(options: DownloadPatternOptions, scale = getExportScale(options)) {
+  const document = createDodoudouPatternExportDocument({
+    patternResult: options.patternResult,
+    config: getExportConfig(options),
+    patternName: options.patternName,
+    authorName: options.authorName,
+  });
+  const json = JSON.stringify(document, null, 2);
+  const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+  triggerBlobDownload(blob, formatImportDataFileName(options, scale));
+}
+
 export async function downloadPatternImage(options: DownloadPatternOptions) {
   const scale = getExportScale(options);
   const fileName = formatDownloadFileName(options, scale);
@@ -536,6 +569,9 @@ export async function downloadPatternImage(options: DownloadPatternOptions) {
   drawToCanvas(canvas, options.patternResult, options, scale);
   const blob = await canvasToBlob(canvas);
   triggerBlobDownload(blob, fileName);
+  if (options.exportImportData) {
+    downloadPatternImportData(options, scale);
+  }
 }
 
 export function renderDownloadPatternCanvas(canvas: HTMLCanvasElement, options: DownloadPatternOptions) {

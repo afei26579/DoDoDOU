@@ -58,6 +58,30 @@ export function buildPalette(colorSystem: ColorSystem): PatternPaletteColor[] {
     .filter((item): item is PatternPaletteColor => item !== null);
 }
 
+export function buildPaletteFromColorIds(colorSystem: ColorSystem, colorIds: string[] | null | undefined): PatternPaletteColor[] {
+  const brandKey = normalizeBeadBrandKey(colorSystem);
+  const normalizedColorIds = Array.from(new Set((colorIds ?? [])
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean)));
+
+  if (!normalizedColorIds.length) return buildPalette(brandKey);
+
+  const palette = normalizedColorIds.flatMap((code) => {
+    const color = getColorByBrandCode(brandKey, code);
+    if (!color) return [];
+
+    return [{
+      colorId: color.hex,
+      vendorCode: color.code,
+      hex: color.hex,
+      rgb: color.rgb,
+    }];
+  });
+
+  return palette.length ? palette : buildPalette(brandKey);
+}
+
 export function getVendorCode(hex: string, colorSystem: ColorSystem): string {
   const brandKey = normalizeBeadBrandKey(colorSystem);
   return colorSystemMapping[hex.toUpperCase()]?.[brandKey] ?? '?';

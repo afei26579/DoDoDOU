@@ -3,10 +3,12 @@ import type {
   PatternResult,
   UploadedImage,
   WorkshopBeadingProgress,
+  WorkshopColorPaletteSelection,
   WorkshopConfig,
   WorkshopEditorState,
   WorkshopViewMode,
 } from './types';
+import type { PatternImportProjectMeta } from '../../../lib/pattern-import/types';
 import { defaultWorkshopConfig } from './defaults';
 import { normalizeBeadBrandKey } from '../../../lib/pattern/brand';
 import { normalizePatternAdvancedConfig } from '../../../lib/pattern/advanced-config';
@@ -66,7 +68,7 @@ function shouldUseRemoteProjects() {
 export type WorkshopProjectKind = 'upload' | 'pattern' | 'progress';
 export type WorkshopProjectStatus = 'editing' | 'ready' | 'paused' | 'completed';
 export type WorkshopBeadingState = 'idle' | 'progressing' | 'completed';
-export type WorkshopProjectSourceType = 'blank' | 'upload' | 'gallery';
+export type WorkshopProjectSourceType = 'blank' | 'upload' | 'gallery' | 'import';
 
 export type WorkshopProjectProgress = {
   percent: number;
@@ -114,6 +116,7 @@ export type WorkshopProjectRecord = {
   editorState: WorkshopEditorState | null;
   progress: WorkshopProjectProgress | null;
   beadingProgress: WorkshopBeadingProgress | null;
+  importMeta?: PatternImportProjectMeta | null;
   uploadedImageAssetId?: string | null;
   coverAssetId?: string | null;
   previewAssetId?: string | null;
@@ -161,6 +164,32 @@ function getDefaultConfig(): WorkshopConfig {
   };
 }
 
+function normalizeColorIds(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean)));
+}
+
+function normalizeColorPaletteSelection(value: unknown, fallbackBrand: WorkshopConfig['brand']): WorkshopColorPaletteSelection | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Partial<WorkshopColorPaletteSelection>;
+  const id = typeof record.id === 'string' && record.id.trim() ? record.id.trim() : '';
+  const name = typeof record.name === 'string' && record.name.trim() ? record.name.trim() : '';
+  const source = record.source === 'official' || record.source === 'custom' ? record.source : null;
+  const colorIds = normalizeColorIds(record.colorIds);
+  if (!id || !name || !source || !colorIds.length) return null;
+
+  return {
+    id,
+    name,
+    source,
+    baseBrand: normalizeBeadBrandKey(record.baseBrand, fallbackBrand),
+    colorIds,
+  };
+}
+
 function createDefaultRecord(projectId: string): WorkshopProjectRecord {
   const now = new Date().toISOString();
   return {
@@ -179,6 +208,7 @@ function createDefaultRecord(projectId: string): WorkshopProjectRecord {
     editorState: null,
     progress: null,
     beadingProgress: null,
+    importMeta: null,
     uploadedImageAssetId: null,
     coverAssetId: null,
     previewAssetId: null,
@@ -340,6 +370,7 @@ function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
     ...defaultRecord.config,
     ...record.config,
     brand: normalizeBeadBrandKey(record.config?.brand),
+    colorPalette: normalizeColorPaletteSelection(record.config?.colorPalette, normalizeBeadBrandKey(record.config?.brand)),
     advanced: normalizePatternAdvancedConfig(record.config?.advanced),
   };
 
@@ -357,6 +388,7 @@ function normalizeRecord(record: WorkshopProjectRecord): WorkshopProjectRecord {
     editorState: record.editorState ?? null,
     progress: record.progress ?? null,
     beadingProgress: record.beadingProgress ?? null,
+    importMeta: record.importMeta ?? null,
     uploadedImageAssetId: record.uploadedImageAssetId ?? record.uploadedImage?.assetId ?? null,
     coverAssetId: record.coverAssetId ?? null,
     previewAssetId: record.previewAssetId ?? null,

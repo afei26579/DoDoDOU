@@ -2871,6 +2871,13 @@ export function WorkshopEditorPage() {
           onClose={() => setDownloadModalOpen(false)}
           brand={downloadBrand}
           patternResult={downloadPatternResult}
+          config={{
+            ...defaultWorkshopConfig,
+            brand: downloadBrand,
+            canvasSize: downloadPatternResult
+              ? Math.max(downloadPatternResult.width, downloadPatternResult.height)
+              : Math.max(rows, cols),
+          }}
           defaultPatternName={displayProjectTitle}
         />
         {downloadModalOpen && <div className={styles.modalShield} aria-hidden="true" />}

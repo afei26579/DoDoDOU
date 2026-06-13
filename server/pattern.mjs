@@ -55,6 +55,52 @@ function buildPalette(colorMapping, brand) {
   });
 }
 
+function normalizeColorIds(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim().toUpperCase())
+    .filter(Boolean))];
+}
+
+function buildPaletteFromColorIds(colorMapping, brand, colorIds) {
+  const brandKey = normalizeBrand(brand);
+  const selectedCodes = new Set(normalizeColorIds(colorIds));
+  if (!selectedCodes.size) return buildPalette(colorMapping, brandKey);
+
+  const palette = Object.entries(colorMapping).flatMap(([hex, vendorCodes]) => {
+    const vendorCode = vendorCodes?.[brandKey];
+    if (!vendorCode || !selectedCodes.has(String(vendorCode).toUpperCase())) return [];
+
+    return [{
+      colorId: hex.toUpperCase(),
+      vendorCode,
+      hex: hex.toUpperCase(),
+      rgb: hexToRgb(hex),
+    }];
+  });
+
+  return palette.length ? palette : buildPalette(colorMapping, brandKey);
+}
+
+function normalizeColorPaletteSelection(value, brand) {
+  if (!isPlainObject(value)) return null;
+
+  const baseBrand = normalizeBrand(value.baseBrand);
+  if (baseBrand !== normalizeBrand(brand)) return null;
+
+  const colorIds = normalizeColorIds(value.colorIds);
+  if (!colorIds.length) return null;
+
+  return {
+    id: typeof value.id === 'string' ? value.id.trim().slice(0, 96) : '',
+    name: typeof value.name === 'string' ? value.name.trim().slice(0, 120) : '',
+    source: value.source === 'custom' ? 'custom' : 'official',
+    baseBrand,
+    colorIds,
+  };
+}
+
 function getPublicUrl(req, pathname) {
   if (config.publicBaseUrl) return `${config.publicBaseUrl}${pathname}`;
   return `${req.protocol}://${req.get('host')}${pathname}`;
@@ -98,6 +144,7 @@ function normalizeGeneratePayload(input) {
           config: {
             canvasSize,
             brand: normalizeBrand(configInput.brand),
+            colorPalette: normalizeColorPaletteSelection(configInput.colorPalette, configInput.brand),
             style: typeof configInput.style === 'string' ? configInput.style : '动漫',
             colorMergeThreshold: sanitizeNumber(configInput.colorMergeThreshold, 30, { min: 0, max: 100 }),
             algorithm: typeof configInput.algorithm === 'string' ? configInput.algorithm : 'server-mvp',
@@ -294,7 +341,9 @@ export function createPatternRouter(prisma, { rootDir }) {
         return res.status(404).json({ message: 'Source asset not found', requestId: req.id });
       }
 
-      const palette = buildPalette(colorMapping, payload.config.brand);
+      const palette = payload.config.colorPalette
+        ? buildPaletteFromColorIds(colorMapping, payload.config.brand, payload.config.colorPalette.colorIds)
+        : buildPalette(colorMapping, payload.config.brand);
       const sourceBuffer = await readAssetBuffer(rootDir, sourceAsset);
       const raw = await rasterizeSource(sourceBuffer, payload.cropTransform, payload.config.canvasSize);
       const patternResult = createPattern(raw, payload.config.canvasSize, payload.config.canvasSize, palette);
@@ -328,6 +377,9 @@ export function createPatternRouter(prisma, { rootDir }) {
           previewAssetId: previewAsset.id,
           canvasSize: payload.config.canvasSize,
           brand: payload.config.brand,
+          colorPaletteId: payload.config.colorPalette?.id ?? null,
+          colorPaletteName: payload.config.colorPalette?.name ?? null,
+          colorPaletteColorCount: payload.config.colorPalette?.colorIds.length ?? null,
         },
       });
 

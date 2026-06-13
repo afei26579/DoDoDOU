@@ -322,7 +322,10 @@ app.use('/assets', express.static(path.join(publicDir, 'assets'), {
 app.use(productionClosedGate);
 app.use(applyCors);
 app.use(globalRateLimiter);
-app.use('/uploads', express.static(path.join(rootDir, 'public', 'uploads'), {
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static(path.join(rootDir, 'public', 'uploads'), {
   index: false,
   maxAge: '7d',
 }));

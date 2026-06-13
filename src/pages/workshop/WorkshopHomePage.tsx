@@ -67,7 +67,7 @@ export function WorkshopHomePage({
   };
 
   const handleImportPattern = () => {
-    showDevelopmentNotice();
+    navigate('/workshop/import');
   };
 
   const handleOpenInventory = () => {

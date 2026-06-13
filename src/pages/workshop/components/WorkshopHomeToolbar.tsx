@@ -51,16 +51,16 @@ export function WorkshopHomeToolbar({
 
       <button
         type="button"
-        className="workshop-home-import workshop-home-import--placeholder"
+        className="workshop-home-import"
         onClick={onImportPattern}
         disabled={isGenerating}
       >
         <span className="workshop-home-import__icon" aria-hidden="true">⬇</span>
         <span className="workshop-home-import__copy">
           <strong>导入图纸</strong>
-          <span>开发中 · 暂未开放</span>
+          <span>支持 JSON / CSV / TSV</span>
         </span>
-        <span className="workshop-home-import__arrow" aria-hidden="true">开发中</span>
+        <span className="workshop-home-import__arrow" aria-hidden="true">›</span>
       </button>
 
       <button

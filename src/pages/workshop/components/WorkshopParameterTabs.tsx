@@ -1,6 +1,7 @@
 const parameterTags = [
   { id: 'size', icon: '◫', label: '尺寸' },
   { id: 'brand', icon: '◉', label: '品牌' },
+  { id: 'colorCard', icon: '▦', label: '色卡' },
   { id: 'style', icon: '✦', label: '风格' },
   { id: 'palette', icon: '◌', label: '容色' },
 ] as const;

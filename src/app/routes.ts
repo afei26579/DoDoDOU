@@ -3,6 +3,7 @@ export type AppRoute =
   | 'account'
   | 'discovery'
   | 'my'
+  | 'color-palette-editor'
   | 'crop'
   | 'workshop-settings'
   | 'workshop-preview'
@@ -20,6 +21,7 @@ export const routePathMap: Record<AppRoute, string> = {
   account: '/account',
   discovery: '/discovery',
   my: '/my',
+  'color-palette-editor': '/my/palettes/:paletteId',
   crop: '/crop',
   'workshop-settings': '/workshop/settings',
   'workshop-preview': '/workshop/preview',

@@ -1,20 +1,34 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  bulkSaveInventoryItems,
+  createInventory,
+  deleteInventory,
   deleteInventoryItem,
   filterInventoryItems,
   listInventoryItems,
-  saveInventoryItem,
+  listInventoryRecords,
+  saveInventoryItemToInventory,
+  type BeadInventory,
   type BeadInventoryItem,
+  type BeadInventoryMode,
+  type BeadInventoryPaletteSource,
+  type SaveBeadInventoryItemInput,
 } from '../../features/beads/model/inventoryStore';
 import {
-  createRemoteInventoryItem,
+  bulkSaveRemoteInventoryItems,
+  createRemoteInventory,
+  createRemoteInventoryItemInInventory,
+  deleteRemoteInventory,
   deleteRemoteInventoryItem,
-  listRemoteInventoryItems,
+  listRemoteInventoryRecords,
   syncRemoteInventoryItems,
   updateRemoteInventoryItem,
 } from '../../features/beads/model/inventoryApi';
 import { useAuth } from '../../features/auth/model/AuthProvider';
+import { getColorPaletteOwnerKey, listColorPaletteSeries } from '../../features/palettes/model/paletteStore';
+import { loadOfficialColorPalettePresets } from '../../features/palettes/model/officialPresets';
+import type { ColorPaletteSeries, OfficialColorPalettePreset } from '../../features/palettes/model/types';
 import { beadBrandKeys, getBeadBrandLabel, type BeadBrandKey } from '../../lib/pattern/brand';
 import { getBrandPalette, getColorByBrandCode } from '../../lib/pattern/color-system';
 
@@ -30,6 +44,23 @@ type InventoryFormState = {
   favorite: boolean;
 };
 
+type InventoryCreateFormState = {
+  name: string;
+  mode: BeadInventoryMode;
+  baseBrand: BeadBrandKey;
+  paletteKey: string;
+  batchQuantity: string;
+};
+
+type PaletteOption = {
+  key: string;
+  id: string;
+  name: string;
+  source: BeadInventoryPaletteSource;
+  baseBrand: BeadBrandKey;
+  colorIds: string[];
+};
+
 const emptyForm: InventoryFormState = {
   brandKey: 'MARD',
   code: '',
@@ -38,6 +69,14 @@ const emptyForm: InventoryFormState = {
   location: '',
   note: '',
   favorite: false,
+};
+
+const emptyCreateForm: InventoryCreateFormState = {
+  name: '',
+  mode: 'palette',
+  baseBrand: 'MARD',
+  paletteKey: '',
+  batchQuantity: '1000',
 };
 
 function formatNumber(value: number) {
@@ -50,36 +89,103 @@ function toOptionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function toNonNegativeInteger(value: string) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.floor(parsed);
+}
+
+function createPaletteOption(palette: OfficialColorPalettePreset | ColorPaletteSeries): PaletteOption {
+  return {
+    key: `${palette.source}:${palette.id}`,
+    id: palette.id,
+    name: palette.name,
+    source: palette.source === 'official' ? 'official' : 'custom',
+    baseBrand: palette.baseBrand,
+    colorIds: palette.colorIds,
+  };
+}
+
+function getInventoryModeLabel(mode: BeadInventoryMode) {
+  return mode === 'palette' ? '绑定色卡' : '自定义';
+}
+
+function getInventorySourceLabel(inventory: BeadInventory) {
+  if (inventory.mode === 'custom') return '手动维护';
+  return inventory.sourcePaletteName ?? '色卡库存';
+}
+
+function buildPaletteInventoryItems(palette: PaletteOption, quantity: number): SaveBeadInventoryItemInput[] {
+  return palette.colorIds.flatMap((code) => {
+    const color = getColorByBrandCode(palette.baseBrand, code);
+    if (!color) return [];
+
+    return [{
+      brandKey: palette.baseBrand,
+      code: color.code,
+      hex: color.hex,
+      quantity,
+    }];
+  });
+}
+
 export function BeadInventoryPage() {
   const navigate = useNavigate();
   const { status: authStatus, user, isAuthenticated } = useAuth();
+  const [inventories, setInventories] = useState<BeadInventory[]>([]);
   const [allItems, setAllItems] = useState<BeadInventoryItem[]>([]);
+  const [activeInventoryId, setActiveInventoryId] = useState('');
   const [search, setSearch] = useState('');
   const [brandFilter, setBrandFilter] = useState<BrandFilter>('ALL');
   const [favoriteOnly, setFavoriteOnly] = useState(false);
   const [form, setForm] = useState<InventoryFormState>(emptyForm);
+  const [createForm, setCreateForm] = useState<InventoryCreateFormState>(emptyCreateForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCreatingInventory, setIsCreatingInventory] = useState(false);
   const [localInventoryCount, setLocalInventoryCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [paletteOptions, setPaletteOptions] = useState<PaletteOption[]>([]);
+  const [palettesLoading, setPalettesLoading] = useState(false);
 
+  const colorPaletteOwnerKey = getColorPaletteOwnerKey(isAuthenticated ? user?.id : null);
+  const migrationStorageKey = user ? `dodoudou.inventory.migration.completed.${user.id}` : '';
+  const activeInventory = useMemo(
+    () => inventories.find((item) => item.id === activeInventoryId) ?? inventories[0] ?? null,
+    [activeInventoryId, inventories],
+  );
+  const selectedPalette = useMemo(
+    () => paletteOptions.find((item) => item.key === createForm.paletteKey) ?? null,
+    [createForm.paletteKey, paletteOptions],
+  );
   const brandPalette = useMemo(() => getBrandPalette(form.brandKey), [form.brandKey]);
   const resolvedColor = useMemo(() => getColorByBrandCode(form.brandKey, form.code), [form.brandKey, form.code]);
-  const items = useMemo(
-    () => filterInventoryItems(allItems, { search, brandKey: brandFilter, favoriteOnly }),
-    [allItems, brandFilter, favoriteOnly, search],
+  const activeInventoryItems = useMemo(
+    () => allItems.filter((item) => item.inventoryId === activeInventory?.id),
+    [activeInventory?.id, allItems],
   );
-  const totalQuantity = allItems.reduce((sum, item) => sum + item.quantity, 0);
-  const lowStockCount = allItems.filter((item) => item.lowStockThreshold != null && item.quantity <= item.lowStockThreshold).length;
-  const migrationStorageKey = user ? `dodoudou.inventory.migration.completed.${user.id}` : '';
+  const items = useMemo(
+    () => filterInventoryItems(activeInventoryItems, { search, brandKey: brandFilter, favoriteOnly }),
+    [activeInventoryItems, brandFilter, favoriteOnly, search],
+  );
+  const totalQuantity = activeInventoryItems.reduce((sum, item) => sum + item.quantity, 0);
+  const lowStockCount = activeInventoryItems.filter((item) => item.lowStockThreshold != null && item.quantity <= item.lowStockThreshold).length;
+  const allInventoryQuantity = allItems.reduce((sum, item) => sum + item.quantity, 0);
 
   const loadItems = useCallback(async () => {
     if (authStatus === 'loading') return;
     setIsLoading(true);
     try {
-      setAllItems(isAuthenticated ? await listRemoteInventoryItems() : await listInventoryItems());
+      const records = isAuthenticated ? await listRemoteInventoryRecords() : await listInventoryRecords();
+      setInventories(records.inventories);
+      setAllItems(records.items);
+      setActiveInventoryId((current) => (
+        current && records.inventories.some((item) => item.id === current)
+          ? current
+          : records.inventories[0]?.id ?? ''
+      ));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '库存读取失败，请稍后再试');
     } finally {
@@ -90,6 +196,45 @@ export function BeadInventoryPage() {
   useEffect(() => {
     void loadItems();
   }, [loadItems]);
+
+  useEffect(() => {
+    let alive = true;
+    setPalettesLoading(true);
+
+    Promise.all([
+      loadOfficialColorPalettePresets().catch(() => []),
+      listColorPaletteSeries(colorPaletteOwnerKey).catch(() => []),
+    ])
+      .then(([officialPresets, customPalettes]) => {
+        if (!alive) return;
+        const nextOptions = [
+          ...officialPresets.map(createPaletteOption),
+          ...customPalettes.map(createPaletteOption),
+        ];
+        setPaletteOptions(nextOptions);
+        setCreateForm((current) => ({
+          ...current,
+          paletteKey: current.paletteKey || nextOptions[0]?.key || '',
+          baseBrand: nextOptions[0]?.baseBrand ?? current.baseBrand,
+        }));
+      })
+      .finally(() => {
+        if (alive) setPalettesLoading(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [colorPaletteOwnerKey]);
+
+  useEffect(() => {
+    if (!activeInventory || editingId) return;
+    setForm((current) => ({
+      ...current,
+      brandKey: activeInventory.baseBrand,
+      code: '',
+    }));
+  }, [activeInventory?.id, editingId]);
 
   useEffect(() => {
     if (!isAuthenticated || !migrationStorageKey) {
@@ -113,7 +258,7 @@ export function BeadInventoryPage() {
   }, [isAuthenticated, migrationStorageKey]);
 
   const resetForm = () => {
-    setForm(emptyForm);
+    setForm(activeInventory ? { ...emptyForm, brandKey: activeInventory.baseBrand } : emptyForm);
     setEditingId(null);
     setMessage('');
   };
@@ -132,10 +277,69 @@ export function BeadInventoryPage() {
     setMessage('');
   };
 
+  const handleCreateInventory = async (event: FormEvent) => {
+    event.preventDefault();
+    const palette = createForm.mode === 'palette' ? selectedPalette : null;
+    const batchQuantity = createForm.mode === 'palette' ? toNonNegativeInteger(createForm.batchQuantity) : 0;
+
+    if (createForm.mode === 'palette' && !palette) {
+      setMessage('请选择要绑定的色卡');
+      return;
+    }
+
+    if (createForm.mode === 'palette' && batchQuantity === null) {
+      setMessage('批量数量需要是 0 或更大的整数');
+      return;
+    }
+
+    const inventoryName = createForm.name.trim()
+      || (palette ? `${palette.name} 库存` : '自定义库存');
+    const input = {
+      name: inventoryName,
+      mode: createForm.mode,
+      baseBrand: palette?.baseBrand ?? createForm.baseBrand,
+      sourcePaletteId: palette?.id,
+      sourcePaletteName: palette?.name,
+      sourcePaletteType: palette?.source,
+      colorCount: palette?.colorIds.length ?? 0,
+    };
+
+    setIsCreatingInventory(true);
+    try {
+      const created = isAuthenticated ? await createRemoteInventory(input) : await createInventory(input);
+      const batchItems = palette ? buildPaletteInventoryItems(palette, batchQuantity ?? 0) : [];
+      if (batchItems.length) {
+        if (isAuthenticated) {
+          await bulkSaveRemoteInventoryItems(created.id, batchItems);
+        } else {
+          await bulkSaveInventoryItems(created.id, batchItems);
+        }
+      }
+
+      setActiveInventoryId(created.id);
+      setCreateForm({
+        ...emptyCreateForm,
+        paletteKey: createForm.paletteKey || paletteOptions[0]?.key || '',
+        baseBrand: palette?.baseBrand ?? createForm.baseBrand,
+      });
+      setMessage(palette ? `已创建 ${inventoryName}，导入 ${batchItems.length} 个色号` : `已创建 ${inventoryName}`);
+      await loadItems();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '库存创建失败，请稍后再试');
+    } finally {
+      setIsCreatingInventory(false);
+    }
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const code = form.code.trim();
     const quantity = Number(form.quantity);
+
+    if (!activeInventory) {
+      setMessage('请先创建或选择一个库存');
+      return;
+    }
 
     if (!code) {
       setMessage('请先输入色号');
@@ -154,6 +358,7 @@ export function BeadInventoryPage() {
     }
 
     const input = {
+      inventoryId: activeInventory.id,
       brandKey: form.brandKey,
       code: color.code,
       hex: color.hex,
@@ -169,8 +374,8 @@ export function BeadInventoryPage() {
       const saved = isAuthenticated && editingId
         ? await updateRemoteInventoryItem(editingId, input)
         : isAuthenticated
-          ? await createRemoteInventoryItem(input)
-          : await saveInventoryItem(input);
+          ? await createRemoteInventoryItemInInventory(activeInventory.id, input)
+          : await saveInventoryItemToInventory(activeInventory.id, input);
 
       if (!isAuthenticated && editingId && editingId !== saved.id) {
         await deleteInventoryItem(editingId);
@@ -190,7 +395,7 @@ export function BeadInventoryPage() {
     }
   };
 
-  const handleDelete = async (item: BeadInventoryItem) => {
+  const handleDeleteItem = async (item: BeadInventoryItem) => {
     try {
       if (isAuthenticated) {
         await deleteRemoteInventoryItem(item.id);
@@ -204,22 +409,49 @@ export function BeadInventoryPage() {
     }
   };
 
+  const handleDeleteInventory = async (inventory: BeadInventory) => {
+    const confirmed = window.confirm(`删除「${inventory.name}」会同时删除里面的库存色号，确定继续吗？`);
+    if (!confirmed) return;
+
+    try {
+      if (isAuthenticated) {
+        await deleteRemoteInventory(inventory.id);
+      } else {
+        await deleteInventory(inventory.id);
+      }
+      if (activeInventoryId === inventory.id) {
+        setActiveInventoryId('');
+        resetForm();
+      }
+      setMessage(`已删除 ${inventory.name}`);
+      await loadItems();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '库存删除失败，请稍后再试');
+    }
+  };
+
   const handleSyncLocalInventory = async () => {
     if (!migrationStorageKey || isSyncing) return;
 
     setIsSyncing(true);
     try {
-      const localItems = await listInventoryItems();
-      if (!localItems.length) {
+      const localRecords = await listInventoryRecords();
+      if (!localRecords.items.length) {
         localStorage.setItem(migrationStorageKey, 'true');
         setLocalInventoryCount(0);
         return;
       }
 
-      const response = await syncRemoteInventoryItems(localItems);
+      const response = await syncRemoteInventoryItems(localRecords.items, localRecords.inventories);
       localStorage.setItem(migrationStorageKey, 'true');
       setLocalInventoryCount(0);
+      setInventories(response.inventories ?? []);
       setAllItems(response.items);
+      setActiveInventoryId((current) => (
+        current && response.inventories?.some((item) => item.id === current)
+          ? current
+          : response.inventories?.[0]?.id ?? ''
+      ));
       setMessage(`已同步 ${response.stats.created + response.stats.updated} 条库存`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : '库存同步失败，请稍后再试');
@@ -275,25 +507,155 @@ export function BeadInventoryPage() {
 
       <section className="inventory-summary" aria-label="库存概览">
         <div className="inventory-summary__item">
-          <span>色号</span>
-          <strong>{formatNumber(allItems.length)}</strong>
+          <span>库存数</span>
+          <strong>{formatNumber(inventories.length)}</strong>
         </div>
         <div className="inventory-summary__item">
-          <span>总颗数</span>
+          <span>当前色号</span>
+          <strong>{formatNumber(activeInventoryItems.length)}</strong>
+        </div>
+        <div className="inventory-summary__item">
+          <span>当前颗数</span>
           <strong>{formatNumber(totalQuantity)}</strong>
         </div>
         <div className="inventory-summary__item">
-          <span>低库存</span>
-          <strong>{formatNumber(lowStockCount)}</strong>
+          <span>总颗数</span>
+          <strong>{formatNumber(allInventoryQuantity)}</strong>
         </div>
+      </section>
+
+      <section className="inventory-sets" aria-label="库存档案">
+        <div className="inventory-section-heading">
+          <div>
+            <h2>库存档案</h2>
+            <p>{activeInventory ? `${activeInventory.name} · ${getInventorySourceLabel(activeInventory)}` : '请选择库存'}</p>
+          </div>
+          <span>{lowStockCount ? `${lowStockCount} 个低库存` : getInventoryModeLabel(activeInventory?.mode ?? 'custom')}</span>
+        </div>
+        <div className="inventory-set-list">
+          {isLoading && !inventories.length ? <div className="inventory-empty">正在读取库存</div> : null}
+          {inventories.map((inventory) => {
+            const inventoryItems = allItems.filter((item) => item.inventoryId === inventory.id);
+            const quantity = inventoryItems.reduce((sum, item) => sum + item.quantity, 0);
+            return (
+              <button
+                key={inventory.id}
+                type="button"
+                className={`inventory-set-card ${activeInventory?.id === inventory.id ? 'is-active' : ''}`}
+                onClick={() => {
+                  setActiveInventoryId(inventory.id);
+                  setEditingId(null);
+                  setMessage('');
+                }}
+              >
+                <span>
+                  <strong>{inventory.name}</strong>
+                  <em>{getInventoryModeLabel(inventory.mode)} · {getInventorySourceLabel(inventory)}</em>
+                </span>
+                <b>{formatNumber(inventoryItems.length)} 色</b>
+                <small>{formatNumber(quantity)} 颗</small>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="inventory-editor" aria-label="创建库存">
+        <form className="inventory-form" onSubmit={handleCreateInventory}>
+          <div className="inventory-form__topline">
+            <div>
+              <h2>创建库存</h2>
+              <p>{createForm.mode === 'palette' ? '选择官方模板或自己的色卡，并批量设置初始数量' : '创建空库存后手动维护每个色号'}</p>
+            </div>
+          </div>
+
+          <div className="inventory-form__grid">
+            <label className="inventory-field">
+              <span>库存名称</span>
+              <input
+                value={createForm.name}
+                placeholder={selectedPalette ? `${selectedPalette.name} 库存` : '如 48 色补货库存'}
+                onChange={(event) => setCreateForm((current) => ({ ...current, name: event.target.value }))}
+              />
+            </label>
+
+            <label className="inventory-field">
+              <span>类型</span>
+              <select
+                value={createForm.mode}
+                onChange={(event) => setCreateForm((current) => ({ ...current, mode: event.target.value as BeadInventoryMode }))}
+              >
+                <option value="palette">绑定色卡</option>
+                <option value="custom">自定义</option>
+              </select>
+            </label>
+
+            {createForm.mode === 'palette' ? (
+              <>
+                <label className="inventory-field inventory-field--wide">
+                  <span>色卡</span>
+                  <select
+                    value={createForm.paletteKey}
+                    disabled={palettesLoading || !paletteOptions.length}
+                    onChange={(event) => {
+                      const palette = paletteOptions.find((item) => item.key === event.target.value);
+                      setCreateForm((current) => ({
+                        ...current,
+                        paletteKey: event.target.value,
+                        baseBrand: palette?.baseBrand ?? current.baseBrand,
+                      }));
+                    }}
+                  >
+                    {paletteOptions.map((palette) => (
+                      <option key={palette.key} value={palette.key}>
+                        {palette.source === 'official' ? '官方' : '我的'} · {palette.name} · {getBeadBrandLabel(palette.baseBrand)} · {palette.colorIds.length} 色
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="inventory-field">
+                  <span>每个色号数量</span>
+                  <input
+                    value={createForm.batchQuantity}
+                    type="number"
+                    min={0}
+                    step={1}
+                    placeholder="1000"
+                    onChange={(event) => setCreateForm((current) => ({ ...current, batchQuantity: event.target.value }))}
+                  />
+                </label>
+              </>
+            ) : (
+              <label className="inventory-field">
+                <span>默认品牌</span>
+                <select
+                  value={createForm.baseBrand}
+                  onChange={(event) => setCreateForm((current) => ({ ...current, baseBrand: event.target.value as BeadBrandKey }))}
+                >
+                  {beadBrandKeys.map((brandKey) => (
+                    <option key={brandKey} value={brandKey}>
+                      {getBeadBrandLabel(brandKey)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+
+          <div className="inventory-form__actions">
+            <button type="submit" className="inventory-primary-button" disabled={isCreatingInventory || authStatus === 'loading'}>
+              {isCreatingInventory ? '创建中...' : '创建库存'}
+            </button>
+          </div>
+        </form>
       </section>
 
       <section className="inventory-editor" aria-label="录入库存">
         <form className="inventory-form" onSubmit={handleSubmit}>
           <div className="inventory-form__topline">
             <div>
-              <h2>{editingId ? '修改库存' : '录入色号'}</h2>
-              <p>{resolvedColor ? `${getBeadBrandLabel(form.brandKey)} ${resolvedColor.code}` : '选择品牌并输入色号'}</p>
+              <h2>{editingId ? '修改库存色号' : '录入色号'}</h2>
+              <p>{activeInventory ? `当前库存：${activeInventory.name}` : '先创建或选择库存'}</p>
             </div>
             <span className="inventory-form__swatch" style={{ backgroundColor: resolvedColor?.hex ?? '#F2ECE5' }} aria-hidden="true" />
           </div>
@@ -388,7 +750,12 @@ export function BeadInventoryPage() {
                 取消
               </button>
             ) : null}
-            <button type="submit" className="inventory-primary-button" disabled={isSaving || authStatus === 'loading'}>
+            {activeInventory ? (
+              <button type="button" className="inventory-secondary-button" onClick={() => handleDeleteInventory(activeInventory)}>
+                删除当前库存
+              </button>
+            ) : null}
+            <button type="submit" className="inventory-primary-button" disabled={isSaving || authStatus === 'loading' || !activeInventory}>
               {isSaving ? '保存中...' : editingId ? '保存修改' : '加入库存'}
             </button>
           </div>
@@ -443,14 +810,14 @@ export function BeadInventoryPage() {
                   <button type="button" onClick={() => handleEdit(item)}>
                     修改
                   </button>
-                  <button type="button" onClick={() => handleDelete(item)}>
+                  <button type="button" onClick={() => handleDeleteItem(item)}>
                     删除
                   </button>
                 </div>
               </article>
             ))
           ) : (
-            <div className="inventory-empty">还没有符合条件的库存色号</div>
+            <div className="inventory-empty">当前库存还没有符合条件的色号</div>
           )}
         </div>
       </section>

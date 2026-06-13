@@ -12,6 +12,14 @@ export type WorkshopAdvancedConfig = {
   alphaSensitivity: number;
 };
 
+export type WorkshopColorPaletteSelection = {
+  id: string;
+  name: string;
+  source: 'official' | 'custom';
+  baseBrand: BeadBrandKey;
+  colorIds: string[];
+};
+
 export type UploadedImage = {
   name: string;
   type: string;
@@ -33,6 +41,7 @@ export type CropTransform = {
 export type WorkshopConfig = {
   canvasSize: number;
   brand: ColorSystem;
+  colorPalette?: WorkshopColorPaletteSelection | null;
   style: WorkshopStyle;
   colorMergeThreshold: number;
   algorithm?: PatternAlgorithm;

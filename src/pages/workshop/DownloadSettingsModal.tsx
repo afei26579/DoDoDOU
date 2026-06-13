@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { createLoginRedirectPath } from '../../features/auth/model/redirect';
 import { useCapability } from '../../features/subscription/model/EntitlementProvider';
-import type { ColorSystem, PatternResult } from '../../features/workshop/model/types';
+import type { ColorSystem, PatternResult, WorkshopConfig } from '../../features/workshop/model/types';
 import { waitForLoadingPaint } from '../../lib/imageFile';
 import { DEFAULT_DOWNLOAD_AUTHOR_NAME, downloadPatternImage, type DownloadPatternOptions } from '../../lib/pattern/download';
 import { LoadingOverlay } from '../../shared/ui/LoadingOverlay';
@@ -12,6 +12,7 @@ type DownloadSettingsModalProps = {
   onClose: () => void;
   brand: ColorSystem;
   patternResult: PatternResult | null;
+  config?: WorkshopConfig;
   defaultPatternName?: string;
 };
 
@@ -26,7 +27,7 @@ const colorOptions = [
 
 const LOGIN_REQUIRED_MESSAGE = '登录后可下载图纸';
 
-export function DownloadSettingsModal({ open, onClose, brand, patternResult, defaultPatternName = '' }: DownloadSettingsModalProps) {
+export function DownloadSettingsModal({ open, onClose, brand, patternResult, config, defaultPatternName = '' }: DownloadSettingsModalProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const canDownload = useCapability('export.download');
@@ -38,6 +39,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
   const [gridColor, setGridColor] = useState<(typeof colorOptions)[number]['value']>(colorOptions[0].value);
   const [showSymbol, setShowSymbol] = useState(true);
   const [showSymbolStats, setShowSymbolStats] = useState(true);
+  const [exportImportData, setExportImportData] = useState(false);
   const [addWatermark, setAddWatermark] = useState(true);
   const [highDefinition, setHighDefinition] = useState(false);
   const [entitlementMessage, setEntitlementMessage] = useState('');
@@ -47,6 +49,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
     if (!open) return;
 
     setPatternName(defaultPatternName);
+    setExportImportData(false);
     setHighDefinition(false);
     setEntitlementMessage('');
   }, [defaultPatternName, open]);
@@ -121,6 +124,8 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
         highDefinition: canExportHd && highDefinition,
         brand,
         patternResult,
+        config,
+        exportImportData,
       };
       await downloadPatternImage(downloadOptions);
       onClose();
@@ -257,6 +262,21 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
             </div>
             <div className="download-modal__divider" />
             <div className="download-modal__setting-row download-modal__setting-row--list">
+              <div className="download-modal__setting-copy">
+                <strong>可回导数据</strong>
+                <span>同时下载 .dodoudou.json</span>
+              </div>
+              <button
+                type="button"
+                className={`download-switch ${exportImportData ? 'is-on' : ''}`}
+                role="switch"
+                aria-checked={exportImportData}
+                aria-label="同时导出可回导数据"
+                onClick={() => setExportImportData((current) => !current)}
+              />
+            </div>
+            <div className="download-modal__divider" />
+            <div className="download-modal__setting-row download-modal__setting-row--list">
               <strong>添加水印</strong>
               <button
                 type="button"
@@ -300,7 +320,7 @@ export function DownloadSettingsModal({ open, onClose, brand, patternResult, def
         </div>
 
         <button type="button" className="download-modal__action" onClick={handleDownload} disabled={!patternResult || isDownloading}>
-          {isDownloading ? '生成中...' : '下载图纸'}
+          {isDownloading ? '生成中...' : exportImportData ? '下载图纸和数据' : '下载图纸'}
         </button>
         <LoadingOverlay
           open={isDownloading}

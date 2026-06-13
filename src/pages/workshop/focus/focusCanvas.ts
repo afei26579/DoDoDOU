@@ -49,6 +49,8 @@ export type RulerData = {
 };
 
 type SelectedBlockNumberingAxis = 'horizontal' | 'vertical';
+type SelectedBlockHorizontalDirection = 'left-to-right' | 'right-to-left';
+type SelectedBlockVerticalDirection = 'top-to-bottom' | 'bottom-to-top';
 
 export function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -406,7 +408,8 @@ function buildSelectedBlockNumberLabels(
   selectedBlockCellKeys: Set<string>,
   completedCellKeys: Set<string>,
   axis: SelectedBlockNumberingAxis,
-  handedness: 'left' | 'right',
+  horizontalDirection: SelectedBlockHorizontalDirection,
+  verticalDirection: SelectedBlockVerticalDirection,
 ) {
   const selectedCells = cells.filter((cell) => (
     selectedBlockCellKeys.has(cell.coordKey) &&
@@ -424,9 +427,14 @@ function buildSelectedBlockNumberLabels(
     }
 
     for (const rowCells of cellsByRow.values()) {
-      rowCells
-        .sort((a, b) => (handedness === 'left' ? b.x - a.x : a.x - b.x))
-        .forEach((cell, index) => labels.set(cell.coordKey, String(index + 1)));
+      const sortedCells = rowCells.sort((a, b) => (horizontalDirection === 'left-to-right' ? a.x - b.x : b.x - a.x));
+      let runCount = 0;
+      let previousCell: FocusBoardCell | null = null;
+      for (const cell of sortedCells) {
+        runCount = previousCell && Math.abs(previousCell.x - cell.x) === 1 ? runCount + 1 : 1;
+        labels.set(cell.coordKey, String(runCount));
+        previousCell = cell;
+      }
     }
 
     return labels;
@@ -440,9 +448,14 @@ function buildSelectedBlockNumberLabels(
   }
 
   for (const columnCells of cellsByColumn.values()) {
-    columnCells
-      .sort((a, b) => a.y - b.y)
-      .forEach((cell, index) => labels.set(cell.coordKey, String(index + 1)));
+    const sortedCells = columnCells.sort((a, b) => (verticalDirection === 'top-to-bottom' ? a.y - b.y : b.y - a.y));
+    let runCount = 0;
+    let previousCell: FocusBoardCell | null = null;
+    for (const cell of sortedCells) {
+      runCount = previousCell && Math.abs(previousCell.y - cell.y) === 1 ? runCount + 1 : 1;
+      labels.set(cell.coordKey, String(runCount));
+      previousCell = cell;
+    }
   }
 
   return labels;
@@ -455,14 +468,15 @@ function drawSelectedBlockNumberLabels(params: {
   selectedBlockCellKeys: Set<string>;
   completedCellKeys: Set<string>;
   axis: SelectedBlockNumberingAxis;
-  handedness: 'left' | 'right';
+  horizontalDirection: SelectedBlockHorizontalDirection;
+  verticalDirection: SelectedBlockVerticalDirection;
   viewport: FocusViewport;
   boardLayout: WorkshopBoardLayout;
 }) {
-  const { ctx, cells, visibleCells, selectedBlockCellKeys, completedCellKeys, axis, handedness, viewport, boardLayout } = params;
+  const { ctx, cells, visibleCells, selectedBlockCellKeys, completedCellKeys, axis, horizontalDirection, verticalDirection, viewport, boardLayout } = params;
   if (selectedBlockCellKeys.size === 0 || viewport.cellPx < 14) return;
 
-  const labels = buildSelectedBlockNumberLabels(cells, selectedBlockCellKeys, completedCellKeys, axis, handedness);
+  const labels = buildSelectedBlockNumberLabels(cells, selectedBlockCellKeys, completedCellKeys, axis, horizontalDirection, verticalDirection);
   if (labels.size === 0) return;
 
   ctx.save();
@@ -506,6 +520,8 @@ export function drawFocusCanvas(params: {
   completedCellKeys: Set<string>;
   selectedBlockCellKeys: Set<string>;
   selectedBlockNumberingAxis: SelectedBlockNumberingAxis;
+  selectedBlockHorizontalDirection: SelectedBlockHorizontalDirection;
+  selectedBlockVerticalDirection: SelectedBlockVerticalDirection;
   completionProgress: number;
   completionGlowProgress?: number;
   progressFlowOffset: number;
@@ -527,6 +543,8 @@ export function drawFocusCanvas(params: {
     completedCellKeys,
     selectedBlockCellKeys,
     selectedBlockNumberingAxis,
+    selectedBlockHorizontalDirection,
+    selectedBlockVerticalDirection,
     completionProgress,
     completionGlowProgress = 0,
     progressFlowOffset,
@@ -699,7 +717,8 @@ export function drawFocusCanvas(params: {
       selectedBlockCellKeys,
       completedCellKeys,
       axis: selectedBlockNumberingAxis,
-      handedness,
+      horizontalDirection: selectedBlockHorizontalDirection,
+      verticalDirection: selectedBlockVerticalDirection,
       viewport,
       boardLayout,
     });

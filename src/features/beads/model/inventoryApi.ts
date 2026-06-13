@@ -1,5 +1,11 @@
 import { getApiErrorMessage, type ApiErrorPayload } from '../../../lib/api/errorMessage';
-import type { BeadInventoryItem, SaveBeadInventoryItemInput } from './inventoryStore';
+import type {
+  BeadInventory,
+  BeadInventoryRecords,
+  CreateBeadInventoryInput,
+  SaveBeadInventoryItemInput,
+  UpdateBeadInventoryInput,
+} from './inventoryStore';
 
 function resolveApiBaseUrl() {
   const configured = import.meta.env.VITE_API_BASE_URL?.trim() || '';
@@ -16,11 +22,20 @@ function resolveApiBaseUrl() {
 const API_BASE_URL = resolveApiBaseUrl();
 
 type InventoryListResponse = {
-  items: BeadInventoryItem[];
+  inventories?: BeadInventory[];
+  items: BeadInventoryRecords['items'];
 };
 
 type InventoryItemResponse = {
-  item: BeadInventoryItem;
+  item: BeadInventoryRecords['items'][number];
+};
+
+type InventoryRecordResponse = {
+  inventory: BeadInventory;
+};
+
+type InventoryRecordsResponse = {
+  inventories: BeadInventory[];
 };
 
 type InventorySyncResponse = InventoryListResponse & {
@@ -61,6 +76,7 @@ async function requestInventory<T>(path: string, init?: RequestInit): Promise<T>
 
 function toInventoryPayload(input: SaveBeadInventoryItemInput) {
   return {
+    inventoryId: input.inventoryId,
     brandKey: input.brandKey,
     code: input.code,
     hex: input.hex,
@@ -72,8 +88,60 @@ function toInventoryPayload(input: SaveBeadInventoryItemInput) {
   };
 }
 
-export async function listRemoteInventoryItems() {
+function toInventoryRecordPayload(input: CreateBeadInventoryInput | UpdateBeadInventoryInput) {
+  return {
+    name: input.name,
+    mode: input.mode,
+    baseBrand: input.baseBrand,
+    sourcePaletteId: input.sourcePaletteId,
+    sourcePaletteName: input.sourcePaletteName,
+    sourcePaletteType: input.sourcePaletteType,
+    colorCount: input.colorCount,
+  };
+}
+
+export async function listRemoteInventoryRecords(): Promise<BeadInventoryRecords> {
   const response = await requestInventory<InventoryListResponse>('/api/inventory');
+  return {
+    inventories: response.inventories ?? [],
+    items: response.items,
+  };
+}
+
+export async function listRemoteInventoryItems() {
+  return (await listRemoteInventoryRecords()).items;
+}
+
+export async function listRemoteInventories() {
+  const response = await requestInventory<InventoryRecordsResponse>('/api/inventory/sets');
+  return response.inventories;
+}
+
+export async function createRemoteInventory(input: CreateBeadInventoryInput) {
+  const response = await requestInventory<InventoryRecordResponse>('/api/inventory/sets', {
+    method: 'POST',
+    body: JSON.stringify(toInventoryRecordPayload(input)),
+  });
+  return response.inventory;
+}
+
+export async function updateRemoteInventory(id: string, input: UpdateBeadInventoryInput) {
+  const response = await requestInventory<InventoryRecordResponse>(`/api/inventory/sets/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(toInventoryRecordPayload(input)),
+  });
+  return response.inventory;
+}
+
+export async function deleteRemoteInventory(id: string) {
+  await requestInventory<{ ok: true }>(`/api/inventory/sets/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    body: JSON.stringify({}),
+  });
+}
+
+export async function listRemoteInventoryItemsForInventory(inventoryId: string) {
+  const response = await requestInventory<InventoryListResponse>(`/api/inventory/sets/${encodeURIComponent(inventoryId)}/items`);
   return response.items;
 }
 
@@ -85,8 +153,16 @@ export async function createRemoteInventoryItem(input: SaveBeadInventoryItemInpu
   return response.item;
 }
 
+export async function createRemoteInventoryItemInInventory(inventoryId: string, input: SaveBeadInventoryItemInput) {
+  const response = await requestInventory<InventoryItemResponse>(`/api/inventory/sets/${encodeURIComponent(inventoryId)}/items`, {
+    method: 'POST',
+    body: JSON.stringify(toInventoryPayload(input)),
+  });
+  return response.item;
+}
+
 export async function updateRemoteInventoryItem(id: string, input: SaveBeadInventoryItemInput) {
-  const response = await requestInventory<InventoryItemResponse>(`/api/inventory/${encodeURIComponent(id)}`, {
+  const response = await requestInventory<InventoryItemResponse>(`/api/inventory/items/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: JSON.stringify(toInventoryPayload(input)),
   });
@@ -94,17 +170,43 @@ export async function updateRemoteInventoryItem(id: string, input: SaveBeadInven
 }
 
 export async function deleteRemoteInventoryItem(id: string) {
-  await requestInventory<{ ok: true }>(`/api/inventory/${encodeURIComponent(id)}`, {
+  await requestInventory<{ ok: true }>(`/api/inventory/items/${encodeURIComponent(id)}`, {
     method: 'DELETE',
     body: JSON.stringify({}),
   });
 }
 
-export async function syncRemoteInventoryItems(items: BeadInventoryItem[]) {
+export async function bulkSaveRemoteInventoryItems(inventoryId: string, items: SaveBeadInventoryItemInput[]) {
+  const response = await requestInventory<InventoryListResponse>(`/api/inventory/sets/${encodeURIComponent(inventoryId)}/items/bulk`, {
+    method: 'POST',
+    body: JSON.stringify({
+      items: items.map(toInventoryPayload),
+    }),
+  });
+  return response.items;
+}
+
+export async function syncRemoteInventoryItems(
+  items: BeadInventoryRecords['items'],
+  inventories?: BeadInventory[],
+) {
   return requestInventory<InventorySyncResponse>('/api/inventory/sync', {
     method: 'POST',
     body: JSON.stringify({
+      inventories: inventories?.map((inventory) => ({
+        id: inventory.id,
+        name: inventory.name,
+        mode: inventory.mode,
+        baseBrand: inventory.baseBrand,
+        sourcePaletteId: inventory.sourcePaletteId ?? null,
+        sourcePaletteName: inventory.sourcePaletteName ?? null,
+        sourcePaletteType: inventory.sourcePaletteType ?? null,
+        colorCount: inventory.colorCount,
+        createdAt: inventory.createdAt,
+        updatedAt: inventory.updatedAt,
+      })),
       items: items.map((item) => ({
+        inventoryId: item.inventoryId,
         brandKey: item.brandKey,
         code: item.code,
         hex: item.hex,

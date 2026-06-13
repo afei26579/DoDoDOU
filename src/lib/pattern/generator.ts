@@ -1,4 +1,4 @@
-import { buildPalette, getVendorCode, type PatternPaletteColor, type PatternRgb } from './color-system';
+import { buildPalette, buildPaletteFromColorIds, getVendorCode, type PatternPaletteColor, type PatternRgb } from './color-system';
 import { createCropCanvas, loadImage as loadCropImage } from './crop';
 import { generatePatternCore } from './generate-core';
 import type { CropTransform, PatternCell, PatternResult, WorkshopConfig, WorkshopStyle } from '../../features/workshop/model/types';
@@ -242,6 +242,15 @@ function generatePatternCoreInWorker(params: {
   });
 }
 
+function buildGenerationPalette(config: WorkshopConfig) {
+  const colorPalette = config.colorPalette;
+  if (colorPalette?.baseBrand === config.brand && colorPalette.colorIds.length > 0) {
+    return buildPaletteFromColorIds(config.brand, colorPalette.colorIds);
+  }
+
+  return buildPalette(config.brand);
+}
+
 export async function generatePatternFromImage(params: {
   imageUrl: string;
   config: WorkshopConfig;
@@ -277,7 +286,7 @@ export async function generatePatternFromImage(params: {
 
   const width = config.canvasSize;
   const height = config.canvasSize;
-  const palette = buildPalette(config.brand);
+  const palette = buildGenerationPalette(config);
   const algorithm = config.algorithm ?? 'legacy';
   if (algorithm === 'perceptual-p0') {
     return generatePatternCoreInWorker({

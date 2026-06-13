@@ -11,6 +11,7 @@ export const defaultCropTransform: CropTransform = {
 export const defaultWorkshopConfig: WorkshopConfig = {
   canvasSize: 100,
   brand: 'MARD',
+  colorPalette: null,
   style: '动漫',
   colorMergeThreshold: 30,
   algorithm: 'legacy',

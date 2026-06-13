@@ -1,15 +1,35 @@
 import type { BeadBrandKey } from '../../../lib/pattern/brand';
-import { getBeadBrandLabel } from '../../../lib/pattern/brand';
+import { getBeadBrandLabel, normalizeBeadBrandKey } from '../../../lib/pattern/brand';
 import { getColorByBrandCode } from '../../../lib/pattern/color-system';
 import type { PatternColorRequirement } from '../../../lib/pattern/color-requirements';
 
 const DB_NAME = 'dodoudou-beads';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const INVENTORY_STORE_NAME = 'inventory-items';
-const MEMORY_CACHE = new Map<string, BeadInventoryItem>();
+const INVENTORIES_STORE_NAME = 'inventories';
+const DEFAULT_INVENTORY_ID = 'inventory-default';
+const MEMORY_ITEM_CACHE = new Map<string, BeadInventoryItem>();
+const MEMORY_INVENTORY_CACHE = new Map<string, BeadInventory>();
+
+export type BeadInventoryMode = 'palette' | 'custom';
+export type BeadInventoryPaletteSource = 'official' | 'custom';
+
+export type BeadInventory = {
+  id: string;
+  name: string;
+  mode: BeadInventoryMode;
+  baseBrand: BeadBrandKey;
+  sourcePaletteId?: string;
+  sourcePaletteName?: string;
+  sourcePaletteType?: BeadInventoryPaletteSource;
+  colorCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
 
 export type BeadInventoryItem = {
   id: string;
+  inventoryId: string;
   brandKey: BeadBrandKey;
   code: string;
   hex: string;
@@ -21,6 +41,11 @@ export type BeadInventoryItem = {
   updatedAt: string;
 };
 
+export type BeadInventoryRecords = {
+  inventories: BeadInventory[];
+  items: BeadInventoryItem[];
+};
+
 export type BeadInventoryQuery = {
   search?: string;
   brandKey?: BeadBrandKey | 'ALL';
@@ -28,6 +53,7 @@ export type BeadInventoryQuery = {
 };
 
 export type SaveBeadInventoryItemInput = {
+  inventoryId?: string;
   brandKey: BeadBrandKey;
   code: string;
   quantity: number;
@@ -37,6 +63,29 @@ export type SaveBeadInventoryItemInput = {
   favorite?: boolean;
   note?: string;
 };
+
+export type CreateBeadInventoryInput = {
+  name: string;
+  mode: BeadInventoryMode;
+  baseBrand: BeadBrandKey;
+  sourcePaletteId?: string;
+  sourcePaletteName?: string;
+  sourcePaletteType?: BeadInventoryPaletteSource;
+  colorCount?: number;
+};
+
+export type UpdateBeadInventoryInput = Partial<CreateBeadInventoryInput>;
+
+type StoredBeadInventory = Partial<BeadInventory>;
+type StoredBeadInventoryItem = Partial<BeadInventoryItem>;
+
+function createId(prefix: string) {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}-${crypto.randomUUID()}`;
+  }
+
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function normalizeCode(code: string) {
   return code.trim().toUpperCase();
@@ -52,8 +101,32 @@ function normalizeOptionalNumber(value: number | undefined) {
   return Math.max(0, Math.floor(value));
 }
 
-export function createInventoryItemId(brandKey: BeadBrandKey, code: string) {
+function normalizeTimestamp(value: unknown, fallback: string) {
+  if (typeof value !== 'string') return fallback;
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? fallback : new Date(parsed).toISOString();
+}
+
+function normalizeText(value: unknown, fallback = '') {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function createLegacyInventoryItemId(brandKey: BeadBrandKey, code: string) {
   return `${brandKey}:${normalizeCode(code)}`;
+}
+
+export function createInventoryItemId(brandKey: BeadBrandKey, code: string): string;
+export function createInventoryItemId(inventoryId: string, brandKey: BeadBrandKey, code: string): string;
+export function createInventoryItemId(first: string, second: string, third?: string) {
+  if (third === undefined) {
+    return `${DEFAULT_INVENTORY_ID}:${first}:${normalizeCode(second)}`;
+  }
+
+  return `${first}:${second}:${normalizeCode(third)}`;
+}
+
+export function getDefaultInventoryId() {
+  return DEFAULT_INVENTORY_ID;
 }
 
 function resolveHex(input: SaveBeadInventoryItemInput) {
@@ -63,29 +136,88 @@ function resolveHex(input: SaveBeadInventoryItemInput) {
   return getColorByBrandCode(input.brandKey, input.code)?.hex ?? null;
 }
 
-function normalizeInventoryItem(item: BeadInventoryItem): BeadInventoryItem {
-  const code = normalizeCode(item.code);
+function normalizeInventory(record: StoredBeadInventory): BeadInventory {
+  const now = new Date().toISOString();
+  const mode: BeadInventoryMode = record.mode === 'palette' ? 'palette' : 'custom';
+  const sourcePaletteType = record.sourcePaletteType === 'official' || record.sourcePaletteType === 'custom'
+    ? record.sourcePaletteType
+    : undefined;
+
   return {
-    ...item,
-    id: item.id || createInventoryItemId(item.brandKey, code),
-    code,
-    hex: item.hex.trim().toUpperCase(),
-    quantity: normalizeQuantity(item.quantity),
-    lowStockThreshold: normalizeOptionalNumber(item.lowStockThreshold),
-    location: item.location?.trim() || undefined,
-    favorite: Boolean(item.favorite),
-    note: item.note?.trim() || undefined,
-    updatedAt: item.updatedAt || new Date().toISOString(),
+    id: normalizeText(record.id, DEFAULT_INVENTORY_ID),
+    name: normalizeText(record.name, '我的库存'),
+    mode,
+    baseBrand: normalizeBeadBrandKey(record.baseBrand, 'MARD'),
+    sourcePaletteId: normalizeText(record.sourcePaletteId) || undefined,
+    sourcePaletteName: normalizeText(record.sourcePaletteName) || undefined,
+    sourcePaletteType,
+    colorCount: normalizeQuantity(Number(record.colorCount ?? 0)),
+    createdAt: normalizeTimestamp(record.createdAt, now),
+    updatedAt: normalizeTimestamp(record.updatedAt, now),
   };
+}
+
+function normalizeInventoryItem(record: StoredBeadInventoryItem): BeadInventoryItem | null {
+  const code = normalizeText(record.code);
+  if (!code) return null;
+
+  const brandKey = normalizeBeadBrandKey(record.brandKey, 'MARD');
+  const normalizedCode = normalizeCode(code);
+  const inventoryId = normalizeText(record.inventoryId, DEFAULT_INVENTORY_ID);
+  const fallbackHex = getColorByBrandCode(brandKey, normalizedCode)?.hex ?? '#000000';
+  const hex = normalizeText(record.hex, fallbackHex).toUpperCase();
+
+  return {
+    id: normalizeText(record.id, createInventoryItemId(inventoryId, brandKey, normalizedCode)),
+    inventoryId,
+    brandKey,
+    code: normalizedCode,
+    hex: /^#[0-9A-F]{6}$/.test(hex) ? hex : fallbackHex,
+    quantity: normalizeQuantity(Number(record.quantity ?? 0)),
+    lowStockThreshold: normalizeOptionalNumber(record.lowStockThreshold),
+    location: record.location?.trim() || undefined,
+    favorite: Boolean(record.favorite),
+    note: record.note?.trim() || undefined,
+    updatedAt: normalizeTimestamp(record.updatedAt, new Date().toISOString()),
+  };
+}
+
+function dedupeInventoryItems(items: Array<BeadInventoryItem | null>) {
+  const itemMap = new Map<string, BeadInventoryItem>();
+  items.forEach((item) => {
+    if (!item) return;
+
+    const nextId = createInventoryItemId(item.inventoryId, item.brandKey, item.code);
+    const normalized = { ...item, id: nextId };
+    const current = itemMap.get(nextId);
+    if (!current || normalized.updatedAt.localeCompare(current.updatedAt) >= 0) {
+      itemMap.set(nextId, normalized);
+    }
+  });
+
+  return [...itemMap.values()];
 }
 
 function openDb() {
   return new Promise<IDBDatabase>((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB is unavailable'));
+      return;
+    }
+
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(INVENTORY_STORE_NAME)) {
-        db.createObjectStore(INVENTORY_STORE_NAME, { keyPath: 'id' });
+      const itemStore = db.objectStoreNames.contains(INVENTORY_STORE_NAME)
+        ? request.transaction?.objectStore(INVENTORY_STORE_NAME)
+        : db.createObjectStore(INVENTORY_STORE_NAME, { keyPath: 'id' });
+
+      if (itemStore && !itemStore.indexNames.contains('inventoryId')) {
+        itemStore.createIndex('inventoryId', 'inventoryId', { unique: false });
+      }
+
+      if (!db.objectStoreNames.contains(INVENTORIES_STORE_NAME)) {
+        db.createObjectStore(INVENTORIES_STORE_NAME, { keyPath: 'id' });
       }
     };
     request.onerror = () => reject(request.error);
@@ -93,34 +225,60 @@ function openDb() {
   });
 }
 
-async function readAllRecords() {
+async function readAllRecords<T>(storeName: string) {
   const db = await openDb();
-  return new Promise<BeadInventoryItem[]>((resolve, reject) => {
-    const tx = db.transaction(INVENTORY_STORE_NAME, 'readonly');
-    const store = tx.objectStore(INVENTORY_STORE_NAME);
+  return new Promise<T[]>((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readonly');
+    const store = tx.objectStore(storeName);
     const request = store.getAll();
     request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve((request.result as BeadInventoryItem[]).map(normalizeInventoryItem));
+    request.onsuccess = () => resolve(request.result as T[]);
   });
 }
 
-async function writeRecord(record: BeadInventoryItem) {
+async function writeRecord<T>(storeName: string, record: T) {
   const db = await openDb();
   return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(INVENTORY_STORE_NAME, 'readwrite');
+    const tx = db.transaction(storeName, 'readwrite');
     tx.onerror = () => reject(tx.error);
     tx.oncomplete = () => resolve();
-    tx.objectStore(INVENTORY_STORE_NAME).put(record);
+    tx.objectStore(storeName).put(record);
   });
 }
 
-async function deleteRecord(id: string) {
+async function writeRecords<T>(storeName: string, records: T[]) {
+  if (!records.length) return;
+
   const db = await openDb();
   return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(INVENTORY_STORE_NAME, 'readwrite');
+    const tx = db.transaction(storeName, 'readwrite');
     tx.onerror = () => reject(tx.error);
     tx.oncomplete = () => resolve();
-    tx.objectStore(INVENTORY_STORE_NAME).delete(id);
+    const store = tx.objectStore(storeName);
+    records.forEach((record) => store.put(record));
+  });
+}
+
+async function deleteRecord(storeName: string, id: string) {
+  const db = await openDb();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => resolve();
+    tx.objectStore(storeName).delete(id);
+  });
+}
+
+async function deleteRecords(storeName: string, ids: string[]) {
+  if (!ids.length) return;
+
+  const db = await openDb();
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(storeName, 'readwrite');
+    tx.onerror = () => reject(tx.error);
+    tx.oncomplete = () => resolve();
+    const store = tx.objectStore(storeName);
+    ids.forEach((id) => store.delete(id));
   });
 }
 
@@ -129,6 +287,15 @@ function sortInventoryItems(items: BeadInventoryItem[]) {
     if (a.favorite !== b.favorite) return a.favorite ? -1 : 1;
     if (a.brandKey !== b.brandKey) return a.brandKey.localeCompare(b.brandKey);
     return a.code.localeCompare(b.code, undefined, { numeric: true });
+  });
+}
+
+function sortInventories(items: BeadInventory[]) {
+  return [...items].sort((a, b) => {
+    if (a.id === DEFAULT_INVENTORY_ID) return -1;
+    if (b.id === DEFAULT_INVENTORY_ID) return 1;
+    if (a.updatedAt !== b.updatedAt) return b.updatedAt.localeCompare(a.updatedAt);
+    return a.name.localeCompare(b.name, 'zh-Hans-CN');
   });
 }
 
@@ -154,11 +321,89 @@ function matchesInventoryQuery(item: BeadInventoryItem, query: BeadInventoryQuer
   return haystack.includes(keyword);
 }
 
+function rememberRecords(records: BeadInventoryRecords) {
+  MEMORY_ITEM_CACHE.clear();
+  MEMORY_INVENTORY_CACHE.clear();
+  records.items.forEach((record) => MEMORY_ITEM_CACHE.set(record.id, record));
+  records.inventories.forEach((record) => MEMORY_INVENTORY_CACHE.set(record.id, record));
+}
+
+async function ensureDefaultInventory(inventories: BeadInventory[], items: BeadInventoryItem[]) {
+  if (inventories.length) return sortInventories(inventories);
+
+  const defaultInventory = normalizeInventory({
+    id: DEFAULT_INVENTORY_ID,
+    name: '我的库存',
+    mode: 'custom',
+    baseBrand: items[0]?.brandKey ?? 'MARD',
+    colorCount: new Set(items.map((item) => `${item.brandKey}:${item.code}`)).size,
+  });
+
+  MEMORY_INVENTORY_CACHE.set(defaultInventory.id, defaultInventory);
+  await writeRecord(INVENTORIES_STORE_NAME, defaultInventory).catch(() => undefined);
+  return [defaultInventory];
+}
+
+async function updateInventoryColorCount(inventoryId: string) {
+  const records = await listInventoryRecords();
+  const inventory = records.inventories.find((item) => item.id === inventoryId);
+  if (!inventory) return;
+
+  const colorCount = records.items.filter((item) => item.inventoryId === inventoryId).length;
+  const nextInventory: BeadInventory = {
+    ...inventory,
+    colorCount,
+    updatedAt: new Date().toISOString(),
+  };
+
+  MEMORY_INVENTORY_CACHE.set(nextInventory.id, nextInventory);
+  await writeRecord(INVENTORIES_STORE_NAME, nextInventory).catch(() => undefined);
+}
+
+export async function listInventoryRecords(): Promise<BeadInventoryRecords> {
+  const rawItems = await readAllRecords<StoredBeadInventoryItem>(INVENTORY_STORE_NAME)
+    .catch(() => [...MEMORY_ITEM_CACHE.values()]);
+  const items = dedupeInventoryItems(rawItems.map(normalizeInventoryItem));
+  const rawInventories = await readAllRecords<StoredBeadInventory>(INVENTORIES_STORE_NAME)
+    .catch(() => [...MEMORY_INVENTORY_CACHE.values()]);
+  const inventoryMap = new Map(rawInventories.map((record) => {
+    const inventory = normalizeInventory(record);
+    return [inventory.id, inventory] as const;
+  }));
+
+  items.forEach((item) => {
+    if (!inventoryMap.has(item.inventoryId)) {
+      inventoryMap.set(item.inventoryId, normalizeInventory({
+        id: item.inventoryId,
+        name: item.inventoryId === DEFAULT_INVENTORY_ID ? '我的库存' : '未命名库存',
+        mode: 'custom',
+        baseBrand: item.brandKey,
+      }));
+    }
+  });
+
+  const inventoriesWithCounts = [...inventoryMap.values()].map((inventory) => ({
+    ...inventory,
+    colorCount: items.filter((item) => item.inventoryId === inventory.id).length,
+  }));
+  const inventories = await ensureDefaultInventory(inventoriesWithCounts, items);
+  const records = { inventories, items: sortInventoryItems(items) };
+  rememberRecords(records);
+  return records;
+}
+
+export async function listInventories() {
+  return (await listInventoryRecords()).inventories;
+}
+
 export async function listInventoryItems(query: BeadInventoryQuery = {}) {
-  const records = await readAllRecords().catch(() => [...MEMORY_CACHE.values()]);
-  MEMORY_CACHE.clear();
-  records.forEach((record) => MEMORY_CACHE.set(record.id, record));
-  return filterInventoryItems(records, query);
+  const { items } = await listInventoryRecords();
+  return filterInventoryItems(items, query);
+}
+
+export async function listInventoryItemsForInventory(inventoryId: string, query: BeadInventoryQuery = {}) {
+  const { items } = await listInventoryRecords();
+  return filterInventoryItems(items.filter((item) => item.inventoryId === inventoryId), query);
 }
 
 export function filterInventoryItems(items: BeadInventoryItem[], query: BeadInventoryQuery = {}) {
@@ -166,20 +411,73 @@ export function filterInventoryItems(items: BeadInventoryItem[], query: BeadInve
 }
 
 export async function getInventoryItem(id: string) {
-  if (MEMORY_CACHE.has(id)) return MEMORY_CACHE.get(id) ?? null;
-  const items = await listInventoryItems();
+  if (MEMORY_ITEM_CACHE.has(id)) return MEMORY_ITEM_CACHE.get(id) ?? null;
+  const { items } = await listInventoryRecords();
   return items.find((item) => item.id === id) ?? null;
 }
 
-export async function saveInventoryItem(input: SaveBeadInventoryItemInput) {
+export async function createInventory(input: CreateBeadInventoryInput) {
+  const now = new Date().toISOString();
+  const record: BeadInventory = normalizeInventory({
+    id: createId('inventory'),
+    name: input.name,
+    mode: input.mode,
+    baseBrand: input.baseBrand,
+    sourcePaletteId: input.sourcePaletteId,
+    sourcePaletteName: input.sourcePaletteName,
+    sourcePaletteType: input.sourcePaletteType,
+    colorCount: input.colorCount ?? 0,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  MEMORY_INVENTORY_CACHE.set(record.id, record);
+  await writeRecord(INVENTORIES_STORE_NAME, record).catch(() => undefined);
+  return record;
+}
+
+export async function updateInventory(inventoryId: string, input: UpdateBeadInventoryInput) {
+  const records = await listInventoryRecords();
+  const current = records.inventories.find((item) => item.id === inventoryId);
+  if (!current) {
+    throw new Error('库存不存在或已被删除');
+  }
+
+  const record: BeadInventory = normalizeInventory({
+    ...current,
+    ...input,
+    id: current.id,
+    colorCount: input.colorCount ?? current.colorCount,
+    updatedAt: new Date().toISOString(),
+  });
+
+  MEMORY_INVENTORY_CACHE.set(record.id, record);
+  await writeRecord(INVENTORIES_STORE_NAME, record).catch(() => undefined);
+  return record;
+}
+
+export async function deleteInventory(inventoryId: string) {
+  const records = await listInventoryRecords();
+  const itemIds = records.items
+    .filter((item) => item.inventoryId === inventoryId)
+    .flatMap((item) => [item.id, createLegacyInventoryItemId(item.brandKey, item.code)]);
+
+  MEMORY_INVENTORY_CACHE.delete(inventoryId);
+  itemIds.forEach((id) => MEMORY_ITEM_CACHE.delete(id));
+  await deleteRecords(INVENTORY_STORE_NAME, itemIds).catch(() => undefined);
+  await deleteRecord(INVENTORIES_STORE_NAME, inventoryId).catch(() => undefined);
+}
+
+function createInventoryItemRecord(inventoryId: string, input: SaveBeadInventoryItemInput) {
   const code = normalizeCode(input.code);
   const hex = resolveHex({ ...input, code });
   if (!hex) {
     throw new Error(`未找到 ${getBeadBrandLabel(input.brandKey)} ${code} 对应的色号`);
   }
 
-  const record: BeadInventoryItem = normalizeInventoryItem({
-    id: createInventoryItemId(input.brandKey, code),
+  return normalizeInventoryItem({
+    id: createInventoryItemId(inventoryId, input.brandKey, code),
+    inventoryId,
     brandKey: input.brandKey,
     code,
     hex,
@@ -190,15 +488,41 @@ export async function saveInventoryItem(input: SaveBeadInventoryItemInput) {
     note: input.note,
     updatedAt: new Date().toISOString(),
   });
+}
 
-  MEMORY_CACHE.set(record.id, record);
-  await writeRecord(record);
+export async function saveInventoryItem(input: SaveBeadInventoryItemInput) {
+  return saveInventoryItemToInventory(input.inventoryId ?? DEFAULT_INVENTORY_ID, input);
+}
+
+export async function saveInventoryItemToInventory(inventoryId: string, input: SaveBeadInventoryItemInput) {
+  const record = createInventoryItemRecord(inventoryId, input);
+  if (!record) throw new Error('库存记录无效');
+
+  MEMORY_ITEM_CACHE.set(record.id, record);
+  await writeRecord(INVENTORY_STORE_NAME, record);
+  await updateInventoryColorCount(inventoryId).catch(() => undefined);
   return record;
 }
 
+export async function bulkSaveInventoryItems(inventoryId: string, inputs: SaveBeadInventoryItemInput[]) {
+  const records = inputs.map((input) => createInventoryItemRecord(inventoryId, input));
+  const validRecords = records.filter((record): record is BeadInventoryItem => Boolean(record));
+
+  validRecords.forEach((record) => MEMORY_ITEM_CACHE.set(record.id, record));
+  await writeRecords(INVENTORY_STORE_NAME, validRecords);
+  await updateInventoryColorCount(inventoryId).catch(() => undefined);
+  return validRecords;
+}
+
 export async function deleteInventoryItem(id: string) {
-  MEMORY_CACHE.delete(id);
-  await deleteRecord(id).catch(() => undefined);
+  const item = await getInventoryItem(id);
+  MEMORY_ITEM_CACHE.delete(id);
+  await deleteRecord(INVENTORY_STORE_NAME, id).catch(() => undefined);
+
+  if (item) {
+    await deleteRecord(INVENTORY_STORE_NAME, createLegacyInventoryItemId(item.brandKey, item.code)).catch(() => undefined);
+    await updateInventoryColorCount(item.inventoryId).catch(() => undefined);
+  }
 }
 
 export function mergeInventoryWithRequirements(
@@ -214,8 +538,11 @@ export function mergeInventoryWithRequirements(
     }));
   }
 
-  const inventoryByCode = new Map(inventoryItems.map((item) => [createInventoryItemId(item.brandKey, item.code), item]));
-  const remainingQuantityByCode = new Map(inventoryItems.map((item) => [createInventoryItemId(item.brandKey, item.code), item.quantity]));
+  const remainingQuantityByCode = new Map<string, number>();
+  inventoryItems.forEach((item) => {
+    const key = createLegacyInventoryItemId(item.brandKey, item.code);
+    remainingQuantityByCode.set(key, (remainingQuantityByCode.get(key) ?? 0) + item.quantity);
+  });
 
   return requirements.map((requirement) => {
     if (!requirement.code || requirement.code === '?') {
@@ -227,14 +554,10 @@ export function mergeInventoryWithRequirements(
       };
     }
 
-    const inventoryKey = createInventoryItemId(requirement.brandKey, requirement.code);
-    const inventoryItem = inventoryByCode.get(inventoryKey);
-    const ownedQuantity = remainingQuantityByCode.get(inventoryKey) ?? inventoryItem?.quantity ?? 0;
+    const inventoryKey = createLegacyInventoryItemId(requirement.brandKey, requirement.code);
+    const ownedQuantity = remainingQuantityByCode.get(inventoryKey) ?? 0;
     const missingQuantity = Math.max(0, requirement.requiredQuantity - ownedQuantity);
-
-    if (inventoryItem) {
-      remainingQuantityByCode.set(inventoryKey, Math.max(0, ownedQuantity - requirement.requiredQuantity));
-    }
+    remainingQuantityByCode.set(inventoryKey, Math.max(0, ownedQuantity - requirement.requiredQuantity));
 
     return {
       ...requirement,

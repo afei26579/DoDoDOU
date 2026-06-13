@@ -1,0 +1,34 @@
+{
+  "app": "Dodoudou",
+  "version": 1,
+  "createdAt": "2026-06-08T00:00:00.000Z",
+  "patternResult": {
+    "width": 4,
+    "height": 4,
+    "cells": [
+      { "x": 0, "y": 0, "colorId": "__TRANSPARENT__", "vendorCode": "", "hex": "transparent", "isExternal": true },
+      { "x": 1, "y": 0, "colorId": "#E53935", "vendorCode": "RED", "hex": "#E53935" },
+      { "x": 2, "y": 0, "colorId": "#E53935", "vendorCode": "RED", "hex": "#E53935" },
+      { "x": 3, "y": 0, "colorId": "__TRANSPARENT__", "vendorCode": "", "hex": "transparent", "isExternal": true },
+      { "x": 0, "y": 1, "colorId": "#E53935", "vendorCode": "RED", "hex": "#E53935" },
+      { "x": 1, "y": 1, "colorId": "#E53935", "vendorCode": "RED", "hex": "#E53935" },
+      { "x": 2, "y": 1, "colorId": "#E53935", "vendorCode": "RED", "hex": "#E53935" },
+      { "x": 3, "y": 1, "colorId": "#E53935", "vendorCode": "RED", "hex": "#E53935" },
+      { "x": 0, "y": 2, "colorId": "__TRANSPARENT__", "vendorCode": "", "hex": "transparent", "isExternal": true },
+      { "x": 1, "y": 2, "colorId": "#E53935", "vendorCode": "RED", "hex": "#E53935" },
+      { "x": 2, "y": 2, "colorId": "#E53935", "vendorCode": "RED", "hex": "#E53935" },
+      { "x": 3, "y": 2, "colorId": "__TRANSPARENT__", "vendorCode": "", "hex": "transparent", "isExternal": true },
+      { "x": 0, "y": 3, "colorId": "__TRANSPARENT__", "vendorCode": "", "hex": "transparent", "isExternal": true },
+      { "x": 1, "y": 3, "colorId": "__TRANSPARENT__", "vendorCode": "", "hex": "transparent", "isExternal": true },
+      { "x": 2, "y": 3, "colorId": "#E53935", "vendorCode": "RED", "hex": "#E53935" },
+      { "x": 3, "y": 3, "colorId": "__TRANSPARENT__", "vendorCode": "", "hex": "transparent", "isExternal": true }
+    ],
+    "palette": [
+      { "colorId": "#E53935", "vendorCode": "RED", "hex": "#E53935", "count": 9 }
+    ],
+    "stats": {
+      "totalCells": 9,
+      "colorCount": 1
+    }
+  }
+}

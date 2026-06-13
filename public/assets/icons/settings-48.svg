@@ -1,0 +1,26 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Bg glow -->
+  <circle cx="24" cy="24" r="22" fill="#EDD9F5" fill-opacity="0.35"/>
+  <!-- Connector ring -->
+  <circle cx="24" cy="24" r="14" stroke="#EDD9F5" stroke-width="6" fill="none"/>
+  <!-- 8 bead teeth — radius ~18 from center -->
+  <circle cx="24"   cy="6.3"  r="4" fill="#D8B4E2" stroke="#B48FCC" stroke-width="1.25"/>
+  <circle cx="36.7" cy="11.3" r="4" fill="#D8B4E2" stroke="#B48FCC" stroke-width="1.25"/>
+  <circle cx="41.7" cy="24"   r="4" fill="#D8B4E2" stroke="#B48FCC" stroke-width="1.25"/>
+  <circle cx="36.7" cy="36.7" r="4" fill="#D8B4E2" stroke="#B48FCC" stroke-width="1.25"/>
+  <circle cx="24"   cy="41.7" r="4" fill="#D8B4E2" stroke="#B48FCC" stroke-width="1.25"/>
+  <circle cx="11.3" cy="36.7" r="4" fill="#D8B4E2" stroke="#B48FCC" stroke-width="1.25"/>
+  <circle cx="6.3"  cy="24"   r="4" fill="#D8B4E2" stroke="#B48FCC" stroke-width="1.25"/>
+  <circle cx="11.3" cy="11.3" r="4" fill="#D8B4E2" stroke="#B48FCC" stroke-width="1.25"/>
+  <!-- Center disc -->
+  <circle cx="24" cy="24" r="10" fill="#EDD9F5" stroke="#B48FCC" stroke-width="2"/>
+  <!-- Inner highlight -->
+  <circle cx="24" cy="24" r="8.5" fill="white" fill-opacity="0.4"/>
+  <!-- Shine highlight -->
+  <circle cx="21" cy="21" r="2.5" fill="white" fill-opacity="0.6"/>
+  <!-- Center hole -->
+  <circle cx="24" cy="24" r="4" fill="white" stroke="#D8B4E2" stroke-width="1"/>
+  <!-- Tiny highlight on teeth -->
+  <circle cx="24"   cy="7.6"  r="1.2" fill="white" fill-opacity="0.5"/>
+  <circle cx="40.4" cy="24"   r="1.2" fill="white" fill-opacity="0.5"/>
+</svg>
