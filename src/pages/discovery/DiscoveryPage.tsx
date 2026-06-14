@@ -66,6 +66,7 @@ function QuickCardIcon({ route }: { route: (typeof quickActions)[number]['route'
   );
 }
 
+const INSPIRATION_ITEM_LIMIT = 8;
 const inspirationTones = ['rose', 'mint', 'amber', 'mauve', 'rose'] as const;
 
 const beginnerSteps = [
@@ -124,10 +125,10 @@ export function DiscoveryPage({ onUploadImage, onOpenWorkshop, onCreateCanvas }:
   useEffect(() => {
     let alive = true;
 
-    fetchGalleryList({ pageSize: 5, sort: 'latest' })
+    fetchGalleryList({ pageSize: INSPIRATION_ITEM_LIMIT, sort: 'latest' })
       .then((response) => {
         if (!alive) return;
-        setInspirationItems(response.items.slice(0, 5));
+        setInspirationItems(response.items.slice(0, INSPIRATION_ITEM_LIMIT));
       })
       .catch(() => undefined);
 

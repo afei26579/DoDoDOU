@@ -104,6 +104,25 @@ export function App() {
     navigate(`/workshop/create/${projectId}`);
   };
 
+  const handleCreateBlankCanvas = async () => {
+    const projectId = createProjectId();
+    await createWorkshopProject(projectId, {
+      kind: 'pattern',
+      status: 'editing',
+      beadingState: 'idle',
+      sourceType: 'blank',
+      sourceItemId: null,
+      uploadedImage: null,
+      cropTransform: defaultCropTransform,
+      config: defaultWorkshopConfig,
+      patternResult: null,
+      viewMode: 'pattern',
+      editorState: null,
+      lastOpenedAt: new Date().toISOString(),
+    });
+    navigate(`/workshop/editor/${projectId}`);
+  };
+
   return (
     <div className={isFullScreenRoute ? 'app-shell app-shell--fullscreen' : 'app-shell'}>
       <div className={isFullScreenRoute ? 'layered-shell layered-shell--fullscreen' : 'layered-shell'} aria-label="页面容器">
@@ -120,7 +139,7 @@ export function App() {
               <DiscoveryPage
                 onUploadImage={handleUploadToWorkshop}
                 onOpenWorkshop={() => navigate('/workshop')}
-                onCreateCanvas={() => navigate(`/workshop/editor/${createProjectId()}`)}
+                onCreateCanvas={() => { void handleCreateBlankCanvas(); }}
               />
             }
           />

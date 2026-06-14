@@ -24,6 +24,7 @@ import {
   paintGridToCanvas,
   TRANSPARENT_GRID_LIGHT,
   toCellPoint,
+  toPaintCellPoint,
   type EditorCanvasRenderMeta,
   type EditorBackgroundMode,
   type EditorBeadShape,
@@ -1446,6 +1447,10 @@ export function WorkshopEditorPage() {
     toClampedCellPoint(clientX, clientY, canvasRef.current, cols, rows)
   );
 
+  const getPaintPointerCell = (clientX: number, clientY: number) => (
+    toPaintCellPoint(clientX, clientY, canvasRef.current, cols, rows)
+  );
+
   const updateSelectionGesture = (pointerId: number, clientX: number, clientY: number) => {
     const gesture = selectionGestureRef.current;
     if (!gesture || gesture.pointerId !== pointerId) return false;
@@ -1666,7 +1671,8 @@ export function WorkshopEditorPage() {
     const paintSession = paintSessionRef.current;
     if (!drag || drag.pointerId !== pointerId || drag.kind !== 'paint' || !paintSession) return;
 
-    const cell = updateRulerCurrentCell(clientX, clientY);
+    updateRulerCurrentCell(clientX, clientY);
+    const cell = getPaintPointerCell(clientX, clientY);
     if (!cell) return;
 
     const key = `${cell.row},${cell.col}`;

@@ -58,8 +58,26 @@ export function WorkshopHomePage({
     fileInputRef.current?.click();
   };
 
-  const handleCreateCanvas = () => {
-    navigate(`/workshop/editor/${createProjectId()}`);
+  const handleCreateCanvas = async () => {
+    const nextProjectId = projectId ?? createProjectId();
+    const saveProject = projectId ? saveWorkshopProject : createWorkshopProject;
+
+    await saveProject(nextProjectId, {
+      kind: 'pattern',
+      status: 'editing',
+      beadingState: 'idle',
+      sourceType: 'blank',
+      sourceItemId: null,
+      uploadedImage: null,
+      cropTransform: defaultCropTransform,
+      config: flowState.config,
+      patternResult: null,
+      viewMode: 'pattern',
+      editorState: null,
+      lastOpenedAt: new Date().toISOString(),
+    });
+
+    navigate(`/workshop/editor/${nextProjectId}`);
   };
 
   const handleAiInspiration = () => {

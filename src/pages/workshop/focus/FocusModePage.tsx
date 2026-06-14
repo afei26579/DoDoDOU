@@ -1201,6 +1201,7 @@ export function FocusModePage() {
     if (patternCoord.x < 0 || patternCoord.x >= patternResult.width || patternCoord.y < 0 || patternCoord.y >= patternResult.height) return;
     const cell = cellByCoordKey.get(`${patternCoord.x},${patternCoord.y}`);
     if (!cell) return;
+    if (!isDrawableCell(cell)) return;
     const block = findBlockForCell(cell);
     if (currentBlockCellKeys.has(cell.coordKey)) {
       selectExactCell(cell);

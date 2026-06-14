@@ -34,6 +34,7 @@ const COLOR_CODE_MIN_VISIBLE_CELL_PX = 12;
 const COLOR_CODE_DARK_TEXT = '#5D534A';
 const COLOR_CODE_LIGHT_TEXT = '#FFFFFF';
 const MAX_MAIN_CANVAS_DIMENSION = 6144;
+const PAINT_CELL_HIT_INSET_RATIO = 0.22;
 export type EditorBeadShape = Exclude<BeadShape, 'auto'>;
 export type EditorBackgroundMode = TransparentCellBackground;
 export type EditorCanvasRenderMeta = {
@@ -78,6 +79,31 @@ export function toCellPoint(clientX: number, clientY: number, canvas: HTMLCanvas
   const col = Math.floor(x / cellW);
   const row = Math.floor(y / cellH);
   if (row < 0 || row >= rows || col < 0 || col >= cols) return null;
+  return { row, col };
+}
+
+export function toPaintCellPoint(clientX: number, clientY: number, canvas: HTMLCanvasElement | null, cols: number, rows: number) {
+  if (!canvas || cols <= 0 || rows <= 0) return null;
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  const cellW = rect.width / cols;
+  const cellH = rect.height / rows;
+  const col = Math.floor(x / cellW);
+  const row = Math.floor(y / cellH);
+  if (row < 0 || row >= rows || col < 0 || col >= cols) return null;
+
+  const localX = x - col * cellW;
+  const localY = y - row * cellH;
+  const insetX = Math.min(cellW * PAINT_CELL_HIT_INSET_RATIO, Math.max(0, (cellW - 1) / 2));
+  const insetY = Math.min(cellH * PAINT_CELL_HIT_INSET_RATIO, Math.max(0, (cellH - 1) / 2));
+
+  if (localX < insetX || localX > cellW - insetX || localY < insetY || localY > cellH - insetY) {
+    return null;
+  }
+
   return { row, col };
 }
 
