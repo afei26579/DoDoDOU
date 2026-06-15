@@ -177,7 +177,7 @@ function detectDelimiter(text: string) {
     .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
     .find((line) => line.trim().length > 0) ?? '';
-  const candidates = ['\t', ',', ';'];
+  const candidates = ['|', '\t', ',', ';'];
   return candidates
     .map((delimiter) => ({
       delimiter,
@@ -235,6 +235,23 @@ function parseDelimitedRows(text: string, delimiter: string) {
   rows.push(row);
 
   return rows;
+}
+
+function isMarkdownSeparatorRow(row: string[]) {
+  const contentCells = row.filter((cell) => cell.trim().length > 0);
+  return contentCells.length > 0 && contentCells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function normalizePipeDelimitedRows(rows: string[][]) {
+  return rows
+    .map((row) => {
+      const normalized = [...row];
+      while (normalized[0]?.trim() === '') normalized.shift();
+      while (normalized[normalized.length - 1]?.trim() === '') normalized.pop();
+      return normalized;
+    })
+    .filter((row) => row.some((cell) => cell.trim().length > 0))
+    .filter((row) => !isMarkdownSeparatorRow(row));
 }
 
 function hashString(value: string) {
@@ -347,16 +364,22 @@ function resolveTokenColor(token: string, brand: ColorSystem) {
   };
 }
 
-function parseCsvPatternImport(text: string, fileName: string, options: ParseStructuredImportOptions = {}): PatternImportResult {
+function parseCsvPatternImport(
+  text: string,
+  fileName: string,
+  options: ParseStructuredImportOptions = {},
+  sourceType: 'csv' | 'markdown' = 'csv',
+): PatternImportResult {
   const brand = options.brand ?? 'MARD';
-  const delimiter = detectDelimiter(text);
-  const rows = parseDelimitedRows(text, delimiter)
+  const delimiter = sourceType === 'markdown' && text.includes('|') ? '|' : detectDelimiter(text);
+  const parsedRows = parseDelimitedRows(text, delimiter);
+  const rows = (delimiter === '|' ? normalizePipeDelimitedRows(parsedRows) : parsedRows)
     .map((row) => row.map(normalizeColorToken))
     .filter((row) => row.some((cell) => cell.length > 0));
 
   if (rows.length === 0) {
-    throw new PatternImportError('CSV/TSV 没有可导入的矩阵内容', [
-      createIssue('error', 'invalidSchema', 'CSV/TSV 没有可导入的矩阵内容'),
+    throw new PatternImportError('结构化数据没有可导入的矩阵内容', [
+      createIssue('error', 'invalidSchema', '结构化数据没有可导入的矩阵内容'),
     ]);
   }
 
@@ -385,7 +408,7 @@ function parseCsvPatternImport(text: string, fileName: string, options: ParseStr
 
   const patternResult = reconstructPatternResult({ width, height, cells });
   return createResult({
-    sourceType: 'csv',
+    sourceType,
     fileName,
     patternResult,
   });
@@ -398,6 +421,7 @@ export function parseStructuredPatternImport(
 ): PatternImportResult {
   const extension = getFileExtension(fileName);
   if (extension === 'json') return parseJsonPatternImport(text, fileName);
+  if (extension === 'md' || extension === 'markdown') return parseCsvPatternImport(text, fileName, options, 'markdown');
   if (extension === 'csv' || extension === 'tsv' || extension === 'txt') return parseCsvPatternImport(text, fileName, options);
 
   const trimmed = text.trimStart();
@@ -407,21 +431,21 @@ export function parseStructuredPatternImport(
 
 export async function parsePatternImportFile(file: File, options: ParseStructuredImportOptions = {}) {
   const extension = getFileExtension(file.name);
-  if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
-    throw new PatternImportError('图片识别会在 P2 阶段开放，当前请导入 JSON 或 CSV/TSV', [
-      createIssue('error', 'unsupportedFileType', '图片识别会在 P2 阶段开放，当前请导入 JSON 或 CSV/TSV'),
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(extension)) {
+    throw new PatternImportError('数据导入不支持图片，请使用上方“图纸导入”上传图片', [
+      createIssue('error', 'unsupportedFileType', '数据导入不支持图片，请使用上方“图纸导入”上传图片'),
     ]);
   }
 
   if (extension === 'pdf') {
-    throw new PatternImportError('PDF 导入会在 P4 阶段开放，当前请导入 JSON 或 CSV/TSV', [
-      createIssue('error', 'unsupportedFileType', 'PDF 导入会在 P4 阶段开放，当前请导入 JSON 或 CSV/TSV'),
+    throw new PatternImportError('数据导入暂不支持 PDF，请导入 JSON、MD、CSV 或 TSV 文件', [
+      createIssue('error', 'unsupportedFileType', '数据导入暂不支持 PDF，请导入 JSON、MD、CSV 或 TSV 文件'),
     ]);
   }
 
-  if (!['json', 'csv', 'tsv', 'txt'].includes(extension)) {
-    throw new PatternImportError('当前仅支持 JSON、CSV、TSV 文件', [
-      createIssue('error', 'unsupportedFileType', '当前仅支持 JSON、CSV、TSV 文件'),
+  if (!['json', 'md', 'markdown', 'csv', 'tsv', 'txt'].includes(extension)) {
+    throw new PatternImportError('当前仅支持 JSON、MD、CSV、TSV、TXT 文件', [
+      createIssue('error', 'unsupportedFileType', '当前仅支持 JSON、MD、CSV、TSV、TXT 文件'),
     ]);
   }
 

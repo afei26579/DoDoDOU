@@ -1,6 +1,6 @@
 import type { ColorSystem, PatternResult, WorkshopConfig } from '../../features/workshop/model/types';
 
-export type PatternImportSourceType = 'dodoudou-json' | 'csv' | 'image' | 'pdf';
+export type PatternImportSourceType = 'dodoudou-json' | 'csv' | 'markdown' | 'image' | 'pdf';
 
 export type PatternImportIssueSeverity = 'error' | 'warning' | 'info';
 

@@ -4,7 +4,7 @@ import { beadBrandKeys, getBeadBrandLabel } from '../../../lib/pattern/brand';
 import { drawPatternPreview } from '../../../lib/pattern/preview';
 import { reconstructPatternFromImageGrid } from '../../../lib/pattern-import/cell-read';
 import { createPatternImportProjectMeta } from '../../../lib/pattern-import/diagnostics';
-import { decodePatternImportImageFile, isPatternImportImageFile, type DecodedPatternImage } from '../../../lib/pattern-import/image-decode';
+import type { DecodedPatternImage } from '../../../lib/pattern-import/image-decode';
 import { parsePatternImportFile } from '../../../lib/pattern-import/structured';
 import { PatternImportError, type PatternImportResult } from '../../../lib/pattern-import/types';
 import { reconstructPatternResult } from '../../../lib/pattern-import/reconstruct';
@@ -14,6 +14,8 @@ import { createWorkshopProject } from '../../../features/workshop/model/projectS
 import type { ColorSystem, PatternCell, PatternResult } from '../../../features/workshop/model/types';
 import { LoadingOverlay } from '../../../shared/ui/LoadingOverlay';
 import styles from './WorkshopImportPage.module.css';
+
+const DATA_IMPORT_FILE_ACCEPT = '.json,.md,.markdown,.csv,.tsv,.txt';
 
 function createProjectId() {
   return `import-${Date.now()}`;
@@ -337,13 +339,6 @@ export function WorkshopImportPage() {
     setIsParsing(true);
 
     try {
-      if (isPatternImportImageFile(file)) {
-        const image = await decodePatternImportImageFile(file);
-        setDecodedImage(image);
-        setImageGrid(createInitialImageGrid(image));
-        return;
-      }
-
       const result = await parsePatternImportFile(file, { brand });
       if (result.config) setBrand(result.config.brand);
       setParseResult(result);
@@ -508,7 +503,7 @@ export function WorkshopImportPage() {
     <main className={styles.page}>
       <LoadingOverlay
         open={isParsing || isSaving}
-        title={isSaving ? '正在保存项目' : '正在解析图纸'}
+        title={isSaving ? '正在保存项目' : '正在解析数据'}
         message={isSaving ? '正在创建图纸项目...' : '正在读取文件并校验图纸结构...'}
       />
 
@@ -517,8 +512,8 @@ export function WorkshopImportPage() {
           ‹
         </button>
         <div>
-          <p className={styles.eyebrow}>Pattern Import</p>
-          <h1>导入图纸</h1>
+          <p className={styles.eyebrow}>Data Import</p>
+          <h1>数据导入</h1>
         </div>
       </header>
 
@@ -537,21 +532,21 @@ export function WorkshopImportPage() {
               ref={fileInputRef}
               hidden
               type="file"
-              accept=".json,.csv,.tsv,.txt,.png,.jpg,.jpeg,.webp,.pdf"
+              accept={DATA_IMPORT_FILE_ACCEPT}
               onChange={handleFileInputChange}
             />
             <div className={styles.dropIcon} aria-hidden="true">↓</div>
             <div className={styles.dropCopy}>
-              <strong>{selectedFileName || '选择 JSON / CSV / TSV / 图片图纸文件'}</strong>
-              <span>清晰 PNG / JPG 可先手动网格对齐；PDF 会在后续阶段开放。</span>
+              <strong>{selectedFileName || '选择 JSON / MD / CSV / TSV 数据文件'}</strong>
+              <span>Markdown 表格与 CSV/TSV 矩阵会按色号或颜色 token 导入。</span>
             </div>
             <button type="button" className={styles.primaryButton} onClick={() => fileInputRef.current?.click()}>
-              选择文件
+              选择数据文件
             </button>
           </div>
 
           <label className={styles.brandSelect}>
-            <span>CSV 默认色卡</span>
+            <span>文本数据默认色卡</span>
             <select value={brand} onChange={(event) => setBrand(event.target.value as ColorSystem)}>
               {beadBrandKeys.map((brandKey) => (
                 <option key={brandKey} value={brandKey}>{getBeadBrandLabel(brandKey)}</option>
@@ -569,7 +564,7 @@ export function WorkshopImportPage() {
           ) : null}
         </div>
 
-        <aside className={styles.rightPane} aria-label="导入结果">
+        <aside className={styles.rightPane} aria-label="数据导入结果">
           {decodedImage && imageGrid && !parseResult ? (
             <section className={styles.alignPanel} aria-label="图片网格对齐">
               <div className={styles.alignHeader}>
@@ -774,7 +769,7 @@ export function WorkshopImportPage() {
           ) : (
             <div className={styles.emptyPreview}>
               <span aria-hidden="true">▦</span>
-              <strong>等待导入</strong>
+              <strong>等待数据导入</strong>
             </div>
           )}
         </aside>

@@ -7,6 +7,20 @@ export type ImageUploadPayload = {
   height?: number;
 };
 
+const COMMON_IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'webp', 'gif']);
+const COMMON_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+export const COMMON_IMAGE_FILE_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif';
+export const COMMON_IMAGE_FILE_LABEL = 'PNG / JPG / JPEG / WebP / GIF';
+
+function getFileExtension(fileName: string) {
+  return fileName.trim().toLowerCase().split('.').pop() ?? '';
+}
+
+export function isCommonImageFile(file: File) {
+  return COMMON_IMAGE_MIME_TYPES.has(file.type.toLowerCase()) || COMMON_IMAGE_EXTENSIONS.has(getFileExtension(file.name));
+}
+
 export function waitForLoadingPaint() {
   if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
     return Promise.resolve();

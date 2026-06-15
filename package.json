@@ -38,7 +38,8 @@
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.14.1",
     "resend": "^6.12.4",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

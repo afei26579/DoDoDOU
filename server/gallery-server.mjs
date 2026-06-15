@@ -10,6 +10,7 @@ import { createAuthRouter, optionalAuth, requireAuth } from './auth.mjs';
 import { createAssetsRouter } from './assets.mjs';
 import { prisma } from './db.mjs';
 import { createInventoryRouter } from './inventory.mjs';
+import { createPatternImportRouter } from './pattern-import.mjs';
 import { createPatternRouter } from './pattern.mjs';
 import { createProjectsRouter } from './projects.mjs';
 import { createSubscriptionRouter } from './subscription.mjs';
@@ -332,6 +333,7 @@ app.use('/uploads', (req, res, next) => {
 app.use('/api/auth', createAuthRouter(prisma));
 app.use('/api/assets', createAssetsRouter(prisma, { rootDir }));
 app.use('/api/inventory', createInventoryRouter(prisma));
+app.use('/api/pattern-import', createPatternImportRouter({ rootDir }));
 app.use('/api/pattern', createPatternRouter(prisma, { rootDir }));
 app.use('/api/projects', createProjectsRouter(prisma));
 app.use('/api/subscription', createSubscriptionRouter(prisma));

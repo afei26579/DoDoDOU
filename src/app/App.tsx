@@ -12,6 +12,7 @@ import { DiscoveryPage } from '../pages/discovery/DiscoveryPage';
 import { ColorPaletteEditorPage } from '../pages/my/ColorPaletteEditorPage';
 import { MyPage } from '../pages/my/MyPage';
 import { FocusModePage } from '../pages/workshop/focus/FocusModePage';
+import { WorkshopDrawingImportPage } from '../pages/workshop/drawing-import/WorkshopDrawingImportPage';
 import { WorkshopImportPage } from '../pages/workshop/import/WorkshopImportPage';
 import { WorkshopEditorPage } from '../pages/workshop/WorkshopEditorPage';
 import { WorkshopHomePage } from '../pages/workshop/WorkshopHomePage';
@@ -35,6 +36,7 @@ const routeToTab: Partial<Record<string, NavItemId>> = {
   '/workshop/editor/:projectId': 'workshop',
   '/workshop/focus': 'workshop',
   '/workshop/focus/:projectId': 'workshop',
+  '/workshop/drawing-import': 'workshop',
   '/workshop/import': 'workshop',
   '/workshop/import/:projectId': 'workshop',
   '/workshop/inventory': 'workshop',
@@ -42,7 +44,7 @@ const routeToTab: Partial<Record<string, NavItemId>> = {
   '/collection/detail': 'collection',
 };
 
-const hiddenBottomNavPaths = new Set(['/login', ADMIN_ENTRY_PATH, '/crop', '/my/palettes', '/workshop/settings', '/workshop/editor', '/workshop/editor/:projectId', '/workshop/focus', '/workshop/focus/:projectId', '/workshop/import', '/workshop/import/:projectId', '/collection/detail']);
+const hiddenBottomNavPaths = new Set(['/login', ADMIN_ENTRY_PATH, '/crop', '/my/palettes', '/workshop/settings', '/workshop/editor', '/workshop/editor/:projectId', '/workshop/focus', '/workshop/focus/:projectId', '/workshop/drawing-import', '/workshop/import', '/workshop/import/:projectId', '/collection/detail']);
 
 function normalizePath(pathname: string) {
   if (pathname.startsWith('/my/palettes/')) return '/my/palettes';
@@ -50,6 +52,7 @@ function normalizePath(pathname: string) {
   if (pathname.startsWith('/workshop/result/')) return '/workshop/result';
   if (pathname.startsWith('/workshop/editor/')) return '/workshop/editor';
   if (pathname.startsWith('/workshop/focus/')) return '/workshop/focus';
+  if (pathname.startsWith('/workshop/drawing-import')) return '/workshop/drawing-import';
   if (pathname.startsWith('/workshop/import/')) return '/workshop/import';
   if (pathname.startsWith('/collection/')) return '/collection/detail';
   return pathname;
@@ -78,6 +81,7 @@ export function App() {
     normalizedPath === '/login' ||
     normalizedPath === ADMIN_ENTRY_PATH ||
     normalizedPath.startsWith('/workshop/focus') ||
+    normalizedPath.startsWith('/workshop/drawing-import') ||
     normalizedPath.startsWith('/workshop/import') ||
     normalizedPath.startsWith('/workshop/editor') ||
     normalizedPath === '/collection/detail';
@@ -169,6 +173,7 @@ export function App() {
           />
           <Route path="/workshop/create/:projectId" element={<WorkshopShell mode="create" />} />
           <Route path="/workshop/result/:projectId" element={<WorkshopShell mode="result" />} />
+          <Route path="/workshop/drawing-import" element={<WorkshopDrawingImportPage />} />
           <Route path="/workshop/import" element={<WorkshopImportPage />} />
           <Route path="/workshop/import/:projectId" element={<WorkshopImportPage />} />
           {/* <Route path="/workshop/settings" element={<WorkshopSettingsPage onGeneratePreview={() => navigate('/workshop/preview')} />} /> */}

@@ -1,6 +1,6 @@
 type WorkshopHomeToolbarProps = {
   isGenerating: boolean;
-  onAiInspiration: () => void;
+  onImportDrawingImage: () => void;
   onCreateCanvas: () => void;
   onImportPattern: () => void;
   onOpenInventory: () => void;
@@ -8,7 +8,7 @@ type WorkshopHomeToolbarProps = {
 
 export function WorkshopHomeToolbar({
   isGenerating,
-  onAiInspiration,
+  onImportDrawingImage,
   onCreateCanvas,
   onImportPattern,
   onOpenInventory,
@@ -18,16 +18,16 @@ export function WorkshopHomeToolbar({
       <div className="workshop-home-entry__cards">
         <button
           type="button"
-          className="workshop-home-entry-card workshop-home-entry-card--ai"
-          onClick={onAiInspiration}
+          className="workshop-home-entry-card workshop-home-entry-card--drawing"
+          onClick={onImportDrawingImage}
           disabled={isGenerating}
         >
           <span className="workshop-home-entry-card__icon" aria-hidden="true">
-            <img src="/assets/system_icons/ai_inspiration.png" alt="" />
+            <img src="/assets/system_icons/up_drawing.png" alt="" />
           </span>
           <span className="workshop-home-entry-card__copy">
-            <strong>AI 灵感</strong>
-           
+            <strong>图纸导入</strong>
+            <span>上传图纸识别色号</span>
           </span>
           <span className="workshop-home-entry-card__arrow" aria-hidden="true">›</span>
         </button>
@@ -57,8 +57,8 @@ export function WorkshopHomeToolbar({
       >
         <span className="workshop-home-import__icon" aria-hidden="true">⬇</span>
         <span className="workshop-home-import__copy">
-          <strong>导入图纸</strong>
-          <span>支持 JSON / CSV / TSV</span>
+          <strong>数据导入</strong>
+          <span>支持 JSON / MD / CSV / TSV</span>
         </span>
         <span className="workshop-home-import__arrow" aria-hidden="true">›</span>
       </button>

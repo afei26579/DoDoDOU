@@ -1768,7 +1768,7 @@ p { margin: 0; }
   cursor: not-allowed;
   opacity: 0.58;
 }
-.workshop-home-entry-card--ai {
+.workshop-home-entry-card--drawing {
   background:
     linear-gradient(145deg, rgba(226,246,232,0.98) 0%, rgba(196,236,209,0.98) 100%);
 }
@@ -1829,7 +1829,7 @@ p { margin: 0; }
   line-height: 1;
   box-shadow: 0 6px 12px rgba(93,83,74,0.16), inset 0 1px 0 rgba(255,255,255,0.35);
 }
-.workshop-home-entry-card--ai .workshop-home-entry-card__arrow { background: #80d39e; }
+.workshop-home-entry-card--drawing .workshop-home-entry-card__arrow { background: #80d39e; }
 .workshop-home-entry-card--canvas .workshop-home-entry-card__arrow { background: #ff9f43; }
 .workshop-home-import {
   min-height: 56px;

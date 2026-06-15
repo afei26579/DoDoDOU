@@ -5,7 +5,13 @@ import { deleteWorkshopDraft } from '../../features/workshop/model/draftStore';
 import { createWorkshopProject, markWorkshopProjectOpened, saveWorkshopProject } from '../../features/workshop/model/projectStore';
 import type { PatternResult } from '../../features/workshop/model/types';
 import { useWorkshopFlow } from '../../features/workshop/model/useWorkshopFlow';
-import { readUploadedImageFile, waitForLoadingPaint } from '../../lib/imageFile';
+import {
+  COMMON_IMAGE_FILE_ACCEPT,
+  COMMON_IMAGE_FILE_LABEL,
+  isCommonImageFile,
+  readUploadedImageFile,
+  waitForLoadingPaint,
+} from '../../lib/imageFile';
 import { cropPatternToEffectiveBounds } from '../../lib/pattern/effectiveCrop';
 import { generatePatternFromImage } from '../../lib/pattern/generator';
 import { removePatternBackground } from '../../lib/pattern/remove-background';
@@ -225,6 +231,11 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
   };
 
   const handleUploadSelected = async (file: File) => {
+    if (!isCommonImageFile(file)) {
+      showBackgroundRemovalNotice(`图纸导入仅支持 ${COMMON_IMAGE_FILE_LABEL}`);
+      return;
+    }
+
     setIsUploadingImage(true);
     try {
       await waitForLoadingPaint();
@@ -247,6 +258,8 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
       });
 
       navigate(`/workshop/create/${nextProjectId}`);
+    } catch {
+      showBackgroundRemovalNotice(`图片读取失败，请选择 ${COMMON_IMAGE_FILE_LABEL}`);
     } finally {
       setIsUploadingImage(false);
     }
@@ -293,7 +306,7 @@ export function WorkshopShell({ mode }: WorkshopShellProps) {
         ref={fileInputRef}
         hidden
         type="file"
-        accept="image/*"
+        accept={COMMON_IMAGE_FILE_ACCEPT}
         onChange={handleUploadInputChange}
       />
       <LoadingOverlay

@@ -2,7 +2,13 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { defaultCropTransform } from '../../features/workshop/model/defaults';
 import { createWorkshopProject, saveWorkshopProject } from '../../features/workshop/model/projectStore';
-import { readUploadedImageFile, waitForLoadingPaint } from '../../lib/imageFile';
+import {
+  COMMON_IMAGE_FILE_ACCEPT,
+  COMMON_IMAGE_FILE_LABEL,
+  isCommonImageFile,
+  readUploadedImageFile,
+  waitForLoadingPaint,
+} from '../../lib/imageFile';
 import { LoadingOverlay } from '../../shared/ui/LoadingOverlay';
 import { WorkshopPage } from './WorkshopPage';
 import type { WorkshopFlowState } from '../../features/workshop/model/types';
@@ -80,12 +86,12 @@ export function WorkshopHomePage({
     navigate(`/workshop/editor/${nextProjectId}`);
   };
 
-  const handleAiInspiration = () => {
-    showDevelopmentNotice('内测中');
-  };
-
   const handleImportPattern = () => {
     navigate('/workshop/import');
+  };
+
+  const handleImportDrawingImage = () => {
+    navigate('/workshop/drawing-import');
   };
 
   const handleOpenInventory = () => {
@@ -96,6 +102,11 @@ export function WorkshopHomePage({
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+
+    if (!isCommonImageFile(file)) {
+      showDevelopmentNotice(`图纸导入仅支持 ${COMMON_IMAGE_FILE_LABEL}`);
+      return;
+    }
 
     setIsUploadingImage(true);
     try {
@@ -117,6 +128,8 @@ export function WorkshopHomePage({
 
       await onUploadImage();
       navigate(`/workshop/create/${nextProjectId}`);
+    } catch {
+      showDevelopmentNotice(`图片读取失败，请选择 ${COMMON_IMAGE_FILE_LABEL}`);
     } finally {
       setIsUploadingImage(false);
     }
@@ -128,7 +141,7 @@ export function WorkshopHomePage({
         ref={fileInputRef}
         hidden
         type="file"
-        accept="image/*"
+        accept={COMMON_IMAGE_FILE_ACCEPT}
         onChange={handleFileInputChange}
       />
       <LoadingOverlay
@@ -154,7 +167,7 @@ export function WorkshopHomePage({
         onReuploadImage={handleUploadImage}
         onViewPattern={() => {}}
         onCreateCanvas={handleCreateCanvas}
-        onAiInspiration={handleAiInspiration}
+        onImportDrawingImage={handleImportDrawingImage}
         onImportPattern={handleImportPattern}
         onOpenInventory={handleOpenInventory}
       />

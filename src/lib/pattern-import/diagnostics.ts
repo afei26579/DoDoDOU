@@ -63,7 +63,7 @@ export function createPatternImportAnalysis(params: {
       resolvedCode: cell.vendorCode || undefined,
       isExternal: cell.isExternal,
       confidence: 1,
-      evidence: [{ type: params.sourceType === 'csv' ? 'csv-token' : 'json', value: cell.vendorCode || cell.hex }],
+      evidence: [{ type: params.sourceType === 'dodoudou-json' ? 'json' : 'csv-token', value: cell.vendorCode || cell.hex }],
     })),
     issues,
   };
