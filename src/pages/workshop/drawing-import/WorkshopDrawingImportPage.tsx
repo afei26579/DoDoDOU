@@ -1239,6 +1239,19 @@ export function WorkshopDrawingImportPage() {
     '--calibration-area-width': `${calibrationOperationRect.width * calibrationScaleX}px`,
     '--calibration-area-height': `${calibrationOperationRect.height * calibrationScaleY}px`,
   } as CSSProperties;
+  const clampedGridCropRect = clampGridCropRect(gridCropRect, columns, rows);
+  const gridCropPixelRect = {
+    x: squareGridMetrics.originX + clampedGridCropRect.col * squareGridMetrics.cellSizePx,
+    y: squareGridMetrics.originY + clampedGridCropRect.row * squareGridMetrics.cellSizePx,
+    width: clampedGridCropRect.columns * squareGridMetrics.cellSizePx,
+    height: clampedGridCropRect.rows * squareGridMetrics.cellSizePx,
+  };
+  const gridCropBoxStyle = {
+    '--grid-crop-left': `${gridCropPixelRect.x * calibrationScaleX}px`,
+    '--grid-crop-top': `${gridCropPixelRect.y * calibrationScaleY}px`,
+    '--grid-crop-width': `${gridCropPixelRect.width * calibrationScaleX}px`,
+    '--grid-crop-height': `${gridCropPixelRect.height * calibrationScaleY}px`,
+  } as CSSProperties;
 
   const legendCropStageStyle = {
     '--stage-width': legendCropFitSize ? `${legendCropFitSize.width * legendCropZoom}px` : '100%',
@@ -1258,8 +1271,8 @@ export function WorkshopDrawingImportPage() {
     <main ref={pageRef} className={styles.page}>
       <LoadingOverlay
         open={isBusy}
-        title={step === 4 ? '正在进入画布' : '正在识别图纸'}
-        message={step === 2 ? '正在 OCR 识别图例...' : step === 3 ? '正在按网格识别色号...' : '正在处理图纸文件...'}
+        title={step === 5 ? '正在进入画布' : '正在识别图纸'}
+        message={step === 2 ? '正在 OCR 识别图例...' : step === 4 ? '正在按裁剪范围识别色号...' : '正在处理图纸文件...'}
       />
 
       <header className={styles.topbar}>
@@ -1274,9 +1287,9 @@ export function WorkshopDrawingImportPage() {
             </div>
           ))}
         </nav>
-        {step === 3 ? (
-          <button type="button" className={styles.topAction} onClick={handleRecognizePattern}>
-            确认对齐 →
+        {step === 3 || step === 4 ? (
+          <button type="button" className={styles.topAction} onClick={step === 3 ? handleConfirmAlignment : handleRecognizePattern}>
+            {step === 3 ? '确认对齐 →' : '确认裁剪 →'}
           </button>
         ) : <span className={styles.topSpacer} aria-hidden="true" />}
       </header>
@@ -1624,7 +1637,63 @@ export function WorkshopDrawingImportPage() {
           </section>
         ) : null}
 
-        {step === 4 && finalPatternResult ? (
+        {step === 4 && decodedImage ? (
+          <section className={styles.recognitionStep} aria-label="图纸裁剪">
+            <div
+              ref={patternAlignViewportRef}
+              className={styles.cropViewport}
+              data-zoomed={patternAlignZoom > 1}
+              data-panning={activePanArea === 'patternAlign'}
+              data-lock-scroll="true"
+              onPointerDown={(event) => handleZoomPointerDown('patternAlign', event)}
+              onPointerMove={(event) => handleZoomPointerMove('patternAlign', event)}
+              onPointerUp={(event) => handleZoomPointerEnd('patternAlign', event)}
+              onPointerCancel={(event) => handleZoomPointerEnd('patternAlign', event)}
+            >
+              <span className={styles.zoomBadge}>{Math.round(patternAlignZoom * 100)}%</span>
+              <div className={styles.fitCropCanvas} style={patternAlignStageStyle}>
+                <div
+                  ref={stageRef}
+                  className={`${styles.cropStage} ${styles.fitCropStage} ${styles.gridStage}`}
+                  onPointerMove={handleGridCropPointerMove}
+                  onPointerUp={handleGridCropPointerUp}
+                  onPointerCancel={handleGridCropPointerUp}
+                >
+                  <img src={decodedImage.dataUrl} alt="待裁剪的图纸" />
+                  <div className={styles.cropGridLayer} style={calibrationGridStyle} aria-hidden="true" />
+                  <div
+                    className={styles.gridCropBox}
+                    style={gridCropBoxStyle}
+                    onPointerDown={(event) => startGridCropDrag('move', event)}
+                  >
+                    <span className={styles.gridCropSizeBadge}>
+                      {clampedGridCropRect.columns}列 × {clampedGridCropRect.rows}行
+                    </span>
+                    {CROP_RESIZE_HANDLES.map((kind) => (
+                      <button
+                        key={kind}
+                        type="button"
+                        className={`${styles.gridCropHandle} ${styles[`gridCropHandle${kind.toUpperCase()}` as keyof typeof styles]}`}
+                        aria-label="调整裁剪范围"
+                        onPointerDown={(event) => startGridCropDrag(kind, event)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className={styles.cropAlignHint}>
+              仅保留格子内容，裁剪框会按当前最小格子尺寸吸附到网格线。
+            </div>
+            <div className={styles.cropStepControls}>
+              <button type="button" onClick={() => setGridCropRect(getDefaultGridCropRect(columns, rows))}>重置</button>
+              <span>{clampedGridCropRect.col + 1}, {clampedGridCropRect.row + 1}</span>
+              <strong>{clampedGridCropRect.columns} × {clampedGridCropRect.rows}</strong>
+            </div>
+          </section>
+        ) : null}
+
+        {step === 5 && finalPatternResult ? (
           <section className={styles.doneStep} aria-label="进入画布">
             <div className={styles.previewCard}>
               <PatternPreviewCanvas patternResult={finalPatternResult} />
@@ -1651,8 +1720,8 @@ export function WorkshopDrawingImportPage() {
             <button type="button" className={styles.primaryButton} onClick={handleEnterCanvas}>
               进入画布
             </button>
-            <button type="button" className={styles.textButton} onClick={() => setStep(3)}>
-              返回网格对齐
+            <button type="button" className={styles.textButton} onClick={() => setStep(4)}>
+              返回裁剪
             </button>
           </section>
         ) : null}
