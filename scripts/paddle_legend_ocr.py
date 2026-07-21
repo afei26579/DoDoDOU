@@ -78,7 +78,7 @@ def create_ocr(PaddleOCR):
     for kwargs in attempts:
         try:
             return PaddleOCR(**kwargs)
-        except TypeError as exc:
+        except (TypeError, ValueError) as exc:
             last_error = exc
 
     if last_error:
@@ -183,7 +183,7 @@ def detect_legend_item_boxes(rgba, max_items, np):
         max(8, round(crop_height * 0.035)),
         max(2, round(crop_height * 0.018)),
     )
-    boxes = []
+    raw_boxes = []
 
     for row in row_runs:
         row_top = max(0, min(crop_height - 1, row["start"] - 2))
@@ -212,9 +212,53 @@ def detect_legend_item_boxes(rgba, max_items, np):
                 "height": int(height),
             }
             box["hex"] = sample_dominant_hex(rgba, box, np)
-            boxes.append(box)
+            raw_boxes.append(box)
 
+    boxes = expand_legend_item_boxes(rgba, raw_boxes)
     return sorted(boxes, key=lambda item: (item["y"], item["x"]))[:max_items]
+
+
+def expand_legend_item_boxes(rgba, boxes):
+    height, width = rgba.shape[:2]
+    expanded = []
+    sorted_boxes = sorted(boxes, key=lambda item: (item["y"], item["x"]))
+
+    for box in sorted_boxes:
+        x = int(box["x"])
+        y = int(box["y"])
+        box_width = int(box["width"])
+        box_height = int(box["height"])
+
+        target_height = max(
+            box_height,
+            int(round(box_width * 0.78)),
+            int(round(box_height * 1.9)),
+            28,
+        )
+
+        # If a same-column item starts below this one, do not expand into it.
+        next_y = height
+        x0 = x
+        x1 = x + box_width
+        for other in sorted_boxes:
+            if other is box or other["y"] <= y:
+                continue
+            ox0 = other["x"]
+            ox1 = other["x"] + other["width"]
+            overlap = min(x1, ox1) - max(x0, ox0)
+            if overlap >= min(box_width, other["width"]) * 0.45:
+                next_y = min(next_y, int(other["y"]))
+
+        target_height = min(target_height, max(1, next_y - y - 2), height - y)
+        expanded.append({
+            "x": x,
+            "y": y,
+            "width": min(box_width, width - x),
+            "height": max(1, target_height),
+            "hex": box["hex"],
+        })
+
+    return expanded
 
 
 def crop_box(rgba, box, y_start_ratio, y_end_ratio):

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import sharp from 'sharp';
+import { getPpocrv6Token, runPpocrv6LegendOcr } from './ppocrv6-api.mjs';
 
 const DATA_IMAGE_PATTERN = /^data:(image\/(?:png|jpeg|jpg|webp));base64,([\s\S]+)$/i;
 const DEFAULT_JSON_LIMIT = '8mb';
@@ -13,6 +14,7 @@ const DEFAULT_MAX_IMAGE_PIXELS = 16_000_000;
 const DEFAULT_MAX_IMAGE_SIDE = 2400;
 const DEFAULT_TIMEOUT_MS = 45_000;
 const MAX_STDIO_CHARS = 2_000_000;
+const MAX_ERROR_DETAIL_CHARS = 4_000;
 
 function parseBoolean(value, fallback) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -68,6 +70,14 @@ function appendChunk(current, chunk) {
   return (current + chunk.toString('utf8')).slice(0, MAX_STDIO_CHARS);
 }
 
+function truncateDetail(value, maxLength = MAX_ERROR_DETAIL_CHARS) {
+  if (value === undefined || value === null) return undefined;
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  const trimmed = text.trim();
+  if (!trimmed) return undefined;
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength)}...` : trimmed;
+}
+
 function runPaddleWorker({ rootDir, imagePath, maxItems }) {
   const timeoutMs = parseInteger(process.env.PADDLEOCR_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, { min: 5_000, max: 180_000 });
   const scriptPath = path.join(rootDir, 'scripts', 'paddle_legend_ocr.py');
@@ -109,6 +119,7 @@ function runPaddleWorker({ rootDir, imagePath, maxItems }) {
         ok: false,
         code: 'PADDLEOCR_UNAVAILABLE',
         message: `PaddleOCR Python worker could not start: ${error.message}`,
+        detail: `command=${[command, ...commandArgs, scriptPath].join(' ')}`,
       });
     });
 
@@ -122,6 +133,7 @@ function runPaddleWorker({ rootDir, imagePath, maxItems }) {
           ok: false,
           code: 'PADDLEOCR_TIMEOUT',
           message: `PaddleOCR recognition timed out after ${timeoutMs}ms`,
+          detail: truncateDetail(stderr || stdout),
         });
         return;
       }
@@ -136,6 +148,7 @@ function runPaddleWorker({ rootDir, imagePath, maxItems }) {
         ok: false,
         code: code === 0 ? 'PADDLEOCR_BAD_OUTPUT' : 'PADDLEOCR_FAILED',
         message: stderr.trim() || stdout.trim() || 'PaddleOCR worker did not return valid JSON',
+        detail: truncateDetail({ exitCode: code, stderr, stdout }),
       });
     });
 
@@ -177,9 +190,16 @@ function normalizeEntries(value) {
 
 function responseStatusForWorkerCode(code) {
   if (code === 'PADDLEOCR_UNAVAILABLE' || code === 'PADDLEOCR_DISABLED') return 503;
+  if (code === 'PPOCRV6_TOKEN_MISSING') return 503;
   if (code === 'PADDLEOCR_TIMEOUT') return 504;
   if (code === 'PADDLEOCR_BAD_INPUT') return 400;
   return 500;
+}
+
+function resolveOcrProvider() {
+  const provider = String(process.env.PATTERN_IMPORT_OCR_PROVIDER || 'auto').trim().toLowerCase();
+  if (['ppocrv6-api', 'paddle-worker', 'auto'].includes(provider)) return provider;
+  return 'auto';
 }
 
 export function createPatternImportRouter({ rootDir }) {
@@ -198,6 +218,7 @@ export function createPatternImportRouter({ rootDir }) {
     max: 6000,
   });
   const jsonLimit = process.env.PATTERN_IMPORT_OCR_JSON_LIMIT || DEFAULT_JSON_LIMIT;
+  const ocrProvider = resolveOcrProvider();
 
   router.post('/legend-ocr', express.json({ limit: jsonLimit, strict: true }), async (req, res, next) => {
     let tempFilePath = '';
@@ -244,12 +265,37 @@ export function createPatternImportRouter({ rootDir }) {
       await writeFile(tempFilePath, normalizedImage);
 
       const maxItems = parseInteger(req.body?.maxItems, 80, { min: 1, max: 80 });
-      const workerResult = await runPaddleWorker({ rootDir, imagePath: tempFilePath, maxItems });
+      const shouldUseApi = ocrProvider === 'ppocrv6-api' || (ocrProvider === 'auto' && getPpocrv6Token());
+      let workerResult = shouldUseApi
+        ? await runPpocrv6LegendOcr({ imagePath: tempFilePath, maxItems })
+        : await runPaddleWorker({ rootDir, imagePath: tempFilePath, maxItems });
+
+      if (!workerResult?.ok && shouldUseApi && ocrProvider === 'auto') {
+        console.warn(JSON.stringify({
+          requestId: req.id,
+          event: 'pattern-import.legend-ocr.api-fallback',
+          code: workerResult?.code || 'PPOCRV6_FAILED',
+          message: workerResult?.message || 'PP-OCRv6 API recognition failed',
+          detail: truncateDetail(workerResult?.detail),
+        }));
+        workerResult = await runPaddleWorker({ rootDir, imagePath: tempFilePath, maxItems });
+      }
+
       if (!workerResult?.ok) {
         const status = responseStatusForWorkerCode(workerResult?.code);
+        const detail = truncateDetail(workerResult?.detail);
+        console.error(JSON.stringify({
+          requestId: req.id,
+          event: 'pattern-import.legend-ocr.worker-failed',
+          status,
+          code: workerResult?.code || 'PADDLEOCR_FAILED',
+          message: workerResult?.message || 'PaddleOCR recognition failed',
+          detail,
+        }));
         return res.status(status).json({
           code: workerResult?.code || 'PADDLEOCR_FAILED',
           message: workerResult?.message || 'PaddleOCR recognition failed',
+          ...(detail ? { detail } : {}),
           requestId: req.id,
         });
       }
@@ -258,6 +304,7 @@ export function createPatternImportRouter({ rootDir }) {
       return res.json({
         engine: workerResult.engine || 'paddleocr',
         entries,
+        keyValue: workerResult.keyValue && typeof workerResult.keyValue === 'object' ? workerResult.keyValue : undefined,
         ocrText: typeof workerResult.ocrText === 'string' ? workerResult.ocrText.slice(0, 20_000) : '',
         warnings: Array.isArray(workerResult.warnings)
           ? workerResult.warnings.filter((item) => typeof item === 'string').slice(0, 5)

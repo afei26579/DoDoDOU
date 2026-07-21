@@ -30,6 +30,28 @@ type ColorMapping = Record<string, Partial<Record<BeadBrandKey, string>>>;
 
 const colorSystemMapping = mappingData as ColorMapping;
 
+export function normalizeBrandCodeInput(code: string) {
+  return code.trim().toUpperCase().replace(/\s+/g, '');
+}
+
+export function getBrandCodeAliases(code: string): string[] {
+  const normalizedCode = normalizeBrandCodeInput(code);
+  if (!normalizedCode) return [];
+
+  const aliases = new Set([normalizedCode]);
+  const match = normalizedCode.match(/^([A-Z]+)(\d+)$/);
+  if (match) {
+    const [, prefix, numericText] = match;
+    const numericValue = Number.parseInt(numericText, 10);
+    if (Number.isFinite(numericValue)) {
+      if (numericText.length === 1) aliases.add(`${prefix}${numericText.padStart(2, '0')}`);
+      if (numericText.length === 2 && numericText.startsWith('0')) aliases.add(`${prefix}${numericValue}`);
+    }
+  }
+
+  return [...aliases];
+}
+
 export function hexToRgb(hex: string): PatternRgb | null {
   const normalized = hex.trim().replace(/^#/, '');
   if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return null;
@@ -114,10 +136,16 @@ export function getBrandPalette(brandKeyInput: ColorSystem): BrandColor[] {
 
 export function getColorByBrandCode(brandKeyInput: ColorSystem, code: string): BrandColor | null {
   const brandKey = normalizeBeadBrandKey(brandKeyInput);
-  const normalizedCode = code.trim();
+  const aliases = getBrandCodeAliases(code);
+  if (!aliases.length) return null;
 
   for (const color of getBrandPalette(brandKey)) {
-    if (color.code === normalizedCode) return color;
+    if (normalizeBrandCodeInput(color.code) === aliases[0]) return color;
+  }
+
+  const aliasSet = new Set(aliases);
+  for (const color of getBrandPalette(brandKey)) {
+    if (getBrandCodeAliases(color.code).some((alias) => aliasSet.has(alias))) return color;
   }
 
   return null;

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { defaultCropTransform, defaultWorkshopConfig } from '../../../features/workshop/model/defaults';
 import { createWorkshopProject } from '../../../features/workshop/model/projectStore';
@@ -7,6 +7,7 @@ import { COMMON_IMAGE_FILE_ACCEPT, COMMON_IMAGE_FILE_LABEL, isCommonImageFile, w
 import { reconstructPatternFromImageGrid } from '../../../lib/pattern-import/cell-read';
 import { createPatternImportProjectMeta } from '../../../lib/pattern-import/diagnostics';
 import { decodePatternImportImageFile, type DecodedPatternImage } from '../../../lib/pattern-import/image-decode';
+import { recognizeGridGroupCodes, type GridOcrGroupSuggestion } from '../../../lib/pattern-import/grid-ocr';
 import {
   createLegendCropPreview,
   createManualLegendEntry,
@@ -15,6 +16,7 @@ import {
 } from '../../../lib/pattern-import/legend-ocr';
 import { reconstructPatternResult } from '../../../lib/pattern-import/reconstruct';
 import type { PatternImportResult } from '../../../lib/pattern-import/types';
+import { getColorByBrandCode, normalizeBrandCodeInput } from '../../../lib/pattern/color-system';
 import { drawPatternPreview } from '../../../lib/pattern/preview';
 import { LoadingOverlay } from '../../../shared/ui/LoadingOverlay';
 import styles from './WorkshopDrawingImportPage.module.css';
@@ -47,6 +49,14 @@ type CalibrationGridAnchor = {
   row: number;
 };
 
+type CalibrationResizeAnchor = {
+  point: {
+    x: number;
+    y: number;
+  };
+  gridPoint: CalibrationGridAnchor;
+};
+
 type CalibrationGridModel = {
   originX: number;
   originY: number;
@@ -68,6 +78,7 @@ type CalibrationDragState = {
   startY: number;
   startGrid: CalibrationGridModel;
   startOperationRect: PixelRect;
+  startAnchor: CalibrationGridAnchor;
 };
 
 type GridCropRect = {
@@ -75,6 +86,30 @@ type GridCropRect = {
   row: number;
   columns: number;
   rows: number;
+};
+
+type GridCropBounds = {
+  minCol: number;
+  minRow: number;
+  maxCol: number;
+  maxRow: number;
+};
+
+type ReviewCellAssignment = {
+  colorId: string;
+  vendorCode: string;
+  hex: string;
+  isExternal?: boolean;
+};
+
+type ReviewGroup = {
+  key: string;
+  title: string;
+  hex: string;
+  count: number;
+  warning: boolean;
+  expectedCount?: number;
+  cells: PatternCell[];
 };
 
 type GridCropDragState = {
@@ -88,6 +123,7 @@ type GridCropDragState = {
 };
 
 type ZoomArea = 'legendCrop' | 'legendPreview' | 'patternAlign';
+type BusyMode = 'file' | 'legend' | 'pattern' | 'gridOcr' | 'enter';
 
 type Size = {
   width: number;
@@ -117,7 +153,7 @@ const STEPS: Array<{ id: StepId; label: string }> = [
   { id: 2, label: '图例' },
   { id: 3, label: '对齐' },
   { id: 4, label: '裁剪' },
-  { id: 5, label: '画布' },
+  { id: 5, label: '检查' },
 ];
 
 const DEFAULT_LEGEND_RECT: PercentRect = { x: 12, y: 76, width: 76, height: 16 };
@@ -125,10 +161,18 @@ const DEFAULT_PATTERN_RECT: PercentRect = { x: 8, y: 12, width: 84, height: 74 }
 const CROP_RESIZE_HANDLES: ResizeDragKind[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const CALIBRATION_GRID_SIZES: CalibrationGridSize[] = [3, 4];
 const MIN_CALIBRATION_CELL_SIZE_PX = 4;
+const DEFAULT_INITIAL_GRID_LONG_SIDE_CELLS = 72;
+const MAX_INITIAL_GRID_CELLS = 240;
+const CALIBRATION_NUDGE_STEP_PX = 0.1;
+const CALIBRATION_CELL_SIZE_STEP_PX = 0.01;
+const LONG_PRESS_REPEAT_DELAY_MS = 320;
+const LONG_PRESS_REPEAT_INTERVAL_MS = 48;
 const MIN_ZOOM = 1;
-const MAX_ZOOM = 15;
+const MAX_ZOOM = 50;
 const ZOOM_STEP = 0.05;
 const WHEEL_ZOOM_SENSITIVITY = 0.0006;
+const REVIEW_THUMB_SIZE = 42;
+const GRID_OCR_MIN_CONFIDENCE = 0.25;
 
 function createProjectId() {
   return `drawing-import-${Date.now()}`;
@@ -183,24 +227,42 @@ function rectToPixels(rect: PercentRect, image: DecodedPatternImage) {
 }
 
 function getInitialGrid(image: DecodedPatternImage) {
-  const pattern = rectToPixels(DEFAULT_PATTERN_RECT, image);
-  const estimatedCell = Math.max(5, Math.round(Math.max(pattern.width, pattern.height) / 72));
+  const estimatedCell = Math.max(
+    MIN_CALIBRATION_CELL_SIZE_PX,
+    Math.round(Math.max(image.width, image.height) / DEFAULT_INITIAL_GRID_LONG_SIDE_CELLS),
+  );
   return {
-    columns: clamp(Math.round(pattern.width / estimatedCell), 12, 180),
-    rows: clamp(Math.round(pattern.height / estimatedCell), 12, 180),
+    columns: clamp(Math.round(image.width / estimatedCell), 12, MAX_INITIAL_GRID_CELLS),
+    rows: clamp(Math.round(image.height / estimatedCell), 12, MAX_INITIAL_GRID_CELLS),
   };
 }
 
-function getInitialCalibrationGrid(image: DecodedPatternImage, columns: number): CalibrationGridModel {
-  const pattern = rectToPixels(DEFAULT_PATTERN_RECT, image);
+function getImageBasedCalibrationCellSize(
+  image: DecodedPatternImage,
+  columns: number,
+  rows: number,
+  preferredAxis?: 'columns' | 'rows',
+) {
+  const cellWidth = image.width / Math.max(1, Math.round(columns));
+  const cellHeight = image.height / Math.max(1, Math.round(rows));
+  const cellSize = preferredAxis === 'columns'
+    ? cellWidth
+    : preferredAxis === 'rows'
+      ? cellHeight
+      : (cellWidth + cellHeight) / 2;
+
+  return clamp(
+    cellSize,
+    MIN_CALIBRATION_CELL_SIZE_PX,
+    Math.max(MIN_CALIBRATION_CELL_SIZE_PX, image.width, image.height),
+  );
+}
+
+function getInitialCalibrationGrid(image: DecodedPatternImage, columns: number, rows: number): CalibrationGridModel {
   return {
-    originX: pattern.x,
-    originY: pattern.y,
-    cellSizePx: clamp(
-      pattern.width / Math.max(1, columns),
-      MIN_CALIBRATION_CELL_SIZE_PX,
-      Math.max(MIN_CALIBRATION_CELL_SIZE_PX, image.width, image.height),
-    ),
+    originX: 0,
+    originY: 0,
+    cellSizePx: getImageBasedCalibrationCellSize(image, columns, rows),
   };
 }
 
@@ -250,6 +312,24 @@ function clampGridCropRect(rect: GridCropRect, columns: number, rows: number): G
   };
 }
 
+function clampGridCropRectToBounds(rect: GridCropRect, bounds: GridCropBounds): GridCropRect {
+  const minCol = Math.round(Math.min(bounds.minCol, bounds.maxCol - 1));
+  const minRow = Math.round(Math.min(bounds.minRow, bounds.maxRow - 1));
+  const maxCol = Math.round(Math.max(bounds.maxCol, minCol + 1));
+  const maxRow = Math.round(Math.max(bounds.maxRow, minRow + 1));
+  const maxWidth = maxCol - minCol;
+  const maxHeight = maxRow - minRow;
+  const width = Math.round(clamp(rect.columns, 1, maxWidth));
+  const height = Math.round(clamp(rect.rows, 1, maxHeight));
+
+  return {
+    col: Math.round(clamp(rect.col, minCol, maxCol - width)),
+    row: Math.round(clamp(rect.row, minRow, maxRow - height)),
+    columns: width,
+    rows: height,
+  };
+}
+
 function getDefaultGridCropRect(columns: number, rows: number): GridCropRect {
   return clampGridCropRect({
     col: 0,
@@ -257,6 +337,41 @@ function getDefaultGridCropRect(columns: number, rows: number): GridCropRect {
     columns: Math.max(1, Math.round(columns)),
     rows: Math.max(1, Math.round(rows)),
   }, columns, rows);
+}
+
+function getCellKey(x: number, y: number) {
+  return `${x},${y}`;
+}
+
+function createTransparentAssignment(): ReviewCellAssignment {
+  return {
+    colorId: '__TRANSPARENT__',
+    vendorCode: '',
+    hex: 'transparent',
+    isExternal: true,
+  };
+}
+
+function applyCellCorrectionsToPattern(
+  patternResult: PatternResult,
+  corrections: Record<string, ReviewCellAssignment>,
+) {
+  if (Object.keys(corrections).length === 0) return patternResult;
+  return reconstructPatternResult({
+    width: patternResult.width,
+    height: patternResult.height,
+    cells: patternResult.cells.map((cell) => {
+      const correction = corrections[getCellKey(cell.x, cell.y)];
+      if (!correction) return cell;
+      return {
+        ...cell,
+        colorId: correction.colorId,
+        vendorCode: correction.vendorCode,
+        hex: correction.hex,
+        isExternal: correction.isExternal,
+      };
+    }),
+  });
 }
 
 function hexToRgb(hex: string) {
@@ -299,14 +414,41 @@ function applyLegendToPattern(patternResult: PatternResult, legendEntries: Legen
     if (cell.hex === 'transparent') return cell;
     const nearest = findNearestLegend(cell.hex, legendEntries);
     if (!nearest) return cell;
+    const mappedColor = getColorByBrandCode(defaultWorkshopConfig.brand, nearest.code);
     return {
       ...cell,
-      colorId: nearest.hex,
-      vendorCode: nearest.code,
-      hex: nearest.hex,
+      colorId: mappedColor?.hex ?? nearest.hex,
+      vendorCode: mappedColor?.code ?? normalizeBrandCodeInput(nearest.code),
+      hex: mappedColor?.hex ?? nearest.hex,
     };
   });
   return reconstructPatternResult({ width: patternResult.width, height: patternResult.height, cells });
+}
+
+function mapLegendEntryToColorSystem(entry: LegendEntry): LegendEntry {
+  const code = normalizeBrandCodeInput(entry.code);
+  if (!code) return entry;
+  const mappedColor = getColorByBrandCode(defaultWorkshopConfig.brand, code);
+  return mappedColor ? { ...entry, code, hex: mappedColor.hex } : { ...entry, code };
+}
+
+function getCanonicalLegendCode(code: string) {
+  return getColorByBrandCode(defaultWorkshopConfig.brand, code)?.code ?? normalizeBrandCodeInput(code);
+}
+
+function createAssignmentFromCode(code: string, fallbackHex: string): ReviewCellAssignment {
+  const normalizedCode = normalizeBrandCodeInput(code);
+  const mappedColor = getColorByBrandCode(defaultWorkshopConfig.brand, normalizedCode);
+  return {
+    colorId: mappedColor?.hex ?? fallbackHex,
+    vendorCode: mappedColor?.code ?? normalizedCode,
+    hex: mappedColor?.hex ?? fallbackHex,
+  };
+}
+
+function isGeneratedImportCode(code: string) {
+  const normalized = normalizeBrandCodeInput(code);
+  return !normalized || normalized === '?' || /^IMG\d+$/i.test(normalized) || normalized.startsWith('#');
 }
 
 function PatternPreviewCanvas({ patternResult }: { patternResult: PatternResult }) {
@@ -336,6 +478,15 @@ export function WorkshopDrawingImportPage() {
   const cropDragRef = useRef<CropDragState | null>(null);
   const calibrationDragRef = useRef<CalibrationDragState | null>(null);
   const gridCropDragRef = useRef<GridCropDragState | null>(null);
+  const repeatActionRef = useRef<{
+    delayTimer: number | null;
+    intervalTimer: number | null;
+    didRepeat: boolean;
+  }>({
+    delayTimer: null,
+    intervalTimer: null,
+    didRepeat: false,
+  });
   const cropZoomGestureRef = useRef<ZoomGestureState>({
     pointers: new Map(),
     startDistance: 0,
@@ -386,7 +537,13 @@ export function WorkshopDrawingImportPage() {
   const [legendMode, setLegendMode] = useState<'crop' | 'review'>('crop');
   const [legendOcrText, setLegendOcrText] = useState('');
   const [recognitionResult, setRecognitionResult] = useState<PatternImportResult | null>(null);
+  const [cellCorrections, setCellCorrections] = useState<Record<string, ReviewCellAssignment>>({});
+  const [selectedReviewCellKeys, setSelectedReviewCellKeys] = useState<string[]>([]);
+  const [reviewTargetColorId, setReviewTargetColorId] = useState('');
   const [isBusy, setIsBusy] = useState(false);
+  const [busyMode, setBusyMode] = useState<BusyMode>('file');
+  const [gridOcrSuggestions, setGridOcrSuggestions] = useState<Record<string, GridOcrGroupSuggestion>>({});
+  const [gridOcrSummary, setGridOcrSummary] = useState('');
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [notice, setNotice] = useState('');
   const [legendCropZoom, setLegendCropZoom] = useState(1);
@@ -431,12 +588,130 @@ export function WorkshopDrawingImportPage() {
 
   const finalPatternResult = useMemo(() => {
     if (!recognitionResult?.patternResult) return null;
-    return applyLegendToPattern(recognitionResult.patternResult, legendEntries);
-  }, [legendEntries, recognitionResult]);
+    const legendApplied = applyLegendToPattern(recognitionResult.patternResult, legendEntries);
+    return applyCellCorrectionsToPattern(legendApplied, cellCorrections);
+  }, [cellCorrections, legendEntries, recognitionResult]);
+
+  const reviewColorOptions = useMemo(() => {
+    const legendOptions = legendEntries
+      .filter((entry) => entry.code.trim() && entry.hex.trim())
+      .map((entry) => ({
+        colorId: entry.hex,
+        vendorCode: getCanonicalLegendCode(entry.code),
+        hex: entry.hex,
+      }));
+    if (legendOptions.length > 0) return legendOptions;
+    return finalPatternResult?.palette.map((entry) => ({
+      colorId: entry.colorId,
+      vendorCode: entry.vendorCode,
+      hex: entry.hex,
+    })) ?? [];
+  }, [finalPatternResult, legendEntries]);
+
+  const reviewGroups = useMemo(() => {
+    if (!finalPatternResult) return [];
+    const confidenceByCell = new Map(
+      recognitionResult?.analysis.cells.map((cell) => [getCellKey(cell.x, cell.y), cell.confidence]) ?? [],
+    );
+    const groups = new Map<string, ReviewGroup>();
+
+    const ensureGroup = (key: string, title: string, hex: string, warning = false) => {
+      const current = groups.get(key);
+      if (current) return current;
+      const group: ReviewGroup = { key, title, hex, count: 0, warning, cells: [] };
+      groups.set(key, group);
+      return group;
+    };
+
+    finalPatternResult.cells.forEach((cell) => {
+      const key = getCellKey(cell.x, cell.y);
+      const confidence = confidenceByCell.get(key) ?? 1;
+      const corrected = Boolean(cellCorrections[key]);
+      const isEmpty = cell.isExternal || cell.hex === 'transparent';
+      const group = !corrected && !isEmpty && confidence < 0.54
+        ? ensureGroup('__unrecognized__', '未识别', '#FEE2E2', true)
+        : isEmpty
+          ? ensureGroup('__empty__', '空白', 'transparent')
+          : ensureGroup(cell.colorId || cell.hex, cell.vendorCode || cell.colorId || cell.hex, cell.hex);
+      group.count += 1;
+      group.cells.push(cell);
+    });
+
+    return Array.from(groups.values()).map((group) => {
+      const expectedCount = legendEntries.find((entry) => (
+        getCanonicalLegendCode(entry.code) === getCanonicalLegendCode(group.title)
+      ))?.count;
+      const hasMismatch = typeof expectedCount === 'number' && expectedCount !== group.count;
+      return {
+        ...group,
+        expectedCount: expectedCount ?? undefined,
+        warning: group.warning || hasMismatch,
+      };
+    }).sort((a, b) => {
+      if (a.key === '__unrecognized__') return -1;
+      if (b.key === '__unrecognized__') return 1;
+      if (a.key === '__empty__') return -1;
+      if (b.key === '__empty__') return 1;
+      return b.count - a.count;
+    });
+  }, [cellCorrections, finalPatternResult, legendEntries, recognitionResult]);
+
+  const selectedReviewCellSet = useMemo(() => (
+    new Set(selectedReviewCellKeys)
+  ), [selectedReviewCellKeys]);
+
+  const getReviewGroupSelectedCount = (cells: PatternCell[]) => (
+    cells.reduce((sum, cell) => sum + (selectedReviewCellSet.has(getCellKey(cell.x, cell.y)) ? 1 : 0), 0)
+  );
+
+  const getReviewCellPreviewStyle = (cell: PatternCell): CSSProperties => {
+    const grid = recognitionResult?.analysis.selectedGrid;
+    const fallbackColor = cell.isExternal || cell.hex === 'transparent' ? '#F1F5F9' : cell.hex;
+    if (!decodedImage || !grid) return { backgroundColor: fallbackColor };
+
+    const cellWidth = Math.max(1, grid.cellWidth);
+    const cellHeight = Math.max(1, grid.cellHeight);
+    const scale = Math.max(REVIEW_THUMB_SIZE / cellWidth, REVIEW_THUMB_SIZE / cellHeight);
+    const sourceX = grid.bounds.x + cell.x * cellWidth;
+    const sourceY = grid.bounds.y + cell.y * cellHeight;
+    const offsetX = (REVIEW_THUMB_SIZE - cellWidth * scale) / 2 - sourceX * scale;
+    const offsetY = (REVIEW_THUMB_SIZE - cellHeight * scale) / 2 - sourceY * scale;
+
+    return {
+      backgroundColor: fallbackColor,
+      backgroundImage: `url("${decodedImage.dataUrl}")`,
+      backgroundPosition: `${offsetX}px ${offsetY}px`,
+      backgroundRepeat: 'no-repeat',
+      backgroundSize: `${decodedImage.width * scale}px ${decodedImage.height * scale}px`,
+    };
+  };
+
+  const isGridOcrSuggestionConflict = (group: ReviewGroup, suggestion?: GridOcrGroupSuggestion) => {
+    if (!suggestion || group.key === '__empty__' || group.key === '__unrecognized__') return false;
+    const currentCode = getCanonicalLegendCode(group.title);
+    const suggestedCode = getCanonicalLegendCode(suggestion.code);
+    if (!currentCode || !suggestedCode || isGeneratedImportCode(currentCode)) return false;
+    return currentCode !== suggestedCode;
+  };
+
+  const canApplyGridOcrSuggestion = (group: ReviewGroup, suggestion?: GridOcrGroupSuggestion) => (
+    Boolean(suggestion)
+      && group.key !== '__empty__'
+      && group.key !== '__unrecognized__'
+      && !isGridOcrSuggestionConflict(group, suggestion)
+      && (suggestion?.confidence ?? 0) >= GRID_OCR_MIN_CONFIDENCE
+  );
+
+  const applicableGridOcrSuggestionCount = useMemo(() => (
+    reviewGroups.reduce((count, group) => (
+      count + (canApplyGridOcrSuggestion(group, gridOcrSuggestions[group.key]) ? 1 : 0)
+    ), 0)
+  ), [gridOcrSuggestions, reviewGroups]);
 
   useEffect(() => {
     return () => {
       if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current);
+      stopRepeatAction(true);
     };
   }, []);
 
@@ -455,6 +730,12 @@ export function WorkshopDrawingImportPage() {
   useEffect(() => {
     setCalibrationAnchor((current) => clampCalibrationAnchor(current, columns, rows, calibrationGridSize));
   }, [calibrationGridSize, columns, rows]);
+
+  useEffect(() => {
+    if (!reviewTargetColorId && reviewColorOptions.length > 0) {
+      setReviewTargetColorId(reviewColorOptions[0].colorId);
+    }
+  }, [reviewColorOptions, reviewTargetColorId]);
 
   useEffect(() => {
     setGridCropRect((current) => clampGridCropRect(current, columns, rows));
@@ -546,6 +827,58 @@ export function WorkshopDrawingImportPage() {
     }, 2200);
   };
 
+  function stopRepeatAction(resetDidRepeat = false) {
+    const repeatAction = repeatActionRef.current;
+    if (repeatAction.delayTimer) {
+      window.clearTimeout(repeatAction.delayTimer);
+      repeatAction.delayTimer = null;
+    }
+    if (repeatAction.intervalTimer) {
+      window.clearInterval(repeatAction.intervalTimer);
+      repeatAction.intervalTimer = null;
+    }
+    if (resetDidRepeat) repeatAction.didRepeat = false;
+  }
+
+  const startRepeatAction = (action: () => void, event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    stopRepeatAction(true);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Some browsers release capture automatically.
+    }
+
+    repeatActionRef.current.delayTimer = window.setTimeout(() => {
+      repeatActionRef.current.didRepeat = true;
+      action();
+      repeatActionRef.current.intervalTimer = window.setInterval(action, LONG_PRESS_REPEAT_INTERVAL_MS);
+    }, LONG_PRESS_REPEAT_DELAY_MS);
+  };
+
+  const getRepeatButtonProps = (action: () => void) => ({
+    onClick: (event: ReactMouseEvent<HTMLButtonElement>) => {
+      if (repeatActionRef.current.didRepeat) {
+        event.preventDefault();
+        repeatActionRef.current.didRepeat = false;
+        return;
+      }
+      action();
+    },
+    onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => startRepeatAction(action, event),
+    onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => {
+      stopRepeatAction();
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        // Pointer capture may already be released.
+      }
+    },
+    onPointerCancel: () => stopRepeatAction(true),
+    onPointerLeave: () => stopRepeatAction(),
+    onContextMenu: (event: ReactMouseEvent<HTMLButtonElement>) => event.preventDefault(),
+  });
+
   const handleBack = () => {
     if (step > 1) {
       setStep((current) => Math.max(1, current - 1) as StepId);
@@ -560,12 +893,15 @@ export function WorkshopDrawingImportPage() {
       return;
     }
 
+    setBusyMode('file');
+    setBusyMode('pattern');
+    setBusyMode('enter');
     setIsBusy(true);
     try {
       await waitForLoadingPaint();
       const image = await decodePatternImportImageFile(file);
       const grid = getInitialGrid(image);
-      const initialCalibrationGrid = getInitialCalibrationGrid(image, grid.columns);
+      const initialCalibrationGrid = getInitialCalibrationGrid(image, grid.columns, grid.rows);
       setSelectedFileName(file.name);
       setDecodedImage(image);
       setLegendRect(DEFAULT_LEGEND_RECT);
@@ -579,6 +915,11 @@ export function WorkshopDrawingImportPage() {
       setLegendMode('crop');
       setLegendOcrText('');
       setRecognitionResult(null);
+      setCellCorrections({});
+      setSelectedReviewCellKeys([]);
+      setReviewTargetColorId('');
+      setGridOcrSuggestions({});
+      setGridOcrSummary('');
       setLegendCropZoom(1);
       setLegendPreviewZoom(1);
       setPatternAlignZoom(1);
@@ -702,10 +1043,53 @@ export function WorkshopDrawingImportPage() {
     };
   };
 
+  const getImageGridCropBounds = (grid: CalibrationGridModel = calibrationGrid): GridCropBounds => {
+    const metrics = getSquareGridMetrics(grid);
+    const imageWidth = Math.max(1, decodedImage?.width ?? 1);
+    const imageHeight = Math.max(1, decodedImage?.height ?? 1);
+    const minCol = Math.floor((0 - metrics.originX) / metrics.cellSizePx);
+    const minRow = Math.floor((0 - metrics.originY) / metrics.cellSizePx);
+    const maxCol = Math.ceil((imageWidth - metrics.originX) / metrics.cellSizePx);
+    const maxRow = Math.ceil((imageHeight - metrics.originY) / metrics.cellSizePx);
+    return {
+      minCol,
+      minRow,
+      maxCol: Math.max(minCol + 1, maxCol),
+      maxRow: Math.max(minRow + 1, maxRow),
+    };
+  };
+
+  const clampGridCropRectToImage = (rect: GridCropRect, grid: CalibrationGridModel = calibrationGrid) => (
+    clampGridCropRectToBounds(rect, getImageGridCropBounds(grid))
+  );
+
+  const getImageEdgeGridCropRect = (grid: CalibrationGridModel = calibrationGrid): GridCropRect => {
+    const bounds = getImageGridCropBounds(grid);
+    return clampGridCropRectToBounds({
+      col: bounds.minCol,
+      row: bounds.minRow,
+      columns: bounds.maxCol - bounds.minCol,
+      rows: bounds.maxRow - bounds.minRow,
+    }, bounds);
+  };
+
+  const getCalibrationMoveAnchor = (grid: CalibrationGridModel = calibrationGrid): CalibrationResizeAnchor => {
+    const metrics = getSquareGridMetrics(grid);
+    const gridPoint = clampCalibrationAnchor(calibrationAnchor, columns, rows, calibrationGridSize);
+    return {
+      point: {
+        x: metrics.originX + gridPoint.col * metrics.cellSizePx,
+        y: metrics.originY + gridPoint.row * metrics.cellSizePx,
+      },
+      gridPoint,
+    };
+  };
+
   const startCalibrationGridDrag = (kind: CalibrationDragKind, event: ReactPointerEvent<HTMLElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    const startAnchor = getCalibrationMoveAnchor();
     calibrationDragRef.current = {
       kind,
       pointerId: event.pointerId,
@@ -714,6 +1098,7 @@ export function WorkshopDrawingImportPage() {
       startY: event.clientY,
       startGrid: calibrationGrid,
       startOperationRect: getCalibrationOperationRect(),
+      startAnchor: startAnchor.gridPoint,
     };
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -758,11 +1143,9 @@ export function WorkshopDrawingImportPage() {
       MIN_CALIBRATION_CELL_SIZE_PX,
       Math.max(MIN_CALIBRATION_CELL_SIZE_PX, imageWidth, imageHeight),
     );
-    const fixedCol = drag.startGrid.cellSizePx > 0 ? (drag.startOperationRect.x - drag.startGrid.originX) / drag.startGrid.cellSizePx : 0;
-    const fixedRow = drag.startGrid.cellSizePx > 0 ? (drag.startOperationRect.y - drag.startGrid.originY) / drag.startGrid.cellSizePx : 0;
     setCalibrationGrid(normalizeCalibrationGrid({
-      originX: drag.startOperationRect.x - fixedCol * nextCellSizePx,
-      originY: drag.startOperationRect.y - fixedRow * nextCellSizePx,
+      originX: drag.startOperationRect.x - drag.startAnchor.col * nextCellSizePx,
+      originY: drag.startOperationRect.y - drag.startAnchor.row * nextCellSizePx,
       cellSizePx: nextCellSizePx,
     }, decodedImage));
   };
@@ -788,7 +1171,7 @@ export function WorkshopDrawingImportPage() {
       capturedElement: event.currentTarget,
       startX: event.clientX,
       startY: event.clientY,
-      startRect: clampGridCropRect(gridCropRect, columns, rows),
+      startRect: clampGridCropRectToImage(gridCropRect),
       startCellSizePx: getSquareGridMetrics().cellSizePx,
     };
     try {
@@ -830,7 +1213,7 @@ export function WorkshopDrawingImportPage() {
       if (drag.kind.includes('s')) next.rows = start.rows + deltaRow;
     }
 
-    setGridCropRect(clampGridCropRect(next, columns, rows));
+    setGridCropRect(clampGridCropRectToImage(next));
   };
 
   const handleGridCropPointerUp = (event: ReactPointerEvent<HTMLElement>) => {
@@ -844,28 +1227,22 @@ export function WorkshopDrawingImportPage() {
     }
   };
 
-  const scaleCalibrationGrid = (scale: number, anchorPoint?: { x: number; y: number }) => {
+  const adjustCalibrationCellSize = (deltaPx: number, fixedAnchor?: CalibrationResizeAnchor) => {
     setCalibrationGrid((current) => {
       const metrics = getSquareGridMetrics(current);
-      const anchor = clampCalibrationAnchor(calibrationAnchor, columns, rows, calibrationGridSize);
-      const fallbackAnchor = {
-        x: metrics.originX + (anchor.col + calibrationGridSize / 2) * metrics.cellSizePx,
-        y: metrics.originY + (anchor.row + calibrationGridSize / 2) * metrics.cellSizePx,
-      };
-      const fixedPoint = anchorPoint ?? fallbackAnchor;
-      const fixedCol = metrics.cellSizePx > 0 ? (fixedPoint.x - metrics.originX) / metrics.cellSizePx : 0;
-      const fixedRow = metrics.cellSizePx > 0 ? (fixedPoint.y - metrics.originY) / metrics.cellSizePx : 0;
+      const anchor = fixedAnchor ?? getCalibrationMoveAnchor(current);
+      const { point: fixedPoint, gridPoint } = anchor;
       const imageWidth = Math.max(1, decodedImage?.width ?? 1);
       const imageHeight = Math.max(1, decodedImage?.height ?? 1);
       const nextCellSizePx = clamp(
-        metrics.cellSizePx * scale,
+        metrics.cellSizePx + deltaPx,
         MIN_CALIBRATION_CELL_SIZE_PX,
         Math.max(MIN_CALIBRATION_CELL_SIZE_PX, imageWidth, imageHeight),
       );
 
       return normalizeCalibrationGrid({
-        originX: fixedPoint.x - fixedCol * nextCellSizePx,
-        originY: fixedPoint.y - fixedRow * nextCellSizePx,
+        originX: fixedPoint.x - gridPoint.col * nextCellSizePx,
+        originY: fixedPoint.y - gridPoint.row * nextCellSizePx,
         cellSizePx: nextCellSizePx,
       }, decodedImage);
     });
@@ -873,11 +1250,10 @@ export function WorkshopDrawingImportPage() {
 
   const nudgeCalibrationGrid = (directionX: number, directionY: number) => {
     setCalibrationGrid((current) => {
-      const stepPx = Math.max(1, current.cellSizePx * 0.05);
       return normalizeCalibrationGrid({
         ...current,
-        originX: current.originX + directionX * stepPx,
-        originY: current.originY + directionY * stepPx,
+        originX: current.originX + directionX * CALIBRATION_NUDGE_STEP_PX,
+        originY: current.originY + directionY * CALIBRATION_NUDGE_STEP_PX,
       }, decodedImage);
     });
   };
@@ -885,6 +1261,29 @@ export function WorkshopDrawingImportPage() {
   const handleCalibrationGridSizeChange = (size: CalibrationGridSize) => {
     setCalibrationGridSize(size);
     setCalibrationAnchor((current) => clampCalibrationAnchor(current, columns, rows, size));
+  };
+
+  const updateGridDimensionsFromImage = (nextColumns: number, nextRows: number, preferredAxis: 'columns' | 'rows') => {
+    const normalizedColumns = Math.round(clamp(nextColumns, 4, MAX_INITIAL_GRID_CELLS));
+    const normalizedRows = Math.round(clamp(nextRows, 4, MAX_INITIAL_GRID_CELLS));
+    setColumns(normalizedColumns);
+    setRows(normalizedRows);
+    setCalibrationAnchor(getDefaultCalibrationAnchor(normalizedColumns, normalizedRows, calibrationGridSize));
+    setGridCropRect((current) => clampGridCropRect(current, normalizedColumns, normalizedRows));
+    if (!decodedImage) return;
+    setCalibrationGrid(normalizeCalibrationGrid({
+      originX: 0,
+      originY: 0,
+      cellSizePx: getImageBasedCalibrationCellSize(decodedImage, normalizedColumns, normalizedRows, preferredAxis),
+    }, decodedImage));
+  };
+
+  const handleGridColumnStep = (delta: number) => {
+    updateGridDimensionsFromImage(columns + delta, rows, 'columns');
+  };
+
+  const handleGridRowStep = (delta: number) => {
+    updateGridDimensionsFromImage(columns, rows + delta, 'rows');
   };
 
   const handleCenterCalibrationGrid = () => {
@@ -897,12 +1296,15 @@ export function WorkshopDrawingImportPage() {
       return;
     }
 
+    setBusyMode('legend');
     setIsBusy(true);
     try {
       await waitForLoadingPaint();
       const result = await recognizeLegendFromCrop(decodedImage, legendRect);
-      setLegendEntries(result.entries);
+      setLegendEntries(result.entries.map(mapLegendEntryToColorSystem));
       setLegendOcrText(result.ocrText);
+      setGridOcrSuggestions({});
+      setGridOcrSummary('');
       setLegendMode('review');
       if (result.warnings.length > 0) {
         showNotice(result.warnings[0]);
@@ -921,7 +1323,13 @@ export function WorkshopDrawingImportPage() {
   };
 
   const handleLegendEntryChange = (id: string, patch: Partial<LegendEntry>) => {
-    setLegendEntries((current) => current.map((entry) => entry.id === id ? { ...entry, ...patch } : entry));
+    setLegendEntries((current) => current.map((entry) => {
+      if (entry.id !== id) return entry;
+      const next = { ...entry, ...patch };
+      return typeof patch.code === 'string' && typeof patch.hex !== 'string'
+        ? mapLegendEntryToColorSystem(next)
+        : next;
+    }));
   };
 
   const handleLegendCountChange = (id: string, value: string) => {
@@ -1121,6 +1529,8 @@ export function WorkshopDrawingImportPage() {
   const handleSkipLegend = () => {
     setLegendEntries([]);
     setLegendOcrText('');
+    setGridOcrSuggestions({});
+    setGridOcrSummary('');
     setLegendMode('crop');
     setStep(3);
   };
@@ -1130,7 +1540,7 @@ export function WorkshopDrawingImportPage() {
   };
 
   const handleConfirmAlignment = () => {
-    setGridCropRect((current) => clampGridCropRect(current, columns, rows));
+    setGridCropRect(getImageEdgeGridCropRect());
     setStep(4);
   };
 
@@ -1141,7 +1551,7 @@ export function WorkshopDrawingImportPage() {
     }
 
     const gridMetrics = getSquareGridMetrics();
-    const cropRect = clampGridCropRect(gridCropRect, columns, rows);
+    const cropRect = clampGridCropRectToImage(gridCropRect);
     setGridCropRect(cropRect);
     setIsBusy(true);
     try {
@@ -1158,7 +1568,164 @@ export function WorkshopDrawingImportPage() {
         clusterThreshold: 32,
       });
       setRecognitionResult(result);
+      setCellCorrections({});
+      setSelectedReviewCellKeys([]);
+      setReviewTargetColorId('');
+      setGridOcrSuggestions({});
+      setGridOcrSummary('');
       setStep(5);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const toggleReviewCell = (cell: PatternCell) => {
+    const key = getCellKey(cell.x, cell.y);
+    setSelectedReviewCellKeys((current) => (
+      current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key]
+    ));
+  };
+
+  const selectReviewGroup = (cells: PatternCell[]) => {
+    const keys = cells.map((cell) => getCellKey(cell.x, cell.y));
+    setSelectedReviewCellKeys((current) => Array.from(new Set([...current, ...keys])));
+  };
+
+  const clearReviewGroupSelection = (cells: PatternCell[]) => {
+    const keys = new Set(cells.map((cell) => getCellKey(cell.x, cell.y)));
+    setSelectedReviewCellKeys((current) => current.filter((key) => !keys.has(key)));
+  };
+
+  const clearReviewSelection = () => {
+    setSelectedReviewCellKeys([]);
+  };
+
+  const applyAssignmentToCells = (cells: PatternCell[], assignment: ReviewCellAssignment) => {
+    if (cells.length === 0) return;
+    setCellCorrections((current) => {
+      const next = { ...current };
+      cells.forEach((cell) => {
+        next[getCellKey(cell.x, cell.y)] = assignment;
+      });
+      return next;
+    });
+  };
+
+  const applyReviewAssignment = () => {
+    if (selectedReviewCellKeys.length === 0) return;
+    const target = reviewColorOptions.find((option) => option.colorId === reviewTargetColorId);
+    if (!target) {
+      showNotice('请选择要归类到的色号');
+      return;
+    }
+    setCellCorrections((current) => {
+      const next = { ...current };
+      selectedReviewCellKeys.forEach((key) => {
+        next[key] = {
+          colorId: target.colorId,
+          vendorCode: target.vendorCode,
+          hex: target.hex,
+        };
+      });
+      return next;
+    });
+    clearReviewSelection();
+  };
+
+  const markReviewSelectionEmpty = () => {
+    if (selectedReviewCellKeys.length === 0) return;
+    setCellCorrections((current) => {
+      const next = { ...current };
+      selectedReviewCellKeys.forEach((key) => {
+        next[key] = createTransparentAssignment();
+      });
+      return next;
+    });
+    clearReviewSelection();
+  };
+
+  const applyGridOcrSuggestionToGroup = (group: ReviewGroup, suggestion?: GridOcrGroupSuggestion) => {
+    if (!suggestion || !canApplyGridOcrSuggestion(group, suggestion)) return;
+    const assignment = createAssignmentFromCode(suggestion.code, group.hex);
+    applyAssignmentToCells(group.cells, assignment);
+    setGridOcrSuggestions((current) => {
+      const next = { ...current };
+      delete next[group.key];
+      return next;
+    });
+  };
+
+  const applyAllGridOcrSuggestions = () => {
+    const applicableGroups = reviewGroups.filter((group) => (
+      canApplyGridOcrSuggestion(group, gridOcrSuggestions[group.key])
+    ));
+    if (applicableGroups.length === 0) {
+      showNotice('暂无可应用的 OCR 建议');
+      return;
+    }
+
+    setCellCorrections((current) => {
+      const next = { ...current };
+      applicableGroups.forEach((group) => {
+        const suggestion = gridOcrSuggestions[group.key];
+        if (!suggestion) return;
+        const assignment = createAssignmentFromCode(suggestion.code, group.hex);
+        group.cells.forEach((cell) => {
+          next[getCellKey(cell.x, cell.y)] = assignment;
+        });
+      });
+      return next;
+    });
+    setGridOcrSuggestions((current) => {
+      const next = { ...current };
+      applicableGroups.forEach((group) => {
+        delete next[group.key];
+      });
+      return next;
+    });
+    showNotice(`已应用 ${applicableGroups.length} 个分组的 OCR 建议`);
+  };
+
+  const handleRecognizeReviewGroups = async () => {
+    if (!decodedImage || !recognitionResult?.analysis.selectedGrid) {
+      showNotice('请先完成图纸识别');
+      return;
+    }
+
+    const groupsForOcr = reviewGroups
+      .filter((group) => group.key !== '__empty__' && group.key !== '__unrecognized__' && group.cells.length > 0)
+      .map((group) => ({
+        key: group.key,
+        title: group.title,
+        cells: group.cells,
+      }));
+    if (groupsForOcr.length === 0) {
+      showNotice('暂无可进行代表格 OCR 的分组');
+      return;
+    }
+
+    setBusyMode('gridOcr');
+    setIsBusy(true);
+    try {
+      await waitForLoadingPaint();
+      const result = await recognizeGridGroupCodes({
+        image: decodedImage,
+        grid: recognitionResult.analysis.selectedGrid,
+        groups: groupsForOcr,
+      });
+      const suggestions = Object.fromEntries(
+        result.suggestions.map((suggestion) => [suggestion.groupKey, suggestion]),
+      );
+      setGridOcrSuggestions(suggestions);
+      setGridOcrSummary(`已检查 ${result.processedGroupCount} 个分组，识别到 ${result.suggestions.length} 个建议`);
+      showNotice(result.suggestions.length
+        ? `代表格 OCR 识别到 ${result.suggestions.length} 个建议`
+        : '代表格 OCR 未识别到可用色号');
+    } catch {
+      setGridOcrSummary('代表格 OCR 失败，请保留当前颜色分组或手动归类');
+      showNotice('代表格 OCR 失败，请稍后重试');
     } finally {
       setIsBusy(false);
     }
@@ -1225,10 +1792,13 @@ export function WorkshopDrawingImportPage() {
 
   const squareGridMetrics = getSquareGridMetrics();
   const calibrationOperationRect = getCalibrationOperationRect();
-  const calibrationStageWidth = patternAlignFitSize ? patternAlignFitSize.width * patternAlignZoom : (decodedImage?.width ?? 1);
-  const calibrationStageHeight = patternAlignFitSize ? patternAlignFitSize.height * patternAlignZoom : (decodedImage?.height ?? 1);
-  const calibrationScaleX = calibrationStageWidth / Math.max(1, decodedImage?.width ?? 1);
-  const calibrationScaleY = calibrationStageHeight / Math.max(1, decodedImage?.height ?? 1);
+  const calibrationMoveAnchor = getCalibrationMoveAnchor();
+  const imagePixelWidth = Math.max(1, decodedImage?.width ?? 1);
+  const imagePixelHeight = Math.max(1, decodedImage?.height ?? 1);
+  const calibrationStageWidth = (patternAlignFitSize?.width ?? imagePixelWidth) * patternAlignZoom;
+  const calibrationStageHeight = (patternAlignFitSize?.height ?? imagePixelHeight) * patternAlignZoom;
+  const calibrationScaleX = calibrationStageWidth / imagePixelWidth;
+  const calibrationScaleY = calibrationStageHeight / imagePixelHeight;
   const calibrationGridStyle = {
     '--calibration-cell-width': `${squareGridMetrics.cellSizePx * calibrationScaleX}px`,
     '--calibration-cell-height': `${squareGridMetrics.cellSizePx * calibrationScaleY}px`,
@@ -1239,7 +1809,7 @@ export function WorkshopDrawingImportPage() {
     '--calibration-area-width': `${calibrationOperationRect.width * calibrationScaleX}px`,
     '--calibration-area-height': `${calibrationOperationRect.height * calibrationScaleY}px`,
   } as CSSProperties;
-  const clampedGridCropRect = clampGridCropRect(gridCropRect, columns, rows);
+  const clampedGridCropRect = clampGridCropRectToImage(gridCropRect);
   const gridCropPixelRect = {
     x: squareGridMetrics.originX + clampedGridCropRect.col * squareGridMetrics.cellSizePx,
     y: squareGridMetrics.originY + clampedGridCropRect.row * squareGridMetrics.cellSizePx,
@@ -1254,25 +1824,39 @@ export function WorkshopDrawingImportPage() {
   } as CSSProperties;
 
   const legendCropStageStyle = {
-    '--stage-width': legendCropFitSize ? `${legendCropFitSize.width * legendCropZoom}px` : '100%',
-    '--stage-height': legendCropFitSize ? `${legendCropFitSize.height * legendCropZoom}px` : '100%',
+    '--stage-width': `${(legendCropFitSize?.width ?? imagePixelWidth) * legendCropZoom}px`,
+    '--stage-height': `${(legendCropFitSize?.height ?? imagePixelHeight) * legendCropZoom}px`,
   } as CSSProperties;
 
   const patternAlignStageStyle = {
-    '--stage-width': patternAlignFitSize ? `${patternAlignFitSize.width * patternAlignZoom}px` : '100%',
-    '--stage-height': patternAlignFitSize ? `${patternAlignFitSize.height * patternAlignZoom}px` : '100%',
+    '--stage-width': `${calibrationStageWidth}px`,
+    '--stage-height': `${calibrationStageHeight}px`,
   } as CSSProperties;
 
   const legendPreviewImageStyle = {
     '--preview-zoom': legendPreviewZoom,
   } as CSSProperties;
+  const loadingTitle = busyMode === 'enter'
+    ? '正在进入画布'
+    : busyMode === 'gridOcr'
+      ? '正在识别代表格'
+      : '正在识别图纸';
+  const loadingMessage = busyMode === 'legend'
+    ? '正在 OCR 识别图例...'
+    : busyMode === 'pattern'
+      ? '正在按裁剪范围识别色号...'
+      : busyMode === 'gridOcr'
+        ? '正在批量读取每组代表格，不会逐格调用 API...'
+        : busyMode === 'enter'
+          ? '正在创建画布项目...'
+          : '正在处理图纸文件...';
 
   return (
     <main ref={pageRef} className={styles.page}>
       <LoadingOverlay
         open={isBusy}
-        title={step === 5 ? '正在进入画布' : '正在识别图纸'}
-        message={step === 2 ? '正在 OCR 识别图例...' : step === 4 ? '正在按裁剪范围识别色号...' : '正在处理图纸文件...'}
+        title={loadingTitle}
+        message={loadingMessage}
       />
 
       <header className={styles.topbar}>
@@ -1390,7 +1974,7 @@ export function WorkshopDrawingImportPage() {
                   </button>
                   <div className={styles.secondaryActions}>
                     <button type="button" onClick={handleAddLegendEntry}>＋ 手动添加</button>
-                    <button type="button" onClick={handleSkipLegend}>没有图例，跳过</button>
+                    <button type="button" onClick={handleSkipLegend}>不使用图例</button>
                   </div>
                 </div>
               </>
@@ -1416,15 +2000,16 @@ export function WorkshopDrawingImportPage() {
                   <span>共 <strong>{legendEntries.length}</strong> 项</span>
                   <span>总数 <strong>{legendTotalCount.toLocaleString()}</strong> 颗</span>
                   {legendMissingCount > 0 ? <em>{legendMissingCount} 项未填</em> : null}
-                  <button type="button" onClick={handleRecognizeLegend}>重新识别</button>
                   <button type="button" onClick={() => setLegendMode('crop')}>重新框选</button>
                 </div>
+                {/*
                 {legendOcrText.trim() ? (
                   <details className={styles.ocrDetails}>
                     <summary>OCR 原文</summary>
                     <p>{legendOcrText.trim()}</p>
                   </details>
                 ) : null}
+                */}
                 <div className={styles.legendKeyboardHint}>
                   <span>键盘快捷：回车 色号→数量→下一项</span>
                   <button type="button" onClick={handleAddLegendEntry}>＋ 插入新行</button>
@@ -1434,12 +2019,11 @@ export function WorkshopDrawingImportPage() {
                     <div key={entry.id} className={styles.legendEditorRow}>
                       <span className={styles.rowDragHandle} aria-hidden="true">⋮⋮</span>
                       <span className={styles.rowIndex}>{index + 1}</span>
-                      <input
-                        className={styles.swatchInput}
-                        type="color"
-                        value={entry.hex}
-                        onChange={(event) => handleLegendEntryChange(entry.id, { hex: event.target.value.toUpperCase() })}
+                      <span
+                        className={styles.swatchPreview}
+                        style={{ backgroundColor: entry.hex }}
                         aria-label={`第 ${index + 1} 项颜色`}
+                        role="img"
                       />
                       <input
                         className={styles.codeInput}
@@ -1489,10 +2073,10 @@ export function WorkshopDrawingImportPage() {
                 </div>
                 <div className={styles.legendFooter}>
                   <button type="button" className={styles.footerSecondaryButton} onClick={handleSkipLegend}>
-                    不要图例了
+                    不使用图例
                   </button>
                   <button type="button" className={styles.footerPrimaryButton} onClick={handleContinueToGrid}>
-                    开始识别 ›
+                    确认结果
                   </button>
                 </div>
               </div>
@@ -1540,23 +2124,20 @@ export function WorkshopDrawingImportPage() {
                     data-calibration-grid="true"
                     onPointerDown={startCalibrationGridAreaDrag}
                   >
-                    <span className={styles.calibrationGridLabel}>{calibrationGridSize}x{calibrationGridSize}</span>
                     <button
                       type="button"
                       className={`${styles.calibrationHandle} ${styles.calibrationMoveHandle}`}
+                      data-handle-label="移动"
                       aria-label="移动校准网格"
                       onPointerDown={(event) => startCalibrationGridDrag('move', event)}
-                    >
-                      移动
-                    </button>
+                    />
                     <button
                       type="button"
                       className={`${styles.calibrationHandle} ${styles.calibrationScaleHandle}`}
+                      data-handle-label="缩放"
                       aria-label="缩放校准网格"
                       onPointerDown={(event) => startCalibrationGridDrag('scale', event)}
-                    >
-                      缩放
-                    </button>
+                    />
                   </div>
                 </div>
               </div>
@@ -1580,8 +2161,8 @@ export function WorkshopDrawingImportPage() {
                 居中
               </button>
               <div className={styles.calibrationScaleControls} role="group" aria-label="校准网格单元格大小">
-                <button type="button" onClick={() => scaleCalibrationGrid(0.98)} aria-label="缩小校准网格单元格">-</button>
-                <button type="button" onClick={() => scaleCalibrationGrid(1.02)} aria-label="放大校准网格单元格">+</button>
+                <button type="button" {...getRepeatButtonProps(() => adjustCalibrationCellSize(-CALIBRATION_CELL_SIZE_STEP_PX, calibrationMoveAnchor))} aria-label="缩小校准网格单元格">-</button>
+                <button type="button" {...getRepeatButtonProps(() => adjustCalibrationCellSize(CALIBRATION_CELL_SIZE_STEP_PX, calibrationMoveAnchor))} aria-label="放大校准网格单元格">+</button>
               </div>
             </div>
             <div className={styles.alignControls}>
@@ -1589,48 +2170,48 @@ export function WorkshopDrawingImportPage() {
                 <section className={styles.nudgeControlPanel} aria-label="微移">
                   <span>微移</span>
                   <div className={styles.nudgeControlGrid}>
-                    <button type="button" className={styles.nudgeUpButton} onClick={() => nudgeCalibrationGrid(0, -1)} aria-label="向上微移">⌃</button>
-                    <button type="button" className={styles.nudgeLeftButton} onClick={() => nudgeCalibrationGrid(-1, 0)} aria-label="向左微移">‹</button>
+                    <button type="button" className={styles.nudgeUpButton} {...getRepeatButtonProps(() => nudgeCalibrationGrid(0, -1))} aria-label="向上微移">⌃</button>
+                    <button type="button" className={styles.nudgeLeftButton} {...getRepeatButtonProps(() => nudgeCalibrationGrid(-1, 0))} aria-label="向左微移">‹</button>
                     <strong className={styles.nudgeValue}>
                       <em>{squareGridMetrics.originX.toFixed(1)}</em>
                       <em>{squareGridMetrics.originY.toFixed(1)}</em>
                     </strong>
-                    <button type="button" className={styles.nudgeRightButton} onClick={() => nudgeCalibrationGrid(1, 0)} aria-label="向右微移">›</button>
-                    <button type="button" className={styles.nudgeDownButton} onClick={() => nudgeCalibrationGrid(0, 1)} aria-label="向下微移">⌄</button>
+                    <button type="button" className={styles.nudgeRightButton} {...getRepeatButtonProps(() => nudgeCalibrationGrid(1, 0))} aria-label="向右微移">›</button>
+                    <button type="button" className={styles.nudgeDownButton} {...getRepeatButtonProps(() => nudgeCalibrationGrid(0, 1))} aria-label="向下微移">⌄</button>
                   </div>
                 </section>
                 <section className={styles.cellSizeControlPanel} aria-label="调整格子大小">
                   <span>调整格子大小</span>
                   <div className={styles.cellSizeControls}>
-                    <button type="button" onClick={() => scaleCalibrationGrid(0.98)} aria-label="缩小校准网格单元格">−</button>
+                    <button type="button" {...getRepeatButtonProps(() => adjustCalibrationCellSize(-CALIBRATION_CELL_SIZE_STEP_PX, calibrationMoveAnchor))} aria-label="缩小校准网格单元格">−</button>
                     <strong>
                       {squareGridMetrics.cellSizePx.toFixed(2)}
                       <small>格/PX</small>
                     </strong>
-                    <button type="button" onClick={() => scaleCalibrationGrid(1.02)} aria-label="放大校准网格单元格">+</button>
+                    <button type="button" {...getRepeatButtonProps(() => adjustCalibrationCellSize(CALIBRATION_CELL_SIZE_STEP_PX, calibrationMoveAnchor))} aria-label="放大校准网格单元格">+</button>
                   </div>
                   <p>调整网格线间距<br />使其与图纸格线对齐</p>
                 </section>
               </div>
               <section className={styles.nudgePad} aria-label="微移">
                 <span>微移</span>
-                <button type="button" onClick={() => nudgeCalibrationGrid(0, -1)}>⌃</button>
-                <button type="button" onClick={() => nudgeCalibrationGrid(-1, 0)}>‹</button>
+                <button type="button" {...getRepeatButtonProps(() => nudgeCalibrationGrid(0, -1))}>⌃</button>
+                <button type="button" {...getRepeatButtonProps(() => nudgeCalibrationGrid(-1, 0))}>‹</button>
                 <strong>{columns.toFixed(0)} × {rows.toFixed(0)}</strong>
-                <button type="button" onClick={() => nudgeCalibrationGrid(1, 0)}>›</button>
-                <button type="button" onClick={() => nudgeCalibrationGrid(0, 1)}>⌄</button>
+                <button type="button" {...getRepeatButtonProps(() => nudgeCalibrationGrid(1, 0))}>›</button>
+                <button type="button" {...getRepeatButtonProps(() => nudgeCalibrationGrid(0, 1))}>⌄</button>
               </section>
               <section className={styles.gridSizePanel} aria-label="调整格子大小">
                 <span>调整格子大小</span>
                 <div>
-                  <button type="button" onClick={() => setColumns((current) => Math.max(4, current - 1))}>−</button>
+                  <button type="button" onClick={() => handleGridColumnStep(-1)}>−</button>
                   <strong>{columns.toFixed(0)} 列</strong>
-                  <button type="button" onClick={() => setColumns((current) => Math.min(240, current + 1))}>＋</button>
+                  <button type="button" onClick={() => handleGridColumnStep(1)}>＋</button>
                 </div>
                 <div>
-                  <button type="button" onClick={() => setRows((current) => Math.max(4, current - 1))}>−</button>
+                  <button type="button" onClick={() => handleGridRowStep(-1)}>−</button>
                   <strong>{rows.toFixed(0)} 行</strong>
-                  <button type="button" onClick={() => setRows((current) => Math.min(240, current + 1))}>＋</button>
+                  <button type="button" onClick={() => handleGridRowStep(1)}>＋</button>
                 </div>
               </section>
             </div>
@@ -1686,7 +2267,7 @@ export function WorkshopDrawingImportPage() {
               仅保留格子内容，裁剪框会按当前最小格子尺寸吸附到网格线。
             </div>
             <div className={styles.cropStepControls}>
-              <button type="button" onClick={() => setGridCropRect(getDefaultGridCropRect(columns, rows))}>重置</button>
+              <button type="button" onClick={() => setGridCropRect(getImageEdgeGridCropRect())}>重置</button>
               <span>{clampedGridCropRect.col + 1}, {clampedGridCropRect.row + 1}</span>
               <strong>{clampedGridCropRect.columns} × {clampedGridCropRect.rows}</strong>
             </div>
@@ -1717,6 +2298,141 @@ export function WorkshopDrawingImportPage() {
               </div>
             </div>
             <p className={styles.doneCopy}>图纸已完成初步识别，进入画布后可以继续修正色号、补格和擦除背景。</p>
+            <div className={styles.reviewTools}>
+              <div>
+                <strong>检查归类</strong>
+                <span>{gridOcrSummary || '可先按颜色检查，也可以用代表格 OCR 辅助读取色号。'}</span>
+              </div>
+              <button type="button" onClick={handleRecognizeReviewGroups}>
+                代表格 OCR
+              </button>
+              <button
+                type="button"
+                onClick={applyAllGridOcrSuggestions}
+                disabled={applicableGridOcrSuggestionCount === 0}
+              >
+                应用建议
+              </button>
+            </div>
+            <div className={styles.reviewList}>
+              {reviewGroups.map((group) => {
+                const groupSelectedCount = getReviewGroupSelectedCount(group.cells);
+                const ocrSuggestion = gridOcrSuggestions[group.key];
+                const ocrConflict = isGridOcrSuggestionConflict(group, ocrSuggestion);
+                const canApplyOcrSuggestion = canApplyGridOcrSuggestion(group, ocrSuggestion);
+                return (
+                  <section
+                    key={group.key}
+                    className={`${styles.reviewGroup} ${group.warning || ocrConflict ? styles.reviewGroupWarning : ''}`}
+                    aria-label={`${group.title} ${group.count} 个`}
+                    data-selected={groupSelectedCount > 0}
+                    data-ocr-conflict={ocrConflict}
+                  >
+                    <div className={styles.reviewGroupHeader}>
+                      <div>
+                        <span
+                          className={styles.reviewSwatch}
+                          style={{ backgroundColor: group.hex === 'transparent' ? '#F1F5F9' : group.hex }}
+                          aria-hidden="true"
+                        />
+                        <strong>{group.title}</strong>
+                        <em>{group.count.toLocaleString()} 个</em>
+                        {group.expectedCount !== undefined ? <em>图例 {group.expectedCount.toLocaleString()} 个</em> : null}
+                        {groupSelectedCount > 0 ? <em>已选 {groupSelectedCount.toLocaleString()}</em> : null}
+                        {ocrSuggestion ? (
+                          <em className={ocrConflict ? styles.reviewOcrConflict : styles.reviewOcrSuggestion}>
+                            OCR {ocrSuggestion.code}
+                            {ocrSuggestion.ambiguous ? ' ?' : ''}
+                          </em>
+                        ) : null}
+                      </div>
+                      <div className={styles.reviewGroupActions}>
+                        {ocrSuggestion ? (
+                          <button
+                            type="button"
+                            onClick={() => applyGridOcrSuggestionToGroup(group, ocrSuggestion)}
+                            disabled={!canApplyOcrSuggestion}
+                            title={ocrConflict ? 'OCR 与当前色号冲突，请手动确认' : undefined}
+                          >
+                            应用 OCR
+                          </button>
+                        ) : null}
+                        <button type="button" onClick={() => selectReviewGroup(group.cells)}>
+                          全选
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => clearReviewGroupSelection(group.cells)}
+                          disabled={groupSelectedCount === 0}
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                    <div className={styles.reviewCellStrip}>
+                      {group.cells.slice(0, 36).map((cell) => {
+                        const key = getCellKey(cell.x, cell.y);
+                        const isEmpty = cell.isExternal || cell.hex === 'transparent';
+                        const isSelected = selectedReviewCellSet.has(key);
+                        const label = group.key === '__unrecognized__'
+                          ? '?'
+                          : isEmpty
+                            ? ''
+                            : cell.vendorCode || '?';
+                        return (
+                          <button
+                            key={key}
+                            type="button"
+                            className={styles.reviewCell}
+                            aria-label={`${cell.x + 1}, ${cell.y + 1}`}
+                            aria-pressed={isSelected}
+                            data-selected={isSelected}
+                            onClick={() => toggleReviewCell(cell)}
+                          >
+                            <span className={styles.reviewCellImage} style={getReviewCellPreviewStyle(cell)} />
+                            <strong>{label}</strong>
+                          </button>
+                        );
+                      })}
+                      {group.count > 36 ? (
+                        <button type="button" className={styles.reviewMore} onClick={() => selectReviewGroup(group.cells)}>
+                          +{group.count - 36}
+                        </button>
+                      ) : null}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+            {selectedReviewCellKeys.length > 0 ? (
+              <div className={styles.reviewActionBar} role="group" aria-label="检查归类操作">
+                <strong>已选 {selectedReviewCellKeys.length.toLocaleString()} 个</strong>
+                <select
+                  value={reviewTargetColorId}
+                  onChange={(event) => setReviewTargetColorId(event.target.value)}
+                  aria-label="归类到色号"
+                >
+                  {reviewColorOptions.map((option) => (
+                    <option key={`${option.colorId}-${option.vendorCode}`} value={option.colorId}>
+                      {option.vendorCode || option.colorId}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={applyReviewAssignment}
+                  disabled={!reviewTargetColorId || reviewColorOptions.length === 0}
+                >
+                  归类
+                </button>
+                <button type="button" onClick={markReviewSelectionEmpty}>
+                  标记空白
+                </button>
+                <button type="button" onClick={clearReviewSelection}>
+                  取消
+                </button>
+              </div>
+            ) : null}
             <button type="button" className={styles.primaryButton} onClick={handleEnterCanvas}>
               进入画布
             </button>

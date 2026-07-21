@@ -1,4 +1,8 @@
 node_modules
+venv/
+tmp/
+__pycache__/
+*.pyc
 /dist
 miniprogram/dist
 public/uploads

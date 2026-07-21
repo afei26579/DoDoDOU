@@ -529,12 +529,8 @@ function normalizeCode(value: string) {
     .toUpperCase()
     .replace(/[|]/g, 'I')
     .replace(/[^A-Z0-9]/g, '');
-  const match = text.match(/[A-Z]{1,3}0?\d{1,4}/);
-  if (!match) return '';
-  const code = match[0];
-  const parts = code.match(/^([A-Z]{1,3})0*(\d{1,4})$/);
-  if (!parts) return code;
-  return `${parts[1]}${Number.parseInt(parts[2], 10)}`;
+  const match = text.match(/[A-Z]{1,3}\d{1,4}/);
+  return match ? match[0] : '';
 }
 
 function normalizeCount(value: string) {
